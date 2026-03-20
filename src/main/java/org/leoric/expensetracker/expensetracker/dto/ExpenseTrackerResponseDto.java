@@ -1,6 +1,7 @@
 package org.leoric.expensetracker.expensetracker.dto;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record ExpenseTrackerResponseDto(
@@ -10,6 +11,7 @@ public record ExpenseTrackerResponseDto(
 		String defaultCurrencyCode,
 		boolean active,
 		String ownerFullName,
+		List<ExpenseTrackerMemberDto> members,
 		OffsetDateTime createdDate,
 		OffsetDateTime lastModifiedDate
 ) {

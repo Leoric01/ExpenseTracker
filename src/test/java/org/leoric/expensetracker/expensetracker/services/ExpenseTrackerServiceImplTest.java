@@ -71,7 +71,7 @@ class ExpenseTrackerServiceImplTest {
 		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", "CZK");
 		var response = new ExpenseTrackerResponseDto(
 				UUID.randomUUID(), "Personal", "My tracker", "CZK",
-				true, "John Doe", OffsetDateTime.now(), OffsetDateTime.now()
+				true, "John Doe", List.of(), OffsetDateTime.now(), OffsetDateTime.now()
 		);
 
 		when(userRepository.findById(userId)).thenReturn(Optional.of(user));
