@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponse;
 import org.leoric.expensetracker.expensetracker.dto.InviteUserRequest;
+import org.leoric.expensetracker.expensetracker.models.constants.ExpenseTrackerAccessRequestType;
+import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessRequestService;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
@@ -23,12 +25,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_OWNER;
+
 @RestController
-@RequestMapping("/expense-trackers")
+@RequestMapping("/api/expense-trackers")
 @RequiredArgsConstructor
 public class ExpenseTrackerAccessRequestController {
 
 	private final ExpenseTrackerAccessRequestService expenseTrackerAccessRequestService;
+	private final ExpenseTrackerAccessService expenseTrackerAccessService;
 
 	@PostMapping("/{trackerId}/access-requests")
 	public ResponseEntity<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestCreate(
@@ -43,6 +48,7 @@ public class ExpenseTrackerAccessRequestController {
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
 			@Valid @RequestBody InviteUserRequest request) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(expenseTrackerAccessRequestService.expenseTrackerAccessRequestInvite(currentUser, trackerId, request));
 	}
@@ -53,6 +59,7 @@ public class ExpenseTrackerAccessRequestController {
 			@PathVariable UUID trackerId,
 			@RequestParam(required = false) String search,
 			@ParameterObject Pageable pageable) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
 		return ResponseEntity.ok(expenseTrackerAccessRequestService.expenseTrackerAccessRequestFindAllByTracker(currentUser, trackerId, search, pageable));
 	}
 
@@ -68,6 +75,8 @@ public class ExpenseTrackerAccessRequestController {
 	public ResponseEntity<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestApprove(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID requestId) {
+		var authInfo = expenseTrackerAccessRequestService.getAuthorizationInfo(requestId);
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(authInfo.expenseTrackerId(), currentUser, EXPENSETRACKER_OWNER);
 		return ResponseEntity.ok(expenseTrackerAccessRequestService.expenseTrackerAccessRequestApprove(currentUser, requestId));
 	}
 
@@ -75,6 +84,10 @@ public class ExpenseTrackerAccessRequestController {
 	public ResponseEntity<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestReject(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID requestId) {
+		var authInfo = expenseTrackerAccessRequestService.getAuthorizationInfo(requestId);
+		if (authInfo.expenseTrackerAccessRequestType() == ExpenseTrackerAccessRequestType.REQUEST) {
+			expenseTrackerAccessService.assertHasRoleOnExpenseTracker(authInfo.expenseTrackerId(), currentUser, EXPENSETRACKER_OWNER);
+		}
 		return ResponseEntity.ok(expenseTrackerAccessRequestService.expenseTrackerAccessRequestReject(currentUser, requestId));
 	}
 

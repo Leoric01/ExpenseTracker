@@ -30,8 +30,8 @@ class ProfileControllerIntegrationTest {
 
 	@BeforeEach
 	void setUp() throws Exception {
-		// Register a test user and get a JWT token
-		MvcResult result = mockMvc.perform(post("/auth/register")
+		// Register a test user
+		mockMvc.perform(post("/auth/register")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{
@@ -41,7 +41,18 @@ class ProfileControllerIntegrationTest {
 									"password": "password123"
 								}
 								"""))
-				.andExpect(status().isCreated())
+				.andExpect(status().isCreated());
+
+		// Login to get a JWT token
+		MvcResult result = mockMvc.perform(post("/auth/login")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+									"email": "profile@test.com",
+									"password": "password123"
+								}
+								"""))
+				.andExpect(status().isOk())
 				.andReturn();
 
 		String body = result.getResponse().getContentAsString();

@@ -6,6 +6,7 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.dto.CreateExpenseTrackerRequest;
 import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerResponse;
 import org.leoric.expensetracker.expensetracker.dto.UpdateExpenseTrackerRequest;
+import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerService;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
@@ -25,12 +26,16 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
+import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_OWNER;
+
 @RestController
-@RequestMapping("/expense-trackers")
+@RequestMapping("/api/expense-trackers")
 @RequiredArgsConstructor
 public class ExpenseTrackerController {
 
 	private final ExpenseTrackerService expenseTrackerService;
+	private final ExpenseTrackerAccessService expenseTrackerAccessService;
 
 	@PostMapping
 	public ResponseEntity<ExpenseTrackerResponse> expenseTrackerCreate(
@@ -52,6 +57,7 @@ public class ExpenseTrackerController {
 	public ResponseEntity<ExpenseTrackerResponse> expenseTrackerFindById(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID id) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(id, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.ok(expenseTrackerService.expenseTrackerFindById(currentUser, id));
 	}
 
@@ -60,6 +66,7 @@ public class ExpenseTrackerController {
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID id,
 			@Valid @RequestBody UpdateExpenseTrackerRequest request) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(id, currentUser, EXPENSETRACKER_OWNER);
 		return ResponseEntity.ok(expenseTrackerService.expenseTrackerUpdate(currentUser, id, request));
 	}
 
@@ -67,6 +74,7 @@ public class ExpenseTrackerController {
 	public ResponseEntity<Void> expenseTrackerDeactivate(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID id) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(id, currentUser, EXPENSETRACKER_OWNER);
 		expenseTrackerService.expenseTrackerDeactivate(currentUser, id);
 		return ResponseEntity.noContent().build();
 	}

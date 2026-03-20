@@ -1,6 +1,7 @@
 package org.leoric.expensetracker.expensetracker.services.interfaces;
 
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestAuthorizationInfo;
 import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponse;
 import org.leoric.expensetracker.expensetracker.dto.InviteUserRequest;
 import org.springframework.data.domain.Page;
@@ -23,6 +24,8 @@ public interface ExpenseTrackerAccessRequestService {
 	void expenseTrackerAccessRequestCancel(User currentUser, UUID requestId);
 
 	ExpenseTrackerAccessRequestResponse expenseTrackerAccessRequestAccept(User currentUser, UUID requestId);
+
+	ExpenseTrackerAccessRequestAuthorizationInfo getAuthorizationInfo(UUID requestId);
 
 	Page<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestFindAllMine(User currentUser, String search, Pageable pageable);
 

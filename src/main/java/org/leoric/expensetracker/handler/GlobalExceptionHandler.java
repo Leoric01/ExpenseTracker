@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
 import org.leoric.expensetracker.handler.exceptions.EmailAlreadyInUseException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateExpenseTrackerNameException;
 import org.leoric.expensetracker.handler.exceptions.IncorrectCurrentPasswordException;
 import org.leoric.expensetracker.handler.exceptions.InsufficientRoleException;
 import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchException;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -96,6 +98,11 @@ public class GlobalExceptionHandler {
 		return build(ENDPOINT_NOT_FOUND, ex.getMessage());
 	}
 
+	@ExceptionHandler(NoResourceFoundException.class)
+	public ResponseEntity<ExceptionResponse> handleNoResourceFoundException(NoResourceFoundException ex) {
+		return build(ENDPOINT_NOT_FOUND, ex.getMessage());
+	}
+
 	@ExceptionHandler(EntityNotFoundException.class)
 	public ResponseEntity<ExceptionResponse> handleEntityNotFoundException(EntityNotFoundException ex) {
 		return build(ENTITY_NOT_FOUND, ex.getMessage());
@@ -122,6 +129,11 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(NotAuthorizedForThisExpenseTrackerException.class)
 	public ResponseEntity<ExceptionResponse> handleNotAuthorizedForThisExpenseTrackerException(NotAuthorizedForThisExpenseTrackerException ex) {
 		return build(NOT_AUTHORIZED_FOR_THIS_EXPENSE_TRACKER, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateExpenseTrackerNameException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateExpenseTrackerNameException(DuplicateExpenseTrackerNameException ex) {
+		return build(DUPLICATE_EXPENSE_TRACKER_NAME, ex.getMessage());
 	}
 
 	@ExceptionHandler(OperationNotPermittedException.class)

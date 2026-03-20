@@ -78,7 +78,7 @@ class AuthControllerIntegrationTest {
 									"firstName": "John",
 									"lastName": "Doe",
 									"email": "john@test.com",
-									"password": "short"
+									"password": "sh"
 								}
 								"""))
 				.andExpect(status().isBadRequest());

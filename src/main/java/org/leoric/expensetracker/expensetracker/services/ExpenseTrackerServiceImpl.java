@@ -14,8 +14,8 @@ import org.leoric.expensetracker.expensetracker.dto.UpdateExpenseTrackerRequest;
 import org.leoric.expensetracker.expensetracker.mapstruct.ExpenseTrackerMapper;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
-import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerService;
+import org.leoric.expensetracker.handler.exceptions.DuplicateExpenseTrackerNameException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
-import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
 import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_OWNER;
 
 @Service
@@ -34,7 +33,6 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final ExpenseTrackerMapper expenseTrackerMapper;
-	private final ExpenseTrackerAccessService expenseTrackerAccessService;
 	private final RoleRepository roleRepository;
 	private final UserRepository userRepository;
 
@@ -43,6 +41,11 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 	public ExpenseTrackerResponse expenseTrackerCreate(User currentUser, CreateExpenseTrackerRequest request) {
 		currentUser = userRepository.findById(currentUser.getId())
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
+
+		if (expenseTrackerRepository.existsByCreatedByOwnerIdAndNameIgnoreCase(currentUser.getId(), request.name())) {
+			throw new DuplicateExpenseTrackerNameException(
+					"Expense tracker with name '%s' already exists".formatted(request.name()));
+		}
 
 		Role ownerRole = roleRepository.findByName(EXPENSETRACKER_OWNER)
 				.orElseThrow(() -> new EntityNotFoundException("Role " + EXPENSETRACKER_OWNER + " not found"));
@@ -75,7 +78,6 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 	@Transactional(readOnly = true)
 	public ExpenseTrackerResponse expenseTrackerFindById(User currentUser, UUID id) {
 		ExpenseTracker tracker = getTrackerOrThrow(id);
-		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(id, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return expenseTrackerMapper.toResponse(tracker);
 	}
 
@@ -96,7 +98,6 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 	@Transactional
 	public ExpenseTrackerResponse expenseTrackerUpdate(User currentUser, UUID id, UpdateExpenseTrackerRequest request) {
 		ExpenseTracker tracker = getTrackerOrThrow(id);
-		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(id, currentUser, EXPENSETRACKER_OWNER);
 
 		expenseTrackerMapper.updateFromDto(request, tracker);
 		tracker = expenseTrackerRepository.save(tracker);
@@ -109,7 +110,6 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 	@Transactional
 	public void expenseTrackerDeactivate(User currentUser, UUID id) {
 		ExpenseTracker tracker = getTrackerOrThrow(id);
-		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(id, currentUser, EXPENSETRACKER_OWNER);
 
 		if (!tracker.isActive()) {
 			throw new OperationNotPermittedException("Expense tracker is already deactivated");

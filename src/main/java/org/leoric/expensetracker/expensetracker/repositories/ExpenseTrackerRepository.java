@@ -14,4 +14,6 @@ public interface ExpenseTrackerRepository extends JpaRepository<ExpenseTracker, 
 	Page<ExpenseTracker> findByUsersIdAndActiveTrue(UUID userId, Pageable pageable);
 
 	Page<ExpenseTracker> findByUsersIdAndActiveTrueAndNameContainingIgnoreCase(UUID userId, String name, Pageable pageable);
+
+	boolean existsByCreatedByOwnerIdAndNameIgnoreCase(UUID ownerId, String name);
 }
