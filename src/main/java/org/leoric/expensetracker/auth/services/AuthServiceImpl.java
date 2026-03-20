@@ -70,15 +70,4 @@ public class AuthServiceImpl implements AuthService {
 		String token = jwtService.generateToken(new HashMap<>(), user);
 		return new AuthenticationResponse(token);
 	}
-
-	public UserInfoResponse getCurrentUser(User user) {
-
-		return new UserInfoResponse(
-				user.getId(),
-				user.getEmail(),
-				user.getFirstName(),
-				user.getLastName(),
-				user.getRoles().stream().map(Role::getName).toList()
-		);
-	}
 }

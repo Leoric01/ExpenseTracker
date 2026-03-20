@@ -16,7 +16,7 @@ public class ExpenseTrackerApplication {
 	public final static String EXPENSETRACKER_OWNER = "EXPENSETRACKER_OWNER";
 	public final static String EXPENSETRACKER_MEMBER = "EXPENSETRACKER_MEMBER";
 
-	static void main(String[] args) {
+	public static void main(String[] args) {
 		SpringApplication.run(ExpenseTrackerApplication.class, args);
 	}
 }
