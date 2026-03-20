@@ -19,7 +19,6 @@ import org.hibernate.annotations.UuidGenerator;
 import org.leoric.expensetracker.budget.models.constants.PeriodType;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
-import org.leoric.expensetracker.recurring.models.constants.RecurrenceType;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -64,9 +63,6 @@ public class RecurringBudgetTemplate {
 	@Column(nullable = false)
 	private PeriodType periodType;
 
-	@Enumerated(EnumType.STRING)
-	@Column(nullable = false)
-	private RecurrenceType recurrenceType;
 
 	@Builder.Default
 	@Column(nullable = false)
