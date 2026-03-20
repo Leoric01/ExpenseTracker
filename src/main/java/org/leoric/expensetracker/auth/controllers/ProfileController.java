@@ -23,22 +23,22 @@ public class ProfileController {
 	private final UserService userService;
 
 	@GetMapping("/me")
-	public ResponseEntity<UserInfoResponse> me(@AuthenticationPrincipal User currentUser) {
-		return ResponseEntity.ok(userService.getCurrentUser(currentUser));
+	public ResponseEntity<UserInfoResponse> profileMe(@AuthenticationPrincipal User currentUser) {
+		return ResponseEntity.ok(userService.profileMe(currentUser));
 	}
 
 	@PatchMapping("/update")
-	public ResponseEntity<UserResponseFullDto> updateProfile(
+	public ResponseEntity<UserResponseFullDto> profileUpdate(
 			@AuthenticationPrincipal User currentUser,
 			@RequestBody UserProfileUpdateDto dto) {
-		return ResponseEntity.ok(userService.updateProfile(currentUser, dto));
+		return ResponseEntity.ok(userService.profileUpdate(currentUser, dto));
 	}
 
 	@PatchMapping("/change-password")
-	public ResponseEntity<Void> changePassword(
+	public ResponseEntity<Void> profileChangePassword(
 			@AuthenticationPrincipal User currentUser,
 			@RequestBody UserPasswordChangeDto dto) {
-		userService.changePassword(currentUser, dto);
+		userService.profileChangePassword(currentUser, dto);
 		return ResponseEntity.noContent().build();
 	}
 }

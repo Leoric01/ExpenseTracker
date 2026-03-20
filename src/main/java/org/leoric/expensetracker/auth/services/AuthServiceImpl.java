@@ -5,13 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.dto.AuthenticationRequest;
 import org.leoric.expensetracker.auth.dto.AuthenticationResponse;
 import org.leoric.expensetracker.auth.dto.RegistrationRequest;
-import org.leoric.expensetracker.auth.dto.UserInfoResponse;
 import org.leoric.expensetracker.auth.models.Role;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
 import org.leoric.expensetracker.auth.repositories.UserRepository;
 import org.leoric.expensetracker.auth.security.JwtService;
 import org.leoric.expensetracker.auth.services.interfaces.AuthService;
+import org.leoric.expensetracker.handler.exceptions.EmailAlreadyInUseException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -34,9 +34,9 @@ public class AuthServiceImpl implements AuthService {
 	private final JwtService jwtService;
 	private final AuthenticationManager authenticationManager;
 
-	public AuthenticationResponse register(RegistrationRequest request) {
+	public void authRegister(RegistrationRequest request) {
 		if (userRepository.existsByEmail(request.email())) {
-			throw new IllegalStateException("Email already in use");
+			throw new EmailAlreadyInUseException("Email already in use");
 		}
 
 		Role adminRole = roleRepository.findByName(ADMIN)
@@ -53,12 +53,9 @@ public class AuthServiceImpl implements AuthService {
 				.build();
 
 		userRepository.save(user);
-
-		String token = jwtService.generateToken(new HashMap<>(), user);
-		return new AuthenticationResponse(token);
 	}
 
-	public AuthenticationResponse authenticate(AuthenticationRequest request) {
+	public AuthenticationResponse authLogin(AuthenticationRequest request) {
 		Authentication authentication = authenticationManager.authenticate(
 				new UsernamePasswordAuthenticationToken(request.email(), request.password())
 		);

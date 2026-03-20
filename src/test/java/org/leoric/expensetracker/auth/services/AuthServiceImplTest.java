@@ -11,6 +11,7 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
 import org.leoric.expensetracker.auth.repositories.UserRepository;
 import org.leoric.expensetracker.auth.security.JwtService;
+import org.leoric.expensetracker.handler.exceptions.EmailAlreadyInUseException;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -53,21 +54,18 @@ class AuthServiceImplTest {
 	}
 
 	@Test
-	void register_shouldCreateUserAndReturnToken() {
+	void register_shouldCreateUser() {
 		var request = new RegistrationRequest("John", "Doe", "john@test.com", "password123");
 
 		when(userRepository.existsByEmail("john@test.com")).thenReturn(false);
 		when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
 		when(passwordEncoder.encode("password123")).thenReturn("encoded-password");
-		when(jwtService.generateToken(anyMap(), any(User.class))).thenReturn("jwt-token");
 
-		AuthenticationResponse response = authService.register(request);
-
-		assertThat(response).isNotNull();
-		assertThat(response.token()).isEqualTo("jwt-token");
+		authService.authRegister(request);
 
 		verify(userRepository).save(any(User.class));
 		verify(passwordEncoder).encode("password123");
+		verify(jwtService, never()).generateToken(anyMap(), any());
 	}
 
 	@Test
@@ -76,8 +74,8 @@ class AuthServiceImplTest {
 
 		when(userRepository.existsByEmail("existing@test.com")).thenReturn(true);
 
-		assertThatThrownBy(() -> authService.register(request))
-				.isInstanceOf(IllegalStateException.class)
+		assertThatThrownBy(() -> authService.authRegister(request))
+				.isInstanceOf(EmailAlreadyInUseException.class)
 				.hasMessage("Email already in use");
 
 		verify(userRepository, never()).save(any());
@@ -90,7 +88,7 @@ class AuthServiceImplTest {
 		when(userRepository.existsByEmail("john@test.com")).thenReturn(false);
 		when(roleRepository.findByName("ADMIN")).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> authService.register(request))
+		assertThatThrownBy(() -> authService.authRegister(request))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessage("Default role ADMIN not found");
 	}
@@ -109,7 +107,7 @@ class AuthServiceImplTest {
 		when(authenticationManager.authenticate(any())).thenReturn(authentication);
 		when(jwtService.generateToken(anyMap(), any(User.class))).thenReturn("jwt-token");
 
-		AuthenticationResponse response = authService.authenticate(request);
+		AuthenticationResponse response = authService.authLogin(request);
 
 		assertThat(response).isNotNull();
 		assertThat(response.token()).isEqualTo("jwt-token");
@@ -122,7 +120,7 @@ class AuthServiceImplTest {
 		when(authenticationManager.authenticate(any()))
 				.thenThrow(new BadCredentialsException("Bad credentials"));
 
-		assertThatThrownBy(() -> authService.authenticate(request))
+		assertThatThrownBy(() -> authService.authLogin(request))
 				.isInstanceOf(BadCredentialsException.class);
 	}
 }

@@ -28,7 +28,7 @@ public class UserServiceImpl implements UserService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public UserInfoResponse getCurrentUser(User currentUser) {
+    public UserInfoResponse profileMe(User currentUser) {
 		currentUser = userRepository.findById(currentUser.getId())
 				.orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -37,7 +37,7 @@ public class UserServiceImpl implements UserService {
 
 	@Override
 	@Transactional
-	public UserResponseFullDto updateProfile(User currentUser, UserProfileUpdateDto dto) {
+    public UserResponseFullDto profileUpdate(User currentUser, UserProfileUpdateDto dto) {
 		User user = userRepository.findById(currentUser.getId())
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
@@ -50,7 +50,7 @@ public class UserServiceImpl implements UserService {
 
 	@Override
 	@Transactional
-	public void changePassword(User currentUser, UserPasswordChangeDto dto) {
+    public void profileChangePassword(User currentUser, UserPasswordChangeDto dto) {
 		User user = userRepository.findById(currentUser.getId())
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 

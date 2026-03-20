@@ -24,7 +24,7 @@ class AuthControllerIntegrationTest {
 	// --- Register ---
 
 	@Test
-	void register_shouldReturn201WithToken() throws Exception {
+	void register_shouldReturn201WithNoBody() throws Exception {
 		mockMvc.perform(post("/auth/register")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
@@ -36,7 +36,7 @@ class AuthControllerIntegrationTest {
 								}
 								"""))
 				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.token", notNullValue()));
+				.andExpect(jsonPath("$").doesNotExist());
 	}
 
 	@Test
@@ -125,7 +125,7 @@ class AuthControllerIntegrationTest {
 									"password": "password456"
 								}
 								"""))
-				.andExpect(status().is5xxServerError());
+				.andExpect(status().isConflict());
 	}
 
 	// --- Login ---

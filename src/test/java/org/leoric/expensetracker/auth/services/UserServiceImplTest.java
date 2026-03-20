@@ -59,7 +59,7 @@ class UserServiceImplTest {
 				.build();
 	}
 
-	// --- getCurrentUser ---
+	// --- profileMe ---
 
 	@Test
 	void getCurrentUser_shouldReturnUserInfo() {
@@ -68,7 +68,7 @@ class UserServiceImplTest {
 		when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 		when(userMapper.userToUserInfoResponse(user)).thenReturn(expected);
 
-		UserInfoResponse result = userService.getCurrentUser(user);
+		UserInfoResponse result = userService.profileMe(user);
 
 		assertThat(result).isNotNull();
 		assertThat(result.email()).isEqualTo("john@test.com");
@@ -79,12 +79,12 @@ class UserServiceImplTest {
 	void getCurrentUser_shouldThrowWhenUserNotFound() {
 		when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> userService.getCurrentUser(user))
+		assertThatThrownBy(() -> userService.profileMe(user))
 				.isInstanceOf(RuntimeException.class)
 				.hasMessage("User not found");
 	}
 
-	// --- updateProfile ---
+	// --- profileUpdate ---
 
 	@Test
 	void updateProfile_shouldUpdateAndReturnFullDto() {
@@ -98,7 +98,7 @@ class UserServiceImplTest {
 		when(userRepository.save(any(User.class))).thenReturn(user);
 		when(userMapper.userToUserResponseFull(user)).thenReturn(expected);
 
-		UserResponseFullDto result = userService.updateProfile(user, dto);
+		UserResponseFullDto result = userService.profileUpdate(user, dto);
 
 		assertThat(result).isNotNull();
 		assertThat(result.firstName()).isEqualTo("Jane");
@@ -113,11 +113,11 @@ class UserServiceImplTest {
 
 		when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> userService.updateProfile(user, dto))
+		assertThatThrownBy(() -> userService.profileUpdate(user, dto))
 				.isInstanceOf(EntityNotFoundException.class);
 	}
 
-	// --- changePassword ---
+	// --- profileChangePassword ---
 
 	@Test
 	void changePassword_shouldChangePasswordSuccessfully() {
@@ -127,7 +127,7 @@ class UserServiceImplTest {
 		when(passwordEncoder.matches("encoded-password", "encoded-password")).thenReturn(true);
 		when(passwordEncoder.encode("newPassword1")).thenReturn("new-encoded");
 
-		userService.changePassword(user, dto);
+		userService.profileChangePassword(user, dto);
 
 		verify(userRepository).save(user);
 		assertThat(user.getPassword()).isEqualTo("new-encoded");
@@ -140,7 +140,7 @@ class UserServiceImplTest {
 		when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 		when(passwordEncoder.matches("wrong-password", "encoded-password")).thenReturn(false);
 
-		assertThatThrownBy(() -> userService.changePassword(user, dto))
+		assertThatThrownBy(() -> userService.profileChangePassword(user, dto))
 				.isInstanceOf(IncorrectCurrentPasswordException.class)
 				.hasMessage("Current password is incorrect");
 
@@ -154,7 +154,7 @@ class UserServiceImplTest {
 		when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 		when(passwordEncoder.matches("encoded-password", "encoded-password")).thenReturn(true);
 
-		assertThatThrownBy(() -> userService.changePassword(user, dto))
+		assertThatThrownBy(() -> userService.profileChangePassword(user, dto))
 				.isInstanceOf(NewPasswordDoesNotMatchException.class)
 				.hasMessage("New password and confirmation do not match");
 
@@ -167,7 +167,7 @@ class UserServiceImplTest {
 
 		when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> userService.changePassword(user, dto))
+		assertThatThrownBy(() -> userService.profileChangePassword(user, dto))
 				.isInstanceOf(EntityNotFoundException.class);
 	}
 }

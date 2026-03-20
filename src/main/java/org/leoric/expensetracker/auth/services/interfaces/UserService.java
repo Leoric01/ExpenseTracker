@@ -9,9 +9,9 @@ import org.springframework.stereotype.Service;
 
 @Service
 public interface UserService {
-	UserInfoResponse getCurrentUser(User currentUser);
+	UserInfoResponse profileMe(User currentUser);
 
-	UserResponseFullDto updateProfile(User currentUser, UserProfileUpdateDto dto);
+	UserResponseFullDto profileUpdate(User currentUser, UserProfileUpdateDto dto);
 
-	void changePassword(User currentUser, UserPasswordChangeDto dto);
+	void profileChangePassword(User currentUser, UserPasswordChangeDto dto);
 }
