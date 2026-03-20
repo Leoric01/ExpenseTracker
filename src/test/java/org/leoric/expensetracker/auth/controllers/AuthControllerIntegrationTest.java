@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -168,7 +169,9 @@ class AuthControllerIntegrationTest {
 									"password": "wrongpassword"
 								}
 								"""))
-				.andExpect(status().isUnauthorized());
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-1001")))
+				.andExpect(jsonPath("$.businessErrorDescription", notNullValue()));
 	}
 
 	@Test
@@ -195,7 +198,9 @@ class AuthControllerIntegrationTest {
 									"password": "wrongpassword"
 								}
 								"""))
-				.andExpect(status().isUnauthorized());
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-1001")))
+				.andExpect(jsonPath("$.businessErrorDescription", notNullValue()));
 	}
 
 	@Test

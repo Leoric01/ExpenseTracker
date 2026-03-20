@@ -37,9 +37,8 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(HttpMessageNotReadableException.class)
 	public ResponseEntity<ExceptionResponse> handleMessageNotReadableException(HttpMessageNotReadableException ex) {
-		ex.getMostSpecificCause();
-		String message = ex.getMostSpecificCause().getMessage();
-		return build(INVALID_JSON, message);
+		log.warn("[{}] {}", INVALID_JSON.getCode(), ex.getMostSpecificCause().getMessage(), ex);
+		return build(INVALID_JSON, ex.getMostSpecificCause().getMessage());
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
@@ -47,6 +46,8 @@ public class GlobalExceptionHandler {
 		Set<String> errors = new HashSet<>();
 		ex.getBindingResult().getAllErrors()
 				.forEach(error -> errors.add(error.getDefaultMessage()));
+
+		log.warn("[{}] Validation failed: {}", VALIDATION_FAILED.getCode(), errors, ex);
 
 		return ResponseEntity
 				.status(VALIDATION_FAILED.getHttpStatus())
@@ -60,101 +61,115 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(AccessDeniedException.class)
 	public ResponseEntity<ExceptionResponse> handleAccessDeniedException(AccessDeniedException ex) {
+		log.warn("[{}] {}", INSUFFICIENT_ROLE.getCode(), ex.getMessage(), ex);
 		return build(INSUFFICIENT_ROLE, ex.getMessage());
 	}
 
 	@ExceptionHandler(BadCredentialsException.class)
 	public ResponseEntity<ExceptionResponse> handleBadCredentialsException(BadCredentialsException ex) {
+		log.warn("[{}] {}", BAD_CREDENTIALS.getCode(), ex.getMessage(), ex);
 		return build(BAD_CREDENTIALS, ex.getMessage());
 	}
 
 	@ExceptionHandler(UsernameNotFoundException.class)
 	public ResponseEntity<ExceptionResponse> handleUsernameNotFoundException(UsernameNotFoundException ex) {
+		log.warn("[{}] {}", USERNAME_NOT_FOUND.getCode(), ex.getMessage(), ex);
 		return build(USERNAME_NOT_FOUND, ex.getMessage());
 	}
 
 	@ExceptionHandler(LockedException.class)
 	public ResponseEntity<ExceptionResponse> handleLockedException(LockedException ex) {
+		log.warn("[{}] {}", ACCOUNT_LOCKED.getCode(), ex.getMessage(), ex);
 		return build(ACCOUNT_LOCKED, ex.getMessage());
 	}
 
 	@ExceptionHandler(DisabledException.class)
 	public ResponseEntity<ExceptionResponse> handleDisabledException(DisabledException ex) {
+		log.warn("[{}] {}", ACCOUNT_DISABLED.getCode(), ex.getMessage(), ex);
 		return build(ACCOUNT_DISABLED, ex.getMessage());
 	}
 
 	@ExceptionHandler(AuthenticationException.class)
 	public ResponseEntity<ExceptionResponse> handleAuthenticationException(AuthenticationException ex) {
+		log.warn("[{}] {}", BAD_CREDENTIALS.getCode(), ex.getMessage(), ex);
 		return build(BAD_CREDENTIALS, ex.getMessage());
 	}
 
 	@ExceptionHandler(HttpRequestMethodNotSupportedException.class)
 	public ResponseEntity<ExceptionResponse> handleRequestMethodNotSupportedException(HttpRequestMethodNotSupportedException ex) {
+		log.warn("[{}] {}", HTTP_METHOD_NOT_ALLOWED.getCode(), ex.getMessage(), ex);
 		return build(HTTP_METHOD_NOT_ALLOWED, ex.getMessage());
 	}
 
 	@ExceptionHandler(NoHandlerFoundException.class)
 	public ResponseEntity<ExceptionResponse> handleNoHandlerFoundException(NoHandlerFoundException ex) {
+		log.warn("[{}] {}", ENDPOINT_NOT_FOUND.getCode(), ex.getMessage(), ex);
 		return build(ENDPOINT_NOT_FOUND, ex.getMessage());
 	}
 
 	@ExceptionHandler(NoResourceFoundException.class)
 	public ResponseEntity<ExceptionResponse> handleNoResourceFoundException(NoResourceFoundException ex) {
+		log.warn("[{}] {}", ENDPOINT_NOT_FOUND.getCode(), ex.getMessage(), ex);
 		return build(ENDPOINT_NOT_FOUND, ex.getMessage());
 	}
 
 	@ExceptionHandler(EntityNotFoundException.class)
 	public ResponseEntity<ExceptionResponse> handleEntityNotFoundException(EntityNotFoundException ex) {
+		log.warn("[{}] {}", ENTITY_NOT_FOUND.getCode(), ex.getMessage(), ex);
 		return build(ENTITY_NOT_FOUND, ex.getMessage());
 	}
 
 	@ExceptionHandler(IncorrectCurrentPasswordException.class)
 	public ResponseEntity<ExceptionResponse> handleIncorrectCurrentPasswordException(IncorrectCurrentPasswordException ex) {
-		log.warn("Incorrect current password: {}", ex.getMessage());
+		log.warn("[{}] {}", INCORRECT_CURRENT_PASSWORD.getCode(), ex.getMessage(), ex);
 		return build(INCORRECT_CURRENT_PASSWORD, ex.getMessage());
 	}
 
 	@ExceptionHandler(NewPasswordDoesNotMatchException.class)
 	public ResponseEntity<ExceptionResponse> handleNewPasswordDoesNotMatchException(NewPasswordDoesNotMatchException ex) {
-		log.warn("New password does not match: {}", ex.getMessage());
+		log.warn("[{}] {}", NEW_PASSWORD_DOES_NOT_MATCH.getCode(), ex.getMessage(), ex);
 		return build(NEW_PASSWORD_DOES_NOT_MATCH, ex.getMessage());
 	}
 
 	@ExceptionHandler(EmailAlreadyInUseException.class)
 	public ResponseEntity<ExceptionResponse> handleEmailAlreadyInUseException(EmailAlreadyInUseException ex) {
-		log.warn("Email already in use: {}", ex.getMessage());
+		log.warn("[{}] {}", EMAIL_ALREADY_IN_USE.getCode(), ex.getMessage(), ex);
 		return build(EMAIL_ALREADY_IN_USE, ex.getMessage());
 	}
 
 	@ExceptionHandler(NotAuthorizedForThisExpenseTrackerException.class)
 	public ResponseEntity<ExceptionResponse> handleNotAuthorizedForThisExpenseTrackerException(NotAuthorizedForThisExpenseTrackerException ex) {
+		log.warn("[{}] {}", NOT_AUTHORIZED_FOR_THIS_EXPENSE_TRACKER.getCode(), ex.getMessage(), ex);
 		return build(NOT_AUTHORIZED_FOR_THIS_EXPENSE_TRACKER, ex.getMessage());
 	}
 
 	@ExceptionHandler(DuplicateExpenseTrackerNameException.class)
 	public ResponseEntity<ExceptionResponse> handleDuplicateExpenseTrackerNameException(DuplicateExpenseTrackerNameException ex) {
+		log.warn("[{}] {}", DUPLICATE_EXPENSE_TRACKER_NAME.getCode(), ex.getMessage(), ex);
 		return build(DUPLICATE_EXPENSE_TRACKER_NAME, ex.getMessage());
 	}
 
 	@ExceptionHandler(OperationNotPermittedException.class)
 	public ResponseEntity<ExceptionResponse> handleOperationNotPermittedException(OperationNotPermittedException ex) {
+		log.warn("[{}] {}", OPERATION_NOT_PERMITTED.getCode(), ex.getMessage(), ex);
 		return build(OPERATION_NOT_PERMITTED, ex.getMessage());
 	}
 
 	@ExceptionHandler(InsufficientRoleException.class)
 	public ResponseEntity<ExceptionResponse> handleInsufficientRoleException(InsufficientRoleException ex) {
+		log.warn("[{}] {}", INSUFFICIENT_ROLE.getCode(), ex.getMessage(), ex);
 		return build(INSUFFICIENT_ROLE, ex.getMessage());
 	}
 
 	@ExceptionHandler({AsyncRequestNotUsableException.class, ClientAbortException.class})
 	public ResponseEntity<ExceptionResponse> handleClientDisconnect(Exception ex) {
-		log.debug("Client disconnected before response could be sent: {}", ex.getClass().getSimpleName());
+		log.debug("Client disconnected: {}", ex.getClass().getSimpleName());
 		return null;
 	}
 
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ExceptionResponse> handleGeneralException(Exception ex) {
-		log.warn("General Exception exception - error is operation not covered in BusinessErrorCodes", ex);
+		log.error("[{}] Unhandled exception", INTERNAL_ERROR.getCode(), ex);
 		return build(INTERNAL_ERROR, ex.getMessage());
 	}
 

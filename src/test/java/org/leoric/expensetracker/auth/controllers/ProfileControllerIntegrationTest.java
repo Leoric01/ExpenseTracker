@@ -77,14 +77,18 @@ class ProfileControllerIntegrationTest {
 	@Test
 	void me_shouldReturn401WhenNotAuthenticated() throws Exception {
 		mockMvc.perform(get("/profile/me"))
-				.andExpect(status().isUnauthorized());
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-1001")))
+				.andExpect(jsonPath("$.businessErrorDescription", notNullValue()));
 	}
 
 	@Test
 	void me_shouldReturn401WithInvalidToken() throws Exception {
 		mockMvc.perform(get("/profile/me")
 						.header("Authorization", "Bearer invalid.jwt.token"))
-				.andExpect(status().isUnauthorized());
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-1001")))
+				.andExpect(jsonPath("$.businessErrorDescription", notNullValue()));
 	}
 
 	// --- PATCH /profile/update ---
@@ -115,7 +119,9 @@ class ProfileControllerIntegrationTest {
 									"firstName": "Updated"
 								}
 								"""))
-				.andExpect(status().isUnauthorized());
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-1001")))
+				.andExpect(jsonPath("$.businessErrorDescription", notNullValue()));
 	}
 
 	@Test
@@ -212,7 +218,9 @@ class ProfileControllerIntegrationTest {
 									"newConfirmationPassword": "newSecurePassword1"
 								}
 								"""))
-				.andExpect(status().isUnauthorized());
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-1001")))
+				.andExpect(jsonPath("$.businessErrorDescription", notNullValue()));
 	}
 
 	@Test
@@ -239,6 +247,8 @@ class ProfileControllerIntegrationTest {
 									"password": "password123"
 								}
 								"""))
-				.andExpect(status().isUnauthorized());
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-1001")))
+				.andExpect(jsonPath("$.businessErrorDescription", notNullValue()));
 	}
 }
