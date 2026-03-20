@@ -15,4 +15,6 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 	List<Category> findByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId);
 
 	List<Category> findByExpenseTrackerIdAndParentIsNull(UUID expenseTrackerId);
+
+	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 }

@@ -13,4 +13,6 @@ public interface WalletRepository extends JpaRepository<Wallet, UUID> {
 	List<Wallet> findByExpenseTrackerId(UUID expenseTrackerId);
 
 	List<Wallet> findByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId);
+
+	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 }

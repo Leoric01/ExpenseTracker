@@ -10,4 +10,8 @@ import java.util.UUID;
 public interface UserExpenseTrackerRoleRepository extends JpaRepository<UserExpenseTrackerRole, Integer> {
 
 	boolean existsByUserIdAndExpenseTrackerIdAndRoleName(UUID userId, UUID expenseTrackerId, String roleName);
+
+	void deleteByExpenseTrackerId(UUID expenseTrackerId);
+
+	void deleteByUserId(UUID userId);
 }

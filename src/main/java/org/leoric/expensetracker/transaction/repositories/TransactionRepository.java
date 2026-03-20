@@ -27,4 +27,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
 	List<Transaction> findByExpenseTrackerIdAndTransactionTypeAndTransactionDateBetween(
 			UUID expenseTrackerId, TransactionType transactionType, LocalDate from, LocalDate to);
+
+	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 }

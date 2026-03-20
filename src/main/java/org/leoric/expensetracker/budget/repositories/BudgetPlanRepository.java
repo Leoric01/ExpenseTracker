@@ -13,4 +13,6 @@ public interface BudgetPlanRepository extends JpaRepository<BudgetPlan, UUID> {
 	List<BudgetPlan> findByExpenseTrackerId(UUID expenseTrackerId);
 
 	List<BudgetPlan> findByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId);
+
+	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 }

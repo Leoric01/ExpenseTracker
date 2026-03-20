@@ -7,12 +7,17 @@ import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
 import org.leoric.expensetracker.auth.dto.UserResponseFullDto;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.services.interfaces.UserService;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -27,6 +32,13 @@ public class ProfileController {
 		return ResponseEntity.ok(userService.profileMe(currentUser));
 	}
 
+	@GetMapping
+	public ResponseEntity<Page<UserResponseFullDto>> profileFindAllPageable(
+			@RequestParam(required = false) String search,
+			@ParameterObject Pageable pageable) {
+		return ResponseEntity.ok(userService.profileFindAllPageable(search, pageable));
+	}
+
 	@PatchMapping("/update")
 	public ResponseEntity<UserResponseFullDto> profileUpdate(
 			@AuthenticationPrincipal User currentUser,
@@ -39,6 +51,12 @@ public class ProfileController {
 			@AuthenticationPrincipal User currentUser,
 			@RequestBody UserPasswordChangeDto dto) {
 		userService.profileChangePassword(currentUser, dto);
+		return ResponseEntity.noContent().build();
+	}
+
+	@DeleteMapping("/me")
+	public ResponseEntity<Void> profileDeleteMe(@AuthenticationPrincipal User currentUser) {
+		userService.profileDeleteMe(currentUser);
 		return ResponseEntity.noContent().build();
 	}
 }

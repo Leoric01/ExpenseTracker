@@ -10,9 +10,19 @@ import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
 import org.leoric.expensetracker.auth.dto.UserResponseFullDto;
 import org.leoric.expensetracker.auth.mapstruct.UserMapper;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.auth.repositories.OneTimePasswordTokenRepository;
+import org.leoric.expensetracker.auth.repositories.UserExpenseTrackerRoleRepository;
 import org.leoric.expensetracker.auth.repositories.UserRepository;
+import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
+import org.leoric.expensetracker.category.repositories.CategoryRepository;
+import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerAccessRequestRepository;
+import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.IncorrectCurrentPasswordException;
 import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchException;
+import org.leoric.expensetracker.recurring.repositories.RecurringBudgetTemplateRepository;
+import org.leoric.expensetracker.recurring.repositories.RecurringTransactionTemplateRepository;
+import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
+import org.leoric.expensetracker.wallet.repositories.WalletRepository;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,6 +47,26 @@ class UserServiceImplTest {
 	private UserRepository userRepository;
 	@Mock
 	private PasswordEncoder passwordEncoder;
+	@Mock
+	private ExpenseTrackerRepository expenseTrackerRepository;
+	@Mock
+	private ExpenseTrackerAccessRequestRepository accessRequestRepository;
+	@Mock
+	private UserExpenseTrackerRoleRepository userExpenseTrackerRoleRepository;
+	@Mock
+	private OneTimePasswordTokenRepository otpTokenRepository;
+	@Mock
+	private TransactionRepository transactionRepository;
+	@Mock
+	private WalletRepository walletRepository;
+	@Mock
+	private CategoryRepository categoryRepository;
+	@Mock
+	private BudgetPlanRepository budgetPlanRepository;
+	@Mock
+	private RecurringBudgetTemplateRepository recurringBudgetTemplateRepository;
+	@Mock
+	private RecurringTransactionTemplateRepository recurringTransactionTemplateRepository;
 
 	@InjectMocks
 	private UserServiceImpl userService;

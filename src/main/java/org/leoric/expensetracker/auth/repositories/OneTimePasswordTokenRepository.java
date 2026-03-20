@@ -9,4 +9,5 @@ import java.util.UUID;
 @Repository
 public interface OneTimePasswordTokenRepository extends JpaRepository<OneTimePasswordToken, UUID> {
 
+	void deleteByUserId(UUID userId);
 }

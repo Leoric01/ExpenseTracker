@@ -5,6 +5,7 @@ import org.leoric.expensetracker.expensetracker.models.constants.ExpenseTrackerA
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -32,4 +33,16 @@ public interface ExpenseTrackerAccessRequestRepository extends JpaRepository<Exp
 
 	boolean existsByUserIdAndExpenseTrackerIdAndExpenseTrackerAccessRequestStatus(
 			UUID userId, UUID expenseTrackerId, ExpenseTrackerAccessRequestStatus status);
+
+	void deleteByExpenseTrackerId(UUID expenseTrackerId);
+
+	void deleteByUserId(UUID userId);
+
+	@Modifying
+	@Query("UPDATE ExpenseTrackerAccessRequest r SET r.approvedBy = NULL WHERE r.approvedBy.id = :userId")
+	void nullifyApprovedByUserId(@Param("userId") UUID userId);
+
+	@Modifying
+	@Query("UPDATE ExpenseTrackerAccessRequest r SET r.invitedBy = NULL WHERE r.invitedBy.id = :userId")
+	void nullifyInvitedByUserId(@Param("userId") UUID userId);
 }

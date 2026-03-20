@@ -16,4 +16,6 @@ public interface RecurringTransactionTemplateRepository extends JpaRepository<Re
 	List<RecurringTransactionTemplate> findByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId);
 
 	List<RecurringTransactionTemplate> findByActiveTrueAndNextRunDateLessThanEqual(LocalDate date);
+
+	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 }
