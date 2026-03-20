@@ -1,0 +1,36 @@
+### Get my profile
+GET {{host}}/profile/me
+Authorization: Bearer {{auth_token}}
+
+### Find all users (pageable, optional search)
+GET {{host}}/profile?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find all users with search
+GET {{host}}/profile?search=john&page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Update my profile
+PATCH {{host}}/profile/update
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "firstName": "Johnny",
+  "lastName": "Updated"
+}
+
+### Change password
+PATCH {{host}}/profile/change-password
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "oldPassword": "{{password}}",
+  "newPassword": "newPassword123",
+  "newConfirmationPassword": "newPassword123"
+}
+
+### Delete my account (CAREFUL – permanently deletes user + all owned data)
+DELETE {{host}}/profile/me
+Authorization: Bearer {{auth_token}}

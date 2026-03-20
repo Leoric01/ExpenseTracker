@@ -1,0 +1,78 @@
+### ============================
+### REQUEST FLOW (User 2 requests access, User 1 approves/rejects)
+### ============================
+
+### User 2: Create access request to tracker owned by User 1
+POST {{host}}/api/expense-trackers/{{tracker_id}}/access-requests
+Authorization: Bearer {{auth_token_2}}
+
+> {%
+    client.assert(response.status === 201, "Create request failed");
+    client.global.set("access_request_id", response.body.id);
+%}
+
+### User 1 (owner): List all access requests for tracker
+# Requires: OWNER role
+GET {{host}}/api/expense-trackers/{{tracker_id}}/access-requests?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### User 1 (owner): List with search by email
+GET {{host}}/api/expense-trackers/{{tracker_id}}/access-requests?search=jane&page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### User 1 (owner): Approve access request
+# Requires: OWNER role
+PATCH {{host}}/api/expense-trackers/access-requests/{{access_request_id}}/approve
+Authorization: Bearer {{auth_token}}
+
+### User 1 (owner): Reject access request
+# Requires: OWNER role
+PATCH {{host}}/api/expense-trackers/access-requests/{{access_request_id}}/reject
+Authorization: Bearer {{auth_token}}
+
+### User 2: Cancel own access request
+PATCH {{host}}/api/expense-trackers/access-requests/{{access_request_id}}/cancel
+Authorization: Bearer {{auth_token_2}}
+
+### ============================
+### INVITE FLOW (User 1 invites User 2, User 2 accepts/rejects)
+### ============================
+
+### User 1 (owner): Invite User 2 to tracker
+# Requires: OWNER role
+POST {{host}}/api/expense-trackers/{{tracker_id}}/access-requests/invite
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "email": "{{email2}}"
+}
+
+> {%
+    client.assert(response.status === 201, "Invite failed");
+    client.global.set("invite_id", response.body.id);
+%}
+
+### User 2: Accept invite
+PATCH {{host}}/api/expense-trackers/access-requests/{{invite_id}}/accept
+Authorization: Bearer {{auth_token_2}}
+
+### User 2: Reject invite
+PATCH {{host}}/api/expense-trackers/access-requests/{{invite_id}}/reject
+Authorization: Bearer {{auth_token_2}}
+
+### User 1 (owner): Cancel own invite
+PATCH {{host}}/api/expense-trackers/access-requests/{{invite_id}}/cancel
+Authorization: Bearer {{auth_token}}
+
+### ============================
+### MY REQUESTS
+### ============================
+
+### User 2: List all my access requests / invites
+GET {{host}}/api/expense-trackers/access-requests/mine?page=0&size=10
+Authorization: Bearer {{auth_token_2}}
+
+### User 2: Search my requests by tracker name
+GET {{host}}/api/expense-trackers/access-requests/mine?search=Personal&page=0&size=10
+Authorization: Bearer {{auth_token_2}}

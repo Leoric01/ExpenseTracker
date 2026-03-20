@@ -28,6 +28,17 @@ public interface UserMapper {
 	@Mapping(source = "roles", target = "roles", qualifiedByName = "mapRolesToNames")
 	UserResponseFullDto userToUserResponseFull(User user);
 
+	@Mapping(target = "userExpenseTrackerRoles", ignore = true)
+	@Mapping(target = "roles", ignore = true)
+	@Mapping(target = "password", ignore = true)
+	@Mapping(target = "navbarFavourites", ignore = true)
+	@Mapping(target = "lastModifiedDate", ignore = true)
+	@Mapping(target = "id", ignore = true)
+	@Mapping(target = "expenseTrackers", ignore = true)
+	@Mapping(target = "enabled", ignore = true)
+	@Mapping(target = "email", ignore = true)
+	@Mapping(target = "createdDate", ignore = true)
+	@Mapping(target = "accountLocked", ignore = true)
 	@BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE,
 			unmappedTargetPolicy = org.mapstruct.ReportingPolicy.IGNORE)
 	void updateUserFromDto(UserProfileUpdateDto dto, @MappingTarget User user);

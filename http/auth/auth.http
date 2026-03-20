@@ -1,0 +1,49 @@
+### Register User 1
+POST {{host}}/auth/register
+Content-Type: application/json
+
+{
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+### Register User 2 (for invite/access-request tests)
+POST {{host}}/auth/register
+Content-Type: application/json
+
+{
+  "firstName": "Jane",
+  "lastName": "Smith",
+  "email": "{{email2}}",
+  "password": "{{password2}}"
+}
+
+### Login User 1 → saves JWT to $auth_token
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+> {%
+    client.assert(response.status === 200, "Login failed");
+    client.global.set("auth_token", response.body.token);
+%}
+
+### Login User 2 → saves JWT to $auth_token_2
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email2}}",
+  "password": "{{password2}}"
+}
+
+> {%
+    client.assert(response.status === 200, "Login failed");
+    client.global.set("auth_token_2", response.body.token);
+%}

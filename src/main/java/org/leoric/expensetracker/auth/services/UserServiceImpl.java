@@ -64,10 +64,17 @@ public class UserServiceImpl implements UserService {
 	@Override
 	@Transactional
     public UserResponseFullDto profileUpdate(User currentUser, UserProfileUpdateDto dto) {
+		log.debug("profileUpdate called for user {} with dto: firstName='{}', lastName='{}'",
+				currentUser.getId(), dto.firstName(), dto.lastName());
+
 		User user = userRepository.findById(currentUser.getId())
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
+		log.debug("User before update: firstName='{}', lastName='{}'", user.getFirstName(), user.getLastName());
+
 		userMapper.updateUserFromDto(dto, user);
+
+		log.debug("User after mapper: firstName='{}', lastName='{}'", user.getFirstName(), user.getLastName());
 
 		userRepository.save(user);
 

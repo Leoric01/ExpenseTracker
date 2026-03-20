@@ -1,0 +1,60 @@
+### Create Expense Tracker
+POST {{host}}/api/expense-trackers
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Personal Finances",
+  "description": "My personal expense tracker",
+  "defaultCurrencyCode": "CZK"
+}
+
+> {%
+    client.assert(response.status === 201, "Create failed");
+    client.global.set("tracker_id", response.body.id);
+%}
+
+### Create second Expense Tracker
+POST {{host}}/api/expense-trackers
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Shared Household",
+  "description": "Shared expenses",
+  "defaultCurrencyCode": "EUR"
+}
+
+> {%
+    client.assert(response.status === 201, "Create failed");
+    client.global.set("tracker_id_2", response.body.id);
+%}
+
+### Find all my Expense Trackers (pageable)
+GET {{host}}/api/expense-trackers?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find all with search
+GET {{host}}/api/expense-trackers?search=Personal&page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find Expense Tracker by ID
+# Requires: OWNER or MEMBER role
+GET {{host}}/api/expense-trackers/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+
+### Update Expense Tracker
+# Requires: OWNER role
+PATCH {{host}}/api/expense-trackers/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Personal Finances Updated",
+  "description": "Updated description"
+}
+
+### Deactivate (soft-delete) Expense Tracker
+# Requires: OWNER role
+DELETE {{host}}/api/expense-trackers/{{tracker_id_2}}
+Authorization: Bearer {{auth_token}}
