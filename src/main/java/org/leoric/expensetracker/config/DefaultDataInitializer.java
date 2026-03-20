@@ -41,8 +41,8 @@ public class DefaultDataInitializer {
         List.of(
                 ExpenseTrackerApplication.ADMIN,
                 ExpenseTrackerApplication.USER,
-                ExpenseTrackerApplication.EXPENSE_TRACKER_OWNER,
-                ExpenseTrackerApplication.EXPENSE_TRACKER_MEMBER
+                ExpenseTrackerApplication.EXPENSETRACKER_OWNER,
+                ExpenseTrackerApplication.EXPENSETRACKER_MEMBER
         ).forEach(this::ensureRole);
     }
 
