@@ -3,9 +3,10 @@ package org.leoric.expensetracker.expensetracker.controllers;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
-import org.leoric.expensetracker.expensetracker.dto.CreateExpenseTrackerRequest;
-import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerResponse;
-import org.leoric.expensetracker.expensetracker.dto.UpdateExpenseTrackerRequest;
+import org.leoric.expensetracker.expensetracker.dto.CreateExpenseTrackerRequestDto;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerMineResponseDto;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerResponseDto;
+import org.leoric.expensetracker.expensetracker.dto.UpdateExpenseTrackerRequestDto;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerService;
 import org.springdoc.core.annotations.ParameterObject;
@@ -38,23 +39,31 @@ public class ExpenseTrackerController {
 	private final ExpenseTrackerAccessService expenseTrackerAccessService;
 
 	@PostMapping
-	public ResponseEntity<ExpenseTrackerResponse> expenseTrackerCreate(
+	public ResponseEntity<ExpenseTrackerResponseDto> expenseTrackerCreate(
 			@AuthenticationPrincipal User currentUser,
-			@Valid @RequestBody CreateExpenseTrackerRequest request) {
+			@Valid @RequestBody CreateExpenseTrackerRequestDto request) {
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(expenseTrackerService.expenseTrackerCreate(currentUser, request));
 	}
 
 	@GetMapping
-	public ResponseEntity<Page<ExpenseTrackerResponse>> expenseTrackerFindAll(
+	public ResponseEntity<Page<ExpenseTrackerResponseDto>> expenseTrackerFindAll(
 			@AuthenticationPrincipal User currentUser,
 			@RequestParam(required = false) String search,
 			@ParameterObject Pageable pageable) {
 		return ResponseEntity.ok(expenseTrackerService.expenseTrackerFindAll(currentUser, search, pageable));
 	}
 
+	@GetMapping("/mine")
+	public ResponseEntity<Page<ExpenseTrackerMineResponseDto>> expenseTrackerFindAllMine(
+			@AuthenticationPrincipal User currentUser,
+			@RequestParam(required = false) String search,
+			@ParameterObject Pageable pageable) {
+		return ResponseEntity.ok(expenseTrackerService.expenseTrackerFindAllMine(currentUser, search, pageable));
+	}
+
 	@GetMapping("/{id}")
-	public ResponseEntity<ExpenseTrackerResponse> expenseTrackerFindById(
+	public ResponseEntity<ExpenseTrackerResponseDto> expenseTrackerFindById(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID id) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(id, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
@@ -62,10 +71,10 @@ public class ExpenseTrackerController {
 	}
 
 	@PatchMapping("/{id}")
-	public ResponseEntity<ExpenseTrackerResponse> expenseTrackerUpdate(
+	public ResponseEntity<ExpenseTrackerResponseDto> expenseTrackerUpdate(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID id,
-			@Valid @RequestBody UpdateExpenseTrackerRequest request) {
+			@Valid @RequestBody UpdateExpenseTrackerRequestDto request) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(id, currentUser, EXPENSETRACKER_OWNER);
 		return ResponseEntity.ok(expenseTrackerService.expenseTrackerUpdate(currentUser, id, request));
 	}

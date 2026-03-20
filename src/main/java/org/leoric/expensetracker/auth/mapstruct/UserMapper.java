@@ -1,6 +1,6 @@
 package org.leoric.expensetracker.auth.mapstruct;
 
-import org.leoric.expensetracker.auth.dto.UserInfoResponse;
+import org.leoric.expensetracker.auth.dto.UserInfoResponseDto;
 import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
 import org.leoric.expensetracker.auth.dto.UserResponseFullDto;
 import org.leoric.expensetracker.auth.models.Role;
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 public interface UserMapper {
 
 	@Mapping(source = "roles", target = "roles", qualifiedByName = "mapRolesToNames")
-	UserInfoResponse userToUserInfoResponse(User user);
+	UserInfoResponseDto userToUserInfoResponseDto(User user);
 
 	@Mapping(source = "roles", target = "roles", qualifiedByName = "mapRolesToNames")
 	UserResponseFullDto userToUserResponseFull(User user);

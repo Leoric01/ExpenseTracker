@@ -1,7 +1,7 @@
 package org.leoric.expensetracker.expensetracker.mapstruct;
 
 import org.leoric.expensetracker.auth.models.User;
-import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponse;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponseDto;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTrackerAccessRequest;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -23,7 +23,7 @@ public interface ExpenseTrackerAccessRequestMapper {
 	@Mapping(source = "expenseTrackerAccessRequestType", target = "type")
 	@Mapping(source = "approvedBy", target = "approvedByFullName", qualifiedByName = "userToFullName")
 	@Mapping(source = "invitedBy", target = "invitedByFullName", qualifiedByName = "userToFullName")
-	ExpenseTrackerAccessRequestResponse toResponse(ExpenseTrackerAccessRequest entity);
+	ExpenseTrackerAccessRequestResponseDto toResponse(ExpenseTrackerAccessRequest entity);
 
 	@Named("userToFullName")
 	static String userToFullName(User user) {

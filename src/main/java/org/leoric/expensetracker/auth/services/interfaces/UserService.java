@@ -1,6 +1,6 @@
 package org.leoric.expensetracker.auth.services.interfaces;
 
-import org.leoric.expensetracker.auth.dto.UserInfoResponse;
+import org.leoric.expensetracker.auth.dto.UserInfoResponseDto;
 import org.leoric.expensetracker.auth.dto.UserPasswordChangeDto;
 import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
 import org.leoric.expensetracker.auth.dto.UserResponseFullDto;
@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public interface UserService {
-	UserInfoResponse profileMe(User currentUser);
+	UserInfoResponseDto profileMe(User currentUser);
 
 	UserResponseFullDto profileUpdate(User currentUser, UserProfileUpdateDto dto);
 

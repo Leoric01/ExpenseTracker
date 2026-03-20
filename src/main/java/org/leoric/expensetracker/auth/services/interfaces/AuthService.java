@@ -1,13 +1,13 @@
 package org.leoric.expensetracker.auth.services.interfaces;
 
-import org.leoric.expensetracker.auth.dto.AuthenticationRequest;
-import org.leoric.expensetracker.auth.dto.AuthenticationResponse;
-import org.leoric.expensetracker.auth.dto.RegistrationRequest;
+import org.leoric.expensetracker.auth.dto.AuthenticationRequestDto;
+import org.leoric.expensetracker.auth.dto.AuthenticationResponseDto;
+import org.leoric.expensetracker.auth.dto.RegistrationRequestDto;
 import org.springframework.stereotype.Service;
 
 @Service
 public interface AuthService {
-	void authRegister(RegistrationRequest request);
+	void authRegister(RegistrationRequestDto request);
 
-	AuthenticationResponse authLogin(AuthenticationRequest request);
+	AuthenticationResponseDto authLogin(AuthenticationRequestDto request);
 }

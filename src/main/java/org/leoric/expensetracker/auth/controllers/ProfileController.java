@@ -1,7 +1,7 @@
 package org.leoric.expensetracker.auth.controllers;
 
 import lombok.RequiredArgsConstructor;
-import org.leoric.expensetracker.auth.dto.UserInfoResponse;
+import org.leoric.expensetracker.auth.dto.UserInfoResponseDto;
 import org.leoric.expensetracker.auth.dto.UserPasswordChangeDto;
 import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
 import org.leoric.expensetracker.auth.dto.UserResponseFullDto;
@@ -28,7 +28,7 @@ public class ProfileController {
 	private final UserService userService;
 
 	@GetMapping("/me")
-	public ResponseEntity<UserInfoResponse> profileMe(@AuthenticationPrincipal User currentUser) {
+	public ResponseEntity<UserInfoResponseDto> profileMe(@AuthenticationPrincipal User currentUser) {
 		return ResponseEntity.ok(userService.profileMe(currentUser));
 	}
 

@@ -6,7 +6,7 @@ import org.leoric.expensetracker.expensetracker.models.constants.ExpenseTrackerA
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-public record ExpenseTrackerAccessRequestResponse(
+public record ExpenseTrackerAccessRequestResponseDto(
 		UUID id,
 		UUID expenseTrackerId,
 		String expenseTrackerName,

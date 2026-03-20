@@ -3,7 +3,7 @@ package org.leoric.expensetracker.auth.services;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.leoric.expensetracker.auth.dto.UserInfoResponse;
+import org.leoric.expensetracker.auth.dto.UserInfoResponseDto;
 import org.leoric.expensetracker.auth.dto.UserPasswordChangeDto;
 import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
 import org.leoric.expensetracker.auth.dto.UserResponseFullDto;
@@ -54,11 +54,11 @@ public class UserServiceImpl implements UserService {
 
 	@Override
 	@Transactional(readOnly = true)
-    public UserInfoResponse profileMe(User currentUser) {
+    public UserInfoResponseDto profileMe(User currentUser) {
 		currentUser = userRepository.findById(currentUser.getId())
 				.orElseThrow(() -> new RuntimeException("User not found"));
 
-		return userMapper.userToUserInfoResponse(currentUser);
+		return userMapper.userToUserInfoResponseDto(currentUser);
 	}
 
 	@Override

@@ -4,6 +4,6 @@ import org.leoric.expensetracker.expensetracker.models.constants.ExpenseTrackerA
 
 import java.util.UUID;
 
-public record ExpenseTrackerAccessRequestAuthorizationInfo(UUID expenseTrackerId,
+public record ExpenseTrackerAccessRequestAuthorizationInfoDto(UUID expenseTrackerId,
                                                            ExpenseTrackerAccessRequestType expenseTrackerAccessRequestType) {
 }

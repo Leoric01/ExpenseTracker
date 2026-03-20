@@ -8,8 +8,8 @@ import org.leoric.expensetracker.auth.models.Role;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
 import org.leoric.expensetracker.auth.repositories.UserRepository;
-import org.leoric.expensetracker.expensetracker.dto.CreateExpenseTrackerRequest;
-import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerResponse;
+import org.leoric.expensetracker.expensetracker.dto.CreateExpenseTrackerRequestDto;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerResponseDto;
 import org.leoric.expensetracker.expensetracker.mapstruct.ExpenseTrackerMapper;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
@@ -68,8 +68,8 @@ class ExpenseTrackerServiceImplTest {
 
 	@Test
 	void create_shouldCreateExpenseTrackerSuccessfully() {
-		var request = new CreateExpenseTrackerRequest("Personal", "My tracker", "CZK");
-		var response = new ExpenseTrackerResponse(
+		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", "CZK");
+		var response = new ExpenseTrackerResponseDto(
 				UUID.randomUUID(), "Personal", "My tracker", "CZK",
 				true, "John Doe", OffsetDateTime.now(), OffsetDateTime.now()
 		);
@@ -80,7 +80,7 @@ class ExpenseTrackerServiceImplTest {
 		when(expenseTrackerRepository.save(any(ExpenseTracker.class))).thenAnswer(inv -> inv.getArgument(0));
 		when(expenseTrackerMapper.toResponse(any(ExpenseTracker.class))).thenReturn(response);
 
-		ExpenseTrackerResponse result = expenseTrackerService.expenseTrackerCreate(user, request);
+		ExpenseTrackerResponseDto result = expenseTrackerService.expenseTrackerCreate(user, request);
 
 		assertThat(result).isNotNull();
 		assertThat(result.name()).isEqualTo("Personal");
@@ -89,7 +89,7 @@ class ExpenseTrackerServiceImplTest {
 
 	@Test
 	void create_shouldThrowWhenNameAlreadyExistsForUser() {
-		var request = new CreateExpenseTrackerRequest("Personal", "My tracker", "CZK");
+		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", "CZK");
 
 		when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 		when(expenseTrackerRepository.existsByCreatedByOwnerIdAndNameIgnoreCase(userId, "Personal")).thenReturn(true);
@@ -103,7 +103,7 @@ class ExpenseTrackerServiceImplTest {
 
 	@Test
 	void create_shouldThrowWhenUserNotFound() {
-		var request = new CreateExpenseTrackerRequest("Personal", "My tracker", "CZK");
+		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", "CZK");
 
 		when(userRepository.findById(userId)).thenReturn(Optional.empty());
 

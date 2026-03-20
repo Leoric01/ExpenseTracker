@@ -8,9 +8,10 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.models.UserExpenseTrackerRole;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
 import org.leoric.expensetracker.auth.repositories.UserRepository;
-import org.leoric.expensetracker.expensetracker.dto.CreateExpenseTrackerRequest;
-import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerResponse;
-import org.leoric.expensetracker.expensetracker.dto.UpdateExpenseTrackerRequest;
+import org.leoric.expensetracker.expensetracker.dto.CreateExpenseTrackerRequestDto;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerMineResponseDto;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerResponseDto;
+import org.leoric.expensetracker.expensetracker.dto.UpdateExpenseTrackerRequestDto;
 import org.leoric.expensetracker.expensetracker.mapstruct.ExpenseTrackerMapper;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
@@ -38,7 +39,7 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 
 	@Override
 	@Transactional
-	public ExpenseTrackerResponse expenseTrackerCreate(User currentUser, CreateExpenseTrackerRequest request) {
+	public ExpenseTrackerResponseDto expenseTrackerCreate(User currentUser, CreateExpenseTrackerRequestDto request) {
 		currentUser = userRepository.findById(currentUser.getId())
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
@@ -76,14 +77,14 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public ExpenseTrackerResponse expenseTrackerFindById(User currentUser, UUID id) {
+	public ExpenseTrackerResponseDto expenseTrackerFindById(User currentUser, UUID id) {
 		ExpenseTracker tracker = getTrackerOrThrow(id);
 		return expenseTrackerMapper.toResponse(tracker);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
-	public Page<ExpenseTrackerResponse> expenseTrackerFindAll(User currentUser, String search, Pageable pageable) {
+	public Page<ExpenseTrackerResponseDto> expenseTrackerFindAll(User currentUser, String search, Pageable pageable) {
 		if (search != null && !search.isBlank()) {
 			return expenseTrackerRepository
 					.findByUsersIdAndActiveTrueAndNameContainingIgnoreCase(currentUser.getId(), search, pageable)
@@ -95,8 +96,29 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 	}
 
 	@Override
+	@Transactional(readOnly = true)
+	public Page<ExpenseTrackerMineResponseDto> expenseTrackerFindAllMine(User currentUser, String search, Pageable pageable) {
+		Page<ExpenseTracker> page;
+		if (search != null && !search.isBlank()) {
+			page = expenseTrackerRepository
+					.findByUsersIdAndActiveTrueAndNameContainingIgnoreCase(currentUser.getId(), search, pageable);
+		} else {
+			page = expenseTrackerRepository
+					.findByUsersIdAndActiveTrue(currentUser.getId(), pageable);
+		}
+		return page.map(tracker -> {
+			String role = tracker.getUserExpenseTrackerRoles().stream()
+					.filter(r -> r.getUser().getId().equals(currentUser.getId()))
+					.map(r -> r.getRole().getName())
+					.findFirst()
+					.orElse(null);
+			return expenseTrackerMapper.toMineResponse(tracker, role);
+		});
+	}
+
+	@Override
 	@Transactional
-	public ExpenseTrackerResponse expenseTrackerUpdate(User currentUser, UUID id, UpdateExpenseTrackerRequest request) {
+	public ExpenseTrackerResponseDto expenseTrackerUpdate(User currentUser, UUID id, UpdateExpenseTrackerRequestDto request) {
 		ExpenseTracker tracker = getTrackerOrThrow(id);
 
 		expenseTrackerMapper.updateFromDto(request, tracker);

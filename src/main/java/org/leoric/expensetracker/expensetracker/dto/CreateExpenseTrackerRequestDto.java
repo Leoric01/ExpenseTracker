@@ -1,16 +1,16 @@
 package org.leoric.expensetracker.expensetracker.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
+import org.leoric.expensetracker.validation.ValidCurrencyCode;
 
-public record CreateExpenseTrackerRequest(
+public record CreateExpenseTrackerRequestDto(
 		@NotBlank(message = "Name is required")
 		String name,
 
 		String description,
 
 		@NotBlank(message = "Default currency code is required")
-		@Size(min = 3, max = 3, message = "Currency code must be exactly 3 characters")
+		@ValidCurrencyCode
 		String defaultCurrencyCode
 ) {
 }

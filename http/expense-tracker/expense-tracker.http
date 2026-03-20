@@ -38,6 +38,14 @@ Authorization: Bearer {{auth_token}}
 GET {{host}}/api/expense-trackers?search=Personal&page=0&size=10
 Authorization: Bearer {{auth_token}}
 
+### Find all mine (with role in response)
+GET {{host}}/api/expense-trackers/mine?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find all mine with search
+GET {{host}}/api/expense-trackers/mine?search=Personal&page=0&size=10
+Authorization: Bearer {{auth_token}}
+
 ### Find Expense Tracker by ID
 # Requires: OWNER or MEMBER role
 GET {{host}}/api/expense-trackers/{{tracker_id}}

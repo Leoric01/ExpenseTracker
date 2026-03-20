@@ -4,7 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.leoric.expensetracker.auth.dto.UserInfoResponse;
+import org.leoric.expensetracker.auth.dto.UserInfoResponseDto;
 import org.leoric.expensetracker.auth.dto.UserPasswordChangeDto;
 import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
 import org.leoric.expensetracker.auth.dto.UserResponseFullDto;
@@ -93,12 +93,12 @@ class UserServiceImplTest {
 
 	@Test
 	void getCurrentUser_shouldReturnUserInfo() {
-		var expected = new UserInfoResponse(userId, "john@test.com", "John", "Doe", List.of());
+		var expected = new UserInfoResponseDto(userId, "john@test.com", "John", "Doe", List.of());
 
 		when(userRepository.findById(userId)).thenReturn(Optional.of(user));
-		when(userMapper.userToUserInfoResponse(user)).thenReturn(expected);
+		when(userMapper.userToUserInfoResponseDto(user)).thenReturn(expected);
 
-		UserInfoResponse result = userService.profileMe(user);
+		UserInfoResponseDto result = userService.profileMe(user);
 
 		assertThat(result).isNotNull();
 		assertThat(result.email()).isEqualTo("john@test.com");

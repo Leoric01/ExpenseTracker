@@ -2,9 +2,9 @@ package org.leoric.expensetracker.auth.services;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.leoric.expensetracker.auth.dto.AuthenticationRequest;
-import org.leoric.expensetracker.auth.dto.AuthenticationResponse;
-import org.leoric.expensetracker.auth.dto.RegistrationRequest;
+import org.leoric.expensetracker.auth.dto.AuthenticationRequestDto;
+import org.leoric.expensetracker.auth.dto.AuthenticationResponseDto;
+import org.leoric.expensetracker.auth.dto.RegistrationRequestDto;
 import org.leoric.expensetracker.auth.models.Role;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
@@ -34,7 +34,7 @@ public class AuthServiceImpl implements AuthService {
 	private final JwtService jwtService;
 	private final AuthenticationManager authenticationManager;
 
-	public void authRegister(RegistrationRequest request) {
+	public void authRegister(RegistrationRequestDto request) {
 		if (userRepository.existsByEmail(request.email())) {
 			throw new EmailAlreadyInUseException("Email already in use");
 		}
@@ -55,7 +55,7 @@ public class AuthServiceImpl implements AuthService {
 		userRepository.save(user);
 	}
 
-	public AuthenticationResponse authLogin(AuthenticationRequest request) {
+	public AuthenticationResponseDto authLogin(AuthenticationRequestDto request) {
 		Authentication authentication = authenticationManager.authenticate(
 				new UsernamePasswordAuthenticationToken(request.email(), request.password())
 		);
@@ -65,6 +65,6 @@ public class AuthServiceImpl implements AuthService {
 			throw new IllegalStateException("Authentication succeeded but principal is null");
 		}
 		String token = jwtService.generateToken(new HashMap<>(), user);
-		return new AuthenticationResponse(token);
+		return new AuthenticationResponseDto(token);
 	}
 }

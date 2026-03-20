@@ -3,7 +3,7 @@ package org.leoric.expensetracker.expensetracker.dto;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-public record ExpenseTrackerResponse(
+public record ExpenseTrackerResponseDto(
 		UUID id,
 		String name,
 		String description,

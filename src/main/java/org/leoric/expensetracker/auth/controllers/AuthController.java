@@ -2,9 +2,9 @@ package org.leoric.expensetracker.auth.controllers;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.leoric.expensetracker.auth.dto.AuthenticationRequest;
-import org.leoric.expensetracker.auth.dto.AuthenticationResponse;
-import org.leoric.expensetracker.auth.dto.RegistrationRequest;
+import org.leoric.expensetracker.auth.dto.AuthenticationRequestDto;
+import org.leoric.expensetracker.auth.dto.AuthenticationResponseDto;
+import org.leoric.expensetracker.auth.dto.RegistrationRequestDto;
 import org.leoric.expensetracker.auth.services.interfaces.AuthService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,13 +21,13 @@ public class AuthController {
 	private final AuthService authService;
 
 	@PostMapping("/register")
-	public ResponseEntity<Void> authRegister(@Valid @RequestBody RegistrationRequest request) {
+	public ResponseEntity<Void> authRegister(@Valid @RequestBody RegistrationRequestDto request) {
 		authService.authRegister(request);
 		return ResponseEntity.status(HttpStatus.CREATED).build();
 	}
 
 	@PostMapping("/login")
-	public ResponseEntity<AuthenticationResponse> authLogin(@Valid @RequestBody AuthenticationRequest request) {
+	public ResponseEntity<AuthenticationResponseDto> authLogin(@Valid @RequestBody AuthenticationRequestDto request) {
 		return ResponseEntity.ok(authService.authLogin(request));
 	}
 }

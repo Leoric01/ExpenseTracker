@@ -3,8 +3,8 @@ package org.leoric.expensetracker.expensetracker.controllers;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
-import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponse;
-import org.leoric.expensetracker.expensetracker.dto.InviteUserRequest;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponseDto;
+import org.leoric.expensetracker.expensetracker.dto.InviteUserRequestDto;
 import org.leoric.expensetracker.expensetracker.models.constants.ExpenseTrackerAccessRequestType;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessRequestService;
@@ -36,7 +36,7 @@ public class ExpenseTrackerAccessRequestController {
 	private final ExpenseTrackerAccessService expenseTrackerAccessService;
 
 	@PostMapping("/{trackerId}/access-requests")
-	public ResponseEntity<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestCreate(
+	public ResponseEntity<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestCreate(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId) {
 		return ResponseEntity.status(HttpStatus.CREATED)
@@ -44,17 +44,17 @@ public class ExpenseTrackerAccessRequestController {
 	}
 
 	@PostMapping("/{trackerId}/access-requests/invite")
-	public ResponseEntity<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestInvite(
+	public ResponseEntity<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestInvite(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
-			@Valid @RequestBody InviteUserRequest request) {
+			@Valid @RequestBody InviteUserRequestDto request) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(expenseTrackerAccessRequestService.expenseTrackerAccessRequestInvite(currentUser, trackerId, request));
 	}
 
 	@GetMapping("/{trackerId}/access-requests")
-	public ResponseEntity<Page<ExpenseTrackerAccessRequestResponse>> expenseTrackerAccessRequestFindAllByTracker(
+	public ResponseEntity<Page<ExpenseTrackerAccessRequestResponseDto>> expenseTrackerAccessRequestFindAllByTracker(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
 			@RequestParam(required = false) String search,
@@ -64,7 +64,7 @@ public class ExpenseTrackerAccessRequestController {
 	}
 
 	@GetMapping("/access-requests/mine")
-	public ResponseEntity<Page<ExpenseTrackerAccessRequestResponse>> expenseTrackerAccessRequestFindAllMine(
+	public ResponseEntity<Page<ExpenseTrackerAccessRequestResponseDto>> expenseTrackerAccessRequestFindAllMine(
 			@AuthenticationPrincipal User currentUser,
 			@RequestParam(required = false) String search,
 			@ParameterObject Pageable pageable) {
@@ -72,7 +72,7 @@ public class ExpenseTrackerAccessRequestController {
 	}
 
 	@PatchMapping("/access-requests/{requestId}/approve")
-	public ResponseEntity<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestApprove(
+	public ResponseEntity<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestApprove(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID requestId) {
 		var authInfo = expenseTrackerAccessRequestService.getAuthorizationInfo(requestId);
@@ -81,7 +81,7 @@ public class ExpenseTrackerAccessRequestController {
 	}
 
 	@PatchMapping("/access-requests/{requestId}/reject")
-	public ResponseEntity<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestReject(
+	public ResponseEntity<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestReject(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID requestId) {
 		var authInfo = expenseTrackerAccessRequestService.getAuthorizationInfo(requestId);
@@ -100,7 +100,7 @@ public class ExpenseTrackerAccessRequestController {
 	}
 
 	@PatchMapping("/access-requests/{requestId}/accept")
-	public ResponseEntity<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestAccept(
+	public ResponseEntity<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestAccept(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID requestId) {
 		return ResponseEntity.ok(expenseTrackerAccessRequestService.expenseTrackerAccessRequestAccept(currentUser, requestId));

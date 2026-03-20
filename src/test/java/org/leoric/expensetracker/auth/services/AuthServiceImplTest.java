@@ -3,9 +3,9 @@ package org.leoric.expensetracker.auth.services;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.leoric.expensetracker.auth.dto.AuthenticationRequest;
-import org.leoric.expensetracker.auth.dto.AuthenticationResponse;
-import org.leoric.expensetracker.auth.dto.RegistrationRequest;
+import org.leoric.expensetracker.auth.dto.AuthenticationRequestDto;
+import org.leoric.expensetracker.auth.dto.AuthenticationResponseDto;
+import org.leoric.expensetracker.auth.dto.RegistrationRequestDto;
 import org.leoric.expensetracker.auth.models.Role;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
@@ -55,7 +55,7 @@ class AuthServiceImplTest {
 
 	@Test
 	void register_shouldCreateUser() {
-		var request = new RegistrationRequest("John", "Doe", "john@test.com", "password123");
+		var request = new RegistrationRequestDto("John", "Doe", "john@test.com", "password123");
 
 		when(userRepository.existsByEmail("john@test.com")).thenReturn(false);
 		when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
@@ -70,7 +70,7 @@ class AuthServiceImplTest {
 
 	@Test
 	void register_shouldThrowWhenEmailAlreadyExists() {
-		var request = new RegistrationRequest("John", "Doe", "existing@test.com", "password123");
+		var request = new RegistrationRequestDto("John", "Doe", "existing@test.com", "password123");
 
 		when(userRepository.existsByEmail("existing@test.com")).thenReturn(true);
 
@@ -83,7 +83,7 @@ class AuthServiceImplTest {
 
 	@Test
 	void register_shouldThrowWhenAdminRoleNotFound() {
-		var request = new RegistrationRequest("John", "Doe", "john@test.com", "password123");
+		var request = new RegistrationRequestDto("John", "Doe", "john@test.com", "password123");
 
 		when(userRepository.existsByEmail("john@test.com")).thenReturn(false);
 		when(roleRepository.findByName("ADMIN")).thenReturn(Optional.empty());
@@ -95,7 +95,7 @@ class AuthServiceImplTest {
 
 	@Test
 	void authenticate_shouldReturnTokenForValidCredentials() {
-		var request = new AuthenticationRequest("john@test.com", "password123");
+		var request = new AuthenticationRequestDto("john@test.com", "password123");
 		var user = User.builder()
 				.id(UUID.randomUUID())
 				.email("john@test.com")
@@ -107,7 +107,7 @@ class AuthServiceImplTest {
 		when(authenticationManager.authenticate(any())).thenReturn(authentication);
 		when(jwtService.generateToken(anyMap(), any(User.class))).thenReturn("jwt-token");
 
-		AuthenticationResponse response = authService.authLogin(request);
+		AuthenticationResponseDto response = authService.authLogin(request);
 
 		assertThat(response).isNotNull();
 		assertThat(response.token()).isEqualTo("jwt-token");
@@ -115,7 +115,7 @@ class AuthServiceImplTest {
 
 	@Test
 	void authenticate_shouldThrowForBadCredentials() {
-		var request = new AuthenticationRequest("john@test.com", "wrong-password");
+		var request = new AuthenticationRequestDto("john@test.com", "wrong-password");
 
 		when(authenticationManager.authenticate(any()))
 				.thenThrow(new BadCredentialsException("Bad credentials"));

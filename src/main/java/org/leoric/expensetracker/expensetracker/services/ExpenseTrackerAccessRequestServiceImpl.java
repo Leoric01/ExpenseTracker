@@ -8,9 +8,9 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.models.UserExpenseTrackerRole;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
 import org.leoric.expensetracker.auth.repositories.UserRepository;
-import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestAuthorizationInfo;
-import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponse;
-import org.leoric.expensetracker.expensetracker.dto.InviteUserRequest;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestAuthorizationInfoDto;
+import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponseDto;
+import org.leoric.expensetracker.expensetracker.dto.InviteUserRequestDto;
 import org.leoric.expensetracker.expensetracker.mapstruct.ExpenseTrackerAccessRequestMapper;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTrackerAccessRequest;
@@ -44,7 +44,7 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 
 	@Override
 	@Transactional
-	public ExpenseTrackerAccessRequestResponse expenseTrackerAccessRequestCreate(User currentUser, UUID expenseTrackerId) {
+	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestCreate(User currentUser, UUID expenseTrackerId) {
 		currentUser = getUserOrThrow(currentUser.getId());
 		ExpenseTracker tracker = getTrackerOrThrow(expenseTrackerId);
 
@@ -65,7 +65,7 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 
 	@Override
 	@Transactional
-	public ExpenseTrackerAccessRequestResponse expenseTrackerAccessRequestInvite(User currentUser, UUID expenseTrackerId, InviteUserRequest inviteRequest) {
+	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestInvite(User currentUser, UUID expenseTrackerId, InviteUserRequestDto inviteRequest) {
  		ExpenseTracker tracker = getTrackerOrThrow(expenseTrackerId);
 		User invitedUser = userRepository.findByEmail(inviteRequest.email())
 				.orElseThrow(() -> new EntityNotFoundException("User with email " + inviteRequest.email() + " not found"));
@@ -92,7 +92,7 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 
 	@Override
 	@Transactional
-	public ExpenseTrackerAccessRequestResponse expenseTrackerAccessRequestApprove(User currentUser, UUID requestId) {
+	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestApprove(User currentUser, UUID requestId) {
 		ExpenseTrackerAccessRequest request = getRequestOrThrow(requestId);
 		assertPending(request);
 
@@ -113,7 +113,7 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 
 	@Override
 	@Transactional
-	public ExpenseTrackerAccessRequestResponse expenseTrackerAccessRequestReject(User currentUser, UUID requestId) {
+	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestReject(User currentUser, UUID requestId) {
 		ExpenseTrackerAccessRequest request = getRequestOrThrow(requestId);
 		assertPending(request);
 
@@ -155,7 +155,7 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 
 	@Override
 	@Transactional
-	public ExpenseTrackerAccessRequestResponse expenseTrackerAccessRequestAccept(User currentUser, UUID requestId) {
+	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestAccept(User currentUser, UUID requestId) {
 		ExpenseTrackerAccessRequest request = getRequestOrThrow(requestId);
 		assertPending(request);
 
@@ -179,7 +179,7 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 
 	@Override
 	@Transactional(readOnly = true)
-	public Page<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestFindAllMine(User currentUser, String search, Pageable pageable) {
+	public Page<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestFindAllMine(User currentUser, String search, Pageable pageable) {
 		if (search != null && !search.isBlank()) {
 			return accessRequestRepository.findByUserIdAndSearch(currentUser.getId(), search, pageable)
 					.map(accessRequestMapper::toResponse);
@@ -190,7 +190,7 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 
 	@Override
 	@Transactional(readOnly = true)
-	public Page<ExpenseTrackerAccessRequestResponse> expenseTrackerAccessRequestFindAllByTracker(User currentUser, UUID expenseTrackerId, String search, Pageable pageable) {
+	public Page<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestFindAllByTracker(User currentUser, UUID expenseTrackerId, String search, Pageable pageable) {
 		if (search != null && !search.isBlank()) {
 			return accessRequestRepository.findByExpenseTrackerIdAndSearch(expenseTrackerId, search, pageable)
 					.map(accessRequestMapper::toResponse);
@@ -201,9 +201,9 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 
 	@Override
 	@Transactional(readOnly = true)
-	public ExpenseTrackerAccessRequestAuthorizationInfo getAuthorizationInfo(UUID requestId) {
+	public ExpenseTrackerAccessRequestAuthorizationInfoDto getAuthorizationInfo(UUID requestId) {
 		ExpenseTrackerAccessRequest request = getRequestOrThrow(requestId);
-		return new ExpenseTrackerAccessRequestAuthorizationInfo(
+		return new ExpenseTrackerAccessRequestAuthorizationInfoDto(
 				request.getExpenseTracker().getId(), request.getExpenseTrackerAccessRequestType());
 	}
 
