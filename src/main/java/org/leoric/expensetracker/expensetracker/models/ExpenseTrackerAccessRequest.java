@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import lombok.AllArgsConstructor;
@@ -37,6 +38,7 @@ public class ExpenseTrackerAccessRequest {
     private User user;
 
     @ManyToOne(optional = false)
+    @JoinColumn(name = "expense_tracker_id", nullable = false)
     private ExpenseTracker expenseTracker;
 
     @Enumerated(EnumType.STRING)

@@ -1,12 +1,13 @@
-package org.leoric.expensetracker.expensetracker.models;
+package org.leoric.expensetracker.category.models;
 
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
-import jakarta.persistence.ManyToMany;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
@@ -17,8 +18,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.UuidGenerator;
-import org.leoric.expensetracker.auth.models.User;
-import org.leoric.expensetracker.auth.models.UserExpenseTrackerRole;
+import org.leoric.expensetracker.category.models.constants.CategoryKind;
+import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -31,8 +32,8 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "expense_tracker", uniqueConstraints = {
-		@UniqueConstraint(columnNames = {"created_by_owner_id", "name"})
+@Table(name = "category", uniqueConstraints = {
+		@UniqueConstraint(columnNames = {"expense_tracker_id", "parent_id", "name"})
 })
 @Getter
 @Setter
@@ -40,35 +41,36 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 @EntityListeners(AuditingEntityListener.class)
-public class ExpenseTracker {
+public class Category {
 
 	@Id
 	@UuidGenerator(style = UuidGenerator.Style.AUTO)
 	@Column(columnDefinition = "BINARY(16)")
 	private UUID id;
 
+	@ManyToOne(optional = false)
+	@JoinColumn(name = "expense_tracker_id", nullable = false)
+	private ExpenseTracker expenseTracker;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	private Category parent;
+
+	@Builder.Default
+	@OneToMany(mappedBy = "parent", fetch = FetchType.LAZY)
+	private List<Category> children = new ArrayList<>();
+
 	@Column(nullable = false)
 	private String name;
 
-	private String description;
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false)
+	private CategoryKind categoryKind;
 
-	@Column(nullable = false, length = 3)
-	private String defaultCurrencyCode;
+	private Integer sortOrder;
 
 	@Builder.Default
 	@Column(nullable = false)
 	private boolean active = true;
-
-	@ManyToOne(optional = false)
-	private User createdByOwner;
-
-	@Builder.Default
-	@ManyToMany(mappedBy = "expenseTrackers", fetch = FetchType.EAGER)
-	private List<User> users = new ArrayList<>();
-
-	@Builder.Default
-	@OneToMany(mappedBy = "expenseTracker", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
-	private List<UserExpenseTrackerRole> userExpenseTrackerRoles = new ArrayList<>();
 
 	@CreatedDate
 	@Column(updatable = false, nullable = false)
