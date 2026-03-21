@@ -83,6 +83,7 @@ public class Transaction {
 	private String currencyCode;
 
 	@Enumerated(EnumType.STRING)
+	@Column(length = 20)
 	private BalanceAdjustmentDirection balanceAdjustmentDirection;
 
 	@Column(nullable = false)
