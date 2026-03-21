@@ -20,9 +20,11 @@ public interface CategoryService {
 
 	Page<CategoryResponseDto> categoryFindAll(User currentUser, UUID trackerId, String search, Pageable pageable);
 
+	Page<CategoryResponseDto> categoryFindAllActive(User currentUser, UUID trackerId, String search, Pageable pageable);
+
 	CategoryResponseDto categoryUpdate(User currentUser, UUID trackerId, UUID categoryId, UpdateCategoryRequestDto request);
 
-	void categoryDeactivate(User currentUser, UUID trackerId, UUID categoryId);
+	void categoryDeactivate(User currentUser, UUID trackerId, UUID categoryId, boolean cascade);
 
 	CategoryResponseDto categoryUploadIcon(User currentUser, UUID trackerId, UUID categoryId, MultipartFile icon, String iconColor);
 

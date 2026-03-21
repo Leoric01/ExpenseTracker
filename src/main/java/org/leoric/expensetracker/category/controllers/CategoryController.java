@@ -58,6 +58,16 @@ public class CategoryController {
 		return ResponseEntity.ok(categoryService.categoryFindAll(currentUser, trackerId, search, pageable));
 	}
 
+	@GetMapping("/{trackerId}/active")
+	public ResponseEntity<Page<CategoryResponseDto>> categoryFindAllActive(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@RequestParam(required = false) String search,
+			@ParameterObject Pageable pageable) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(categoryService.categoryFindAllActive(currentUser, trackerId, search, pageable));
+	}
+
 	@GetMapping("/{trackerId}/{categoryId}")
 	public ResponseEntity<CategoryResponseDto> categoryFindById(
 			@AuthenticationPrincipal User currentUser,
@@ -81,9 +91,10 @@ public class CategoryController {
 	public ResponseEntity<Void> categoryDeactivate(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
-			@PathVariable UUID categoryId) {
+			@PathVariable UUID categoryId,
+			@RequestParam(defaultValue = "false") boolean cascade) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
-		categoryService.categoryDeactivate(currentUser, trackerId, categoryId);
+		categoryService.categoryDeactivate(currentUser, trackerId, categoryId, cascade);
 		return ResponseEntity.noContent().build();
 	}
 

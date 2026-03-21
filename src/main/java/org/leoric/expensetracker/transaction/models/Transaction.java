@@ -30,7 +30,6 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -87,7 +86,7 @@ public class Transaction {
 	private BalanceAdjustmentDirection balanceAdjustmentDirection;
 
 	@Column(nullable = false)
-	private LocalDate transactionDate;
+	private Instant transactionDate;
 
 	private String description;
 

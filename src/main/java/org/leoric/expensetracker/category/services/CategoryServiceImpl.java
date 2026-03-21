@@ -13,6 +13,7 @@ import org.leoric.expensetracker.category.repositories.CategoryRepository;
 import org.leoric.expensetracker.category.services.interfaces.CategoryService;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
+import org.leoric.expensetracker.handler.exceptions.CategoryHasActiveChildrenException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateCategoryNameException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.category.models.constants.CategoryKind;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -87,6 +89,17 @@ public class CategoryServiceImpl implements CategoryService {
 	}
 
 	@Override
+	@Transactional(readOnly = true)
+	public Page<CategoryResponseDto> categoryFindAllActive(User currentUser, UUID trackerId, String search, Pageable pageable) {
+		if (search != null && !search.isBlank()) {
+			return categoryRepository.findRootsByExpenseTrackerIdWithSearch(trackerId, search, pageable)
+					.map(this::toActiveResponse);
+		}
+		return categoryRepository.findByExpenseTrackerIdAndActiveTrueAndParentIsNull(trackerId, pageable)
+				.map(this::toActiveResponse);
+	}
+
+	@Override
 	@Transactional
 	public CategoryResponseDto categoryUpdate(User currentUser, UUID trackerId, UUID categoryId, UpdateCategoryRequestDto request) {
 		Category category = getCategoryOrThrow(categoryId);
@@ -120,7 +133,7 @@ public class CategoryServiceImpl implements CategoryService {
 
 	@Override
 	@Transactional
-	public void categoryDeactivate(User currentUser, UUID trackerId, UUID categoryId) {
+	public void categoryDeactivate(User currentUser, UUID trackerId, UUID categoryId, boolean cascade) {
 		Category category = getCategoryOrThrow(categoryId);
 		assertCategoryBelongsToTracker(category, trackerId);
 
@@ -128,10 +141,16 @@ public class CategoryServiceImpl implements CategoryService {
 			throw new OperationNotPermittedException("Category is already deactivated");
 		}
 
-		category.setActive(false);
-		categoryRepository.save(category);
-		log.info("User {} deactivated category '{}' in tracker '{}'",
-				currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
+		boolean hasActiveChildren = category.getChildren().stream().anyMatch(Category::isActive);
+
+		if (hasActiveChildren && !cascade) {
+			throw new CategoryHasActiveChildrenException(
+					"Category '%s' has active subcategories. Use cascade=true to deactivate them as well".formatted(category.getName()));
+		}
+
+		deactivateRecursively(category);
+		log.info("User {} deactivated category '{}' (cascade={}) in tracker '{}'",
+				currentUser.getEmail(), category.getName(), cascade, category.getExpenseTracker().getName());
 	}
 
 	@Override
@@ -194,5 +213,29 @@ public class CategoryServiceImpl implements CategoryService {
 			categoryRepository.save(child);
 			cascadeCategoryKindToChildren(child, newKind);
 		}
+	}
+
+	private void deactivateRecursively(Category category) {
+		category.setActive(false);
+		categoryRepository.save(category);
+		for (Category child : category.getChildren()) {
+			if (child.isActive()) {
+				deactivateRecursively(child);
+			}
+		}
+	}
+
+	private CategoryResponseDto toActiveResponse(Category category) {
+		CategoryResponseDto mapped = categoryMapper.toResponse(category);
+		List<CategoryResponseDto> activeChildren = category.getChildren().stream()
+				.filter(Category::isActive)
+				.map(this::toActiveResponse)
+				.toList();
+		return new CategoryResponseDto(
+				mapped.id(), mapped.name(), mapped.categoryKind(),
+				mapped.parentId(), mapped.parentName(), mapped.sortOrder(),
+				mapped.active(), mapped.iconUrl(), mapped.iconColor(),
+				activeChildren, mapped.createdDate(), mapped.lastModifiedDate()
+		);
 	}
 }

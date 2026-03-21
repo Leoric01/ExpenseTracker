@@ -37,6 +37,7 @@ public enum BusinessErrorCodes {
 	DUPLICATE_EXPENSE_TRACKER_NAME("B-2008", CONFLICT, "An expense tracker with this name already exists"),
 	DUPLICATE_WALLET_NAME("B-3001", CONFLICT, "A wallet with this name already exists in this expense tracker"),
 	DUPLICATE_CATEGORY_NAME("B-4001", CONFLICT, "A category with this name already exists at this level"),
+	CATEGORY_HAS_ACTIVE_CHILDREN("B-4002", CONFLICT, "Category has active subcategories"),
 
 	INTERNAL_ERROR("B-9999", INTERNAL_SERVER_ERROR, "Internal error, please contact the admin");
 
