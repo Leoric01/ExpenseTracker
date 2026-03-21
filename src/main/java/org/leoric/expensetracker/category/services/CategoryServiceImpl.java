@@ -92,8 +92,8 @@ public class CategoryServiceImpl implements CategoryService {
 	@Transactional(readOnly = true)
 	public Page<CategoryResponseDto> categoryFindAllActive(User currentUser, UUID trackerId, String search, Pageable pageable) {
 		if (search != null && !search.isBlank()) {
-			return categoryRepository.findRootsByExpenseTrackerIdWithSearch(trackerId, search, pageable)
-					.map(this::toActiveResponse);
+			return categoryRepository.findActiveByExpenseTrackerIdWithSearch(trackerId, search, pageable)
+					.map(categoryMapper::toFlatResponse);
 		}
 		return categoryRepository.findByExpenseTrackerIdAndActiveTrueAndParentIsNull(trackerId, pageable)
 				.map(this::toActiveResponse);

@@ -7,6 +7,7 @@ import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
+import org.mapstruct.Named;
 import org.mapstruct.NullValuePropertyMappingStrategy;
 import org.mapstruct.ReportingPolicy;
 
@@ -20,6 +21,12 @@ public interface CategoryMapper {
 	@Mapping(source = "parent.id", target = "parentId")
 	@Mapping(source = "parent.name", target = "parentName")
 	CategoryResponseDto toResponse(Category entity);
+
+	@Named("flat")
+	@Mapping(source = "parent.id", target = "parentId")
+	@Mapping(source = "parent.name", target = "parentName")
+	@Mapping(target = "children", expression = "java(java.util.Collections.emptyList())")
+	CategoryResponseDto toFlatResponse(Category entity);
 
 	@BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE,
 			unmappedTargetPolicy = ReportingPolicy.IGNORE)
