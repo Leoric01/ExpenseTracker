@@ -15,6 +15,7 @@ import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.DuplicateCategoryNameException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -43,6 +44,7 @@ public class CategoryServiceImpl implements CategoryService {
 		if (request.parentId() != null) {
 			parent = getCategoryOrThrow(request.parentId());
 			assertCategoryBelongsToTracker(parent, trackerId);
+			assertCategoryKindMatchesParent(request.categoryKind(), parent);
 		}
 
 		UUID parentId = parent != null ? parent.getId() : null;
@@ -77,10 +79,10 @@ public class CategoryServiceImpl implements CategoryService {
 	@Transactional(readOnly = true)
 	public Page<CategoryResponseDto> categoryFindAll(User currentUser, UUID trackerId, String search, Pageable pageable) {
 		if (search != null && !search.isBlank()) {
-			return categoryRepository.findByExpenseTrackerIdAndActiveTrueWithSearch(trackerId, search, pageable)
+			return categoryRepository.findRootsByExpenseTrackerIdWithSearch(trackerId, search, pageable)
 					.map(categoryMapper::toResponse);
 		}
-		return categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId, pageable)
+		return categoryRepository.findByExpenseTrackerIdAndActiveTrueAndParentIsNull(trackerId, pageable)
 				.map(categoryMapper::toResponse);
 	}
 
@@ -96,7 +98,16 @@ public class CategoryServiceImpl implements CategoryService {
 			if (newParent.getId().equals(categoryId)) {
 				throw new OperationNotPermittedException("A category cannot be its own parent");
 			}
+			CategoryKind effectiveKind = request.categoryKind() != null ? request.categoryKind() : category.getCategoryKind();
+			assertCategoryKindMatchesParent(effectiveKind, newParent);
 			category.setParent(newParent);
+		}
+
+		if (request.categoryKind() != null && request.categoryKind() != category.getCategoryKind()) {
+			if (category.getParent() != null && request.parentId() == null) {
+				assertCategoryKindMatchesParent(request.categoryKind(), category.getParent());
+			}
+			cascadeCategoryKindToChildren(category, request.categoryKind());
 		}
 
 		categoryMapper.updateFromDto(request, category);
@@ -167,6 +178,21 @@ public class CategoryServiceImpl implements CategoryService {
 	private void assertCategoryBelongsToTracker(Category category, UUID trackerId) {
 		if (!category.getExpenseTracker().getId().equals(trackerId)) {
 			throw new EntityNotFoundException("Category not found in this expense tracker");
+		}
+	}
+
+	private void assertCategoryKindMatchesParent(CategoryKind childKind, Category parent) {
+		if (childKind != parent.getCategoryKind()) {
+			throw new OperationNotPermittedException(
+					"Category kind '%s' does not match parent's kind '%s'".formatted(childKind, parent.getCategoryKind()));
+		}
+	}
+
+	private void cascadeCategoryKindToChildren(Category category, CategoryKind newKind) {
+		for (Category child : category.getChildren()) {
+			child.setCategoryKind(newKind);
+			categoryRepository.save(child);
+			cascadeCategoryKindToChildren(child, newKind);
 		}
 	}
 }

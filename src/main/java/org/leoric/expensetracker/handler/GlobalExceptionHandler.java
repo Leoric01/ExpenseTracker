@@ -192,8 +192,8 @@ public class GlobalExceptionHandler {
 				.status(code.getHttpStatus())
 				.body(ExceptionResponse.builder()
 						      .businessErrorCode(code.getCode())
-						      .businessErrorDescription(code.getDescription())
-						      .error(errorMessage)
+						      .businessErrorDescription(errorMessage)
+						      .error(code.getDescription())
 						      .build());
 	}
 }
