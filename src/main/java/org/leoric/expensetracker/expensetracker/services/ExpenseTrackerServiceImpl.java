@@ -117,6 +117,18 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 	}
 
 	@Override
+	@Transactional(readOnly = true)
+	public Page<ExpenseTrackerResponseDto> expenseTrackerFindAllButMine(User currentUser, String search, Pageable pageable) {
+		Page<ExpenseTracker> page;
+		if (search != null && !search.isBlank()) {
+			page = expenseTrackerRepository.findAllNotMineWithSearch(currentUser.getId(), search, pageable);
+		} else {
+			page = expenseTrackerRepository.findAllNotMine(currentUser.getId(), pageable);
+		}
+		return page.map(expenseTrackerMapper::toResponse);
+	}
+
+	@Override
 	@Transactional
 	public ExpenseTrackerResponseDto expenseTrackerUpdate(User currentUser, UUID id, UpdateExpenseTrackerRequestDto request) {
 		ExpenseTracker tracker = getTrackerOrThrow(id);

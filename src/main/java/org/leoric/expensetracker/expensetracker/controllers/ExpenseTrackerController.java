@@ -62,6 +62,14 @@ public class ExpenseTrackerController {
 		return ResponseEntity.ok(expenseTrackerService.expenseTrackerFindAllMine(currentUser, search, pageable));
 	}
 
+	@GetMapping("/discover")
+	public ResponseEntity<Page<ExpenseTrackerResponseDto>> expenseTrackerFindAllButMine(
+			@AuthenticationPrincipal User currentUser,
+			@RequestParam(required = false) String search,
+			@ParameterObject Pageable pageable) {
+		return ResponseEntity.ok(expenseTrackerService.expenseTrackerFindAllButMine(currentUser, search, pageable));
+	}
+
 	@GetMapping("/{id}")
 	public ResponseEntity<ExpenseTrackerResponseDto> expenseTrackerFindById(
 			@AuthenticationPrincipal User currentUser,

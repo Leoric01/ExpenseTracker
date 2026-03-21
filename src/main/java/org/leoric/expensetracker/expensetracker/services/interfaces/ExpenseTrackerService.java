@@ -22,6 +22,8 @@ public interface ExpenseTrackerService {
 
 	Page<ExpenseTrackerMineResponseDto> expenseTrackerFindAllMine(User currentUser, String search, Pageable pageable);
 
+	Page<ExpenseTrackerResponseDto> expenseTrackerFindAllButMine(User currentUser, String search, Pageable pageable);
+
 	ExpenseTrackerResponseDto expenseTrackerUpdate(User currentUser, UUID id, UpdateExpenseTrackerRequestDto request);
 
 	void expenseTrackerDeactivate(User currentUser, UUID id);

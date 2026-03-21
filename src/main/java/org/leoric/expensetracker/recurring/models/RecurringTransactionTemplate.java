@@ -16,9 +16,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.UuidGenerator;
+import org.leoric.expensetracker.budget.models.constants.PeriodType;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
-import org.leoric.expensetracker.recurring.models.constants.RecurrenceType;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.wallet.models.Wallet;
 import org.springframework.data.annotation.CreatedBy;
@@ -73,7 +73,7 @@ public class RecurringTransactionTemplate {
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
-	private RecurrenceType recurrenceType;
+	private PeriodType periodType;
 
 	@Builder.Default
 	@Column(nullable = false)
