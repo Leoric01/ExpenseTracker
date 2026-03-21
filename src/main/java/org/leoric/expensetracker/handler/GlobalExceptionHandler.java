@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
 import org.leoric.expensetracker.handler.exceptions.EmailAlreadyInUseException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateExpenseTrackerNameException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateCategoryNameException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateWalletNameException;
 import org.leoric.expensetracker.handler.exceptions.IncorrectCurrentPasswordException;
 import org.leoric.expensetracker.handler.exceptions.InsufficientRoleException;
 import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchException;
@@ -147,6 +149,18 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionResponse> handleDuplicateExpenseTrackerNameException(DuplicateExpenseTrackerNameException ex) {
 		log.warn("[{}] {}", DUPLICATE_EXPENSE_TRACKER_NAME.getCode(), ex.getMessage(), ex);
 		return build(DUPLICATE_EXPENSE_TRACKER_NAME, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateWalletNameException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateWalletNameException(DuplicateWalletNameException ex) {
+		log.warn("[{}] {}", DUPLICATE_WALLET_NAME.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_WALLET_NAME, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateCategoryNameException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateCategoryNameException(DuplicateCategoryNameException ex) {
+		log.warn("[{}] {}", DUPLICATE_CATEGORY_NAME.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_CATEGORY_NAME, ex.getMessage());
 	}
 
 	@ExceptionHandler(OperationNotPermittedException.class)

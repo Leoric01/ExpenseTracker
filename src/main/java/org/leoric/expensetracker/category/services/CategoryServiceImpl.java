@@ -1,0 +1,172 @@
+package org.leoric.expensetracker.category.services;
+
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.category.dto.CategoryResponseDto;
+import org.leoric.expensetracker.category.dto.CreateCategoryRequestDto;
+import org.leoric.expensetracker.category.dto.UpdateCategoryRequestDto;
+import org.leoric.expensetracker.category.mapstruct.CategoryMapper;
+import org.leoric.expensetracker.category.models.Category;
+import org.leoric.expensetracker.category.repositories.CategoryRepository;
+import org.leoric.expensetracker.category.services.interfaces.CategoryService;
+import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
+import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
+import org.leoric.expensetracker.handler.exceptions.DuplicateCategoryNameException;
+import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.image.services.interfaces.ImageService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.UUID;
+
+@Service
+@Slf4j
+@RequiredArgsConstructor
+public class CategoryServiceImpl implements CategoryService {
+
+	private final CategoryRepository categoryRepository;
+	private final ExpenseTrackerRepository expenseTrackerRepository;
+	private final CategoryMapper categoryMapper;
+	private final ImageService imageService;
+
+	@Override
+	@Transactional
+	public CategoryResponseDto categoryCreate(User currentUser, UUID trackerId, CreateCategoryRequestDto request) {
+		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
+
+		Category parent = null;
+		if (request.parentId() != null) {
+			parent = getCategoryOrThrow(request.parentId());
+			assertCategoryBelongsToTracker(parent, trackerId);
+		}
+
+		UUID parentId = parent != null ? parent.getId() : null;
+		if (categoryRepository.existsByExpenseTrackerIdAndParentIdAndNameIgnoreCase(trackerId, parentId, request.name())) {
+			throw new DuplicateCategoryNameException(
+					"Category with name '%s' already exists at this level".formatted(request.name()));
+		}
+
+		Category category = Category.builder()
+				.expenseTracker(tracker)
+				.name(request.name())
+				.categoryKind(request.categoryKind())
+				.parent(parent)
+				.sortOrder(request.sortOrder())
+				.build();
+
+		category = categoryRepository.save(category);
+		log.info("User {} created category '{}' in tracker '{}'", currentUser.getEmail(), category.getName(), tracker.getName());
+
+		return categoryMapper.toResponse(category);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public CategoryResponseDto categoryFindById(User currentUser, UUID trackerId, UUID categoryId) {
+		Category category = getCategoryOrThrow(categoryId);
+		assertCategoryBelongsToTracker(category, trackerId);
+		return categoryMapper.toResponse(category);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public Page<CategoryResponseDto> categoryFindAll(User currentUser, UUID trackerId, String search, Pageable pageable) {
+		if (search != null && !search.isBlank()) {
+			return categoryRepository.findByExpenseTrackerIdAndActiveTrueWithSearch(trackerId, search, pageable)
+					.map(categoryMapper::toResponse);
+		}
+		return categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId, pageable)
+				.map(categoryMapper::toResponse);
+	}
+
+	@Override
+	@Transactional
+	public CategoryResponseDto categoryUpdate(User currentUser, UUID trackerId, UUID categoryId, UpdateCategoryRequestDto request) {
+		Category category = getCategoryOrThrow(categoryId);
+		assertCategoryBelongsToTracker(category, trackerId);
+
+		if (request.parentId() != null) {
+			Category newParent = getCategoryOrThrow(request.parentId());
+			assertCategoryBelongsToTracker(newParent, trackerId);
+			if (newParent.getId().equals(categoryId)) {
+				throw new OperationNotPermittedException("A category cannot be its own parent");
+			}
+			category.setParent(newParent);
+		}
+
+		categoryMapper.updateFromDto(request, category);
+		category = categoryRepository.save(category);
+
+		log.info("User {} updated category '{}' in tracker '{}'",
+				currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
+		return categoryMapper.toResponse(category);
+	}
+
+	@Override
+	@Transactional
+	public void categoryDeactivate(User currentUser, UUID trackerId, UUID categoryId) {
+		Category category = getCategoryOrThrow(categoryId);
+		assertCategoryBelongsToTracker(category, trackerId);
+
+		if (!category.isActive()) {
+			throw new OperationNotPermittedException("Category is already deactivated");
+		}
+
+		category.setActive(false);
+		categoryRepository.save(category);
+		log.info("User {} deactivated category '{}' in tracker '{}'",
+				currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
+	}
+
+	@Override
+	@Transactional
+	public CategoryResponseDto categoryUploadIcon(User currentUser, UUID trackerId, UUID categoryId, MultipartFile icon, String iconColor) {
+		Category category = getCategoryOrThrow(categoryId);
+		assertCategoryBelongsToTracker(category, trackerId);
+
+		String iconUrl = imageService.uploadImage(icon, "expense-tracker/categories");
+		category.setIconUrl(iconUrl);
+		category.setIconColor(iconColor);
+		category = categoryRepository.save(category);
+
+		log.info("User {} uploaded icon for category '{}' in tracker '{}'",
+				currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
+		return categoryMapper.toResponse(category);
+	}
+
+	@Override
+	@Transactional
+	public CategoryResponseDto categoryDeleteIcon(User currentUser, UUID trackerId, UUID categoryId) {
+		Category category = getCategoryOrThrow(categoryId);
+		assertCategoryBelongsToTracker(category, trackerId);
+
+		category.setIconUrl(null);
+		category.setIconColor(null);
+		category = categoryRepository.save(category);
+
+		log.info("User {} deleted icon for category '{}' in tracker '{}'",
+				currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
+		return categoryMapper.toResponse(category);
+	}
+
+	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {
+		return expenseTrackerRepository.findById(trackerId)
+				.orElseThrow(() -> new EntityNotFoundException("Expense tracker not found"));
+	}
+
+	private Category getCategoryOrThrow(UUID categoryId) {
+		return categoryRepository.findById(categoryId)
+				.orElseThrow(() -> new EntityNotFoundException("Category not found"));
+	}
+
+	private void assertCategoryBelongsToTracker(Category category, UUID trackerId) {
+		if (!category.getExpenseTracker().getId().equals(trackerId)) {
+			throw new EntityNotFoundException("Category not found in this expense tracker");
+		}
+	}
+}

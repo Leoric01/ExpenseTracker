@@ -56,6 +56,11 @@ public class Wallet {
 	@Column(nullable = false, length = 3)
 	private String currencyCode;
 
+	private String iconUrl;
+
+	@Column(length = 7)
+	private String iconColor;
+
 	@Builder.Default
 	@Column(nullable = false)
 	private long initialBalance = 0;

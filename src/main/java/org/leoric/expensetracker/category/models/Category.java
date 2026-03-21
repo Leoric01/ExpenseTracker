@@ -68,6 +68,11 @@ public class Category {
 
 	private Integer sortOrder;
 
+	private String iconUrl;
+
+	@Column(length = 7)
+	private String iconColor;
+
 	@Builder.Default
 	@Column(nullable = false)
 	private boolean active = true;
