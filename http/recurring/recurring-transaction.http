@@ -1,0 +1,68 @@
+### Create Recurring Transaction (EXPENSE, monthly)
+POST {{host}}/api/recurring-transaction/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "transactionType": "EXPENSE",
+  "walletId": "{{wallet_id}}",
+  "categoryId": "{{category_id}}",
+  "amount": 250000,
+  "currencyCode": "CZK",
+  "description": "Monthly rent",
+  "periodType": "MONTHLY",
+  "intervalValue": 1,
+  "startDate": "2026-04-01"
+}
+
+> {%
+    client.assert(response.status === 201, "Create failed");
+    client.global.set("recurring_transaction_id", response.body.id);
+%}
+
+### Create Recurring Transaction (INCOME, monthly)
+POST {{host}}/api/recurring-transaction/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "transactionType": "INCOME",
+  "walletId": "{{wallet_id}}",
+  "categoryId": "{{category_id}}",
+  "amount": 5000000,
+  "currencyCode": "CZK",
+  "description": "Monthly salary",
+  "periodType": "MONTHLY",
+  "intervalValue": 1,
+  "startDate": "2026-04-01"
+}
+
+### Find all Recurring Transactions (pageable)
+GET {{host}}/api/recurring-transaction/{{tracker_id}}?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find all with search
+GET {{host}}/api/recurring-transaction/{{tracker_id}}?search=rent&page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find all active
+GET {{host}}/api/recurring-transaction/{{tracker_id}}/active?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find by ID
+GET {{host}}/api/recurring-transaction/{{tracker_id}}/{{recurring_transaction_id}}
+Authorization: Bearer {{auth_token}}
+
+### Update Recurring Transaction
+PATCH {{host}}/api/recurring-transaction/{{tracker_id}}/{{recurring_transaction_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "amount": 300000,
+  "description": "Monthly rent (updated)"
+}
+
+### Deactivate Recurring Transaction
+DELETE {{host}}/api/recurring-transaction/{{tracker_id}}/{{recurring_transaction_id}}
+Authorization: Bearer {{auth_token}}

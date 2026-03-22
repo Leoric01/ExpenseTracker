@@ -1,0 +1,63 @@
+### Create Recurring Budget (monthly food budget)
+POST {{host}}/api/recurring-budget/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Monthly Food Budget",
+  "amount": 1500000,
+  "currencyCode": "CZK",
+  "periodType": "MONTHLY",
+  "intervalValue": 1,
+  "startDate": "2026-04-01",
+  "categoryId": "{{category_id}}"
+}
+
+> {%
+    client.assert(response.status === 201, "Create failed");
+    client.global.set("recurring_budget_id", response.body.id);
+%}
+
+### Create Recurring Budget (quarterly overall)
+POST {{host}}/api/recurring-budget/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Quarterly Total Budget",
+  "amount": 15000000,
+  "currencyCode": "CZK",
+  "periodType": "QUARTERLY",
+  "intervalValue": 1,
+  "startDate": "2026-04-01"
+}
+
+### Find all Recurring Budgets (pageable)
+GET {{host}}/api/recurring-budget/{{tracker_id}}?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find all with search
+GET {{host}}/api/recurring-budget/{{tracker_id}}?search=Food&page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find all active
+GET {{host}}/api/recurring-budget/{{tracker_id}}/active?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find by ID
+GET {{host}}/api/recurring-budget/{{tracker_id}}/{{recurring_budget_id}}
+Authorization: Bearer {{auth_token}}
+
+### Update Recurring Budget
+PATCH {{host}}/api/recurring-budget/{{tracker_id}}/{{recurring_budget_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Monthly Food Budget (Updated)",
+  "amount": 2000000
+}
+
+### Deactivate Recurring Budget
+DELETE {{host}}/api/recurring-budget/{{tracker_id}}/{{recurring_budget_id}}
+Authorization: Bearer {{auth_token}}
