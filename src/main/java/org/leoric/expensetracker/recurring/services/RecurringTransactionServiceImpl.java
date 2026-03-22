@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.budget.models.constants.PeriodType;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.category.repositories.CategoryRepository;
@@ -17,7 +18,10 @@ import org.leoric.expensetracker.recurring.mapstruct.RecurringTransactionMapper;
 import org.leoric.expensetracker.recurring.models.RecurringTransactionTemplate;
 import org.leoric.expensetracker.recurring.repositories.RecurringTransactionTemplateRepository;
 import org.leoric.expensetracker.recurring.services.interfaces.RecurringTransactionService;
+import org.leoric.expensetracker.transaction.models.Transaction;
+import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
+import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.leoric.expensetracker.wallet.models.Wallet;
 import org.leoric.expensetracker.wallet.repositories.WalletRepository;
 import org.springframework.data.domain.Page;
@@ -25,6 +29,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Service
@@ -33,6 +39,7 @@ import java.util.UUID;
 public class RecurringTransactionServiceImpl implements RecurringTransactionService {
 
 	private final RecurringTransactionTemplateRepository templateRepository;
+	private final TransactionRepository transactionRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final WalletRepository walletRepository;
 	private final CategoryRepository categoryRepository;
@@ -76,6 +83,9 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 		template = templateRepository.save(template);
 		log.info("User {} created recurring transaction template '{}' in tracker '{}'",
 				currentUser.getEmail(), template.getId(), tracker.getName());
+
+		// Immediately generate transactions for periods that are already due
+		generateDueTransactions(template);
 
 		return mapper.toResponse(template);
 	}
@@ -205,5 +215,76 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 					"Category '%s' is of kind %s but transaction type is %s".formatted(
 							category.getName(), category.getCategoryKind(), type));
 		}
+	}
+
+	private void generateDueTransactions(RecurringTransactionTemplate template) {
+		LocalDate today = LocalDate.now();
+
+		while (template.getNextRunDate() != null && !template.getNextRunDate().isAfter(today)) {
+			// Respect endDate
+			if (template.getEndDate() != null && today.isAfter(template.getEndDate())) {
+				template.setActive(false);
+				templateRepository.save(template);
+				log.info("Deactivated expired recurring transaction template '{}' during initial catch-up (endDate {})",
+						template.getId(), template.getEndDate());
+				return;
+			}
+
+			Wallet wallet = template.getWallet();
+			if (wallet == null || !wallet.isActive()) {
+				log.warn("Skipping catch-up for recurring transaction template '{}' — wallet is null or deactivated",
+						template.getId());
+				return;
+			}
+
+			// Apply balance effect
+			if (template.getTransactionType() == TransactionType.INCOME) {
+				wallet.setCurrentBalance(wallet.getCurrentBalance() + template.getAmount());
+			} else if (template.getTransactionType() == TransactionType.EXPENSE) {
+				wallet.setCurrentBalance(wallet.getCurrentBalance() - template.getAmount());
+			}
+			walletRepository.save(wallet);
+
+			Transaction transaction = Transaction.builder()
+					.expenseTracker(template.getExpenseTracker())
+					.transactionType(template.getTransactionType())
+					.status(TransactionStatus.COMPLETED)
+					.wallet(wallet)
+					.category(template.getCategory())
+					.amount(template.getAmount())
+					.currencyCode(template.getCurrencyCode())
+					.transactionDate(Instant.now())
+					.description(template.getDescription())
+					.note(template.getNote())
+					.build();
+
+			transactionRepository.save(transaction);
+			log.info("Generated initial transaction from recurring template '{}' ({} {} {})",
+					template.getId(), template.getTransactionType(), template.getAmount(), template.getCurrencyCode());
+
+			LocalDate nextRun = computeNextRunDate(template.getNextRunDate(), template.getPeriodType(), template.getIntervalValue());
+
+			if (template.getEndDate() != null && nextRun.isAfter(template.getEndDate())) {
+				template.setActive(false);
+				template.setNextRunDate(nextRun);
+				templateRepository.save(template);
+				log.info("Deactivated recurring transaction template '{}' after catch-up (next run {} past endDate {})",
+						template.getId(), nextRun, template.getEndDate());
+				return;
+			}
+
+			template.setNextRunDate(nextRun);
+			templateRepository.save(template);
+		}
+	}
+
+	private LocalDate computeNextRunDate(LocalDate current, PeriodType periodType, int interval) {
+		return switch (periodType) {
+			case DAILY -> current.plusDays(interval);
+			case WEEKLY -> current.plusWeeks(interval);
+			case MONTHLY -> current.plusMonths(interval);
+			case QUARTERLY -> current.plusMonths(3L * interval);
+			case YEARLY -> current.plusYears(interval);
+		};
 	}
 }

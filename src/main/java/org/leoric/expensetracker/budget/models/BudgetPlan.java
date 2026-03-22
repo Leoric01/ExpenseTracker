@@ -19,6 +19,7 @@ import org.hibernate.annotations.UuidGenerator;
 import org.leoric.expensetracker.budget.models.constants.PeriodType;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
+import org.leoric.expensetracker.recurring.models.RecurringBudgetTemplate;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -47,6 +48,10 @@ public class BudgetPlan {
 	@ManyToOne(optional = false)
 	@JoinColumn(name = "expense_tracker_id", nullable = false)
 	private ExpenseTracker expenseTracker;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "recurring_budget_template_id")
+	private RecurringBudgetTemplate recurringBudgetTemplate;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	private Category category;

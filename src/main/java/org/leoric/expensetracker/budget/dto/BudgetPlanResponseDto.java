@@ -17,6 +17,7 @@ public record BudgetPlanResponseDto(
 		LocalDate validFrom,
 		LocalDate validTo,
 		boolean active,
+		long alreadySpent,
 		OffsetDateTime createdDate,
 		OffsetDateTime lastModifiedDate
 ) {

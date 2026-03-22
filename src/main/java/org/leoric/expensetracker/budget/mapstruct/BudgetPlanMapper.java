@@ -19,6 +19,7 @@ public interface BudgetPlanMapper {
 
 	@Mapping(source = "category.id", target = "categoryId")
 	@Mapping(source = "category.name", target = "categoryName")
+	@Mapping(target = "alreadySpent", constant = "0L")
 	BudgetPlanResponseDto toResponse(BudgetPlan entity);
 
 	@BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE,
