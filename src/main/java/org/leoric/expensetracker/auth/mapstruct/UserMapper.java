@@ -32,6 +32,7 @@ public interface UserMapper {
 	@Mapping(target = "roles", ignore = true)
 	@Mapping(target = "password", ignore = true)
 	@Mapping(target = "navbarFavourites", ignore = true)
+	@Mapping(target = "widgetItems", ignore = true)
 	@Mapping(target = "lastModifiedDate", ignore = true)
 	@Mapping(target = "id", ignore = true)
 	@Mapping(target = "expenseTrackers", ignore = true)

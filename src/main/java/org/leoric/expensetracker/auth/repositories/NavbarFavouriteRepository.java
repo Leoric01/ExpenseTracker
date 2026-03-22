@@ -4,8 +4,14 @@ import org.leoric.expensetracker.auth.models.NavbarFavourite;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
 public interface NavbarFavouriteRepository extends JpaRepository<NavbarFavourite, UUID> {
+	List<NavbarFavourite> findByUserId(UUID userId);
+
+	void deleteByUserIdAndItemKey(UUID userId, String itemKey);
+
+	boolean existsByUserIdAndItemKey(UUID userId, String itemKey);
 }

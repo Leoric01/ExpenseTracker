@@ -87,6 +87,10 @@ public class User implements UserDetails, Principal {
 	@OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
 	private List<NavbarFavourite> navbarFavourites = new ArrayList<>();
 
+	@Builder.Default
+	@OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+	private List<WidgetItem> widgetItems = new ArrayList<>();
+
 	@Override
 	public String getName() {
 		return this.email;

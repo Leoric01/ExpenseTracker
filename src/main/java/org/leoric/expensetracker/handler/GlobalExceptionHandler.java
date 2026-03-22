@@ -40,8 +40,9 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(HttpMessageNotReadableException.class)
 	public ResponseEntity<ExceptionResponse> handleMessageNotReadableException(HttpMessageNotReadableException ex) {
+		String message = extractUserFriendlyMessage(ex);
 		log.warn("[{}] {}", INVALID_JSON.getCode(), ex.getMostSpecificCause().getMessage(), ex);
-		return build(INVALID_JSON, ex.getMostSpecificCause().getMessage());
+		return build(INVALID_JSON, message);
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
@@ -202,5 +203,38 @@ public class GlobalExceptionHandler {
 						      .businessErrorDescription(errorMessage)
 						      .error(code.getDescription())
 						      .build());
+	}
+
+	private String extractUserFriendlyMessage(HttpMessageNotReadableException ex) {
+		Throwable cause = ex.getMostSpecificCause();
+		String message = cause.getMessage();
+
+		if (message != null && message.contains("out of range of `long`")) {
+			String field = "value";
+			if (message.contains("reference chain:")) {
+				int lastDot = message.lastIndexOf("[\"");
+				int end = message.lastIndexOf("\"]");
+				if (lastDot >= 0 && end > lastDot) {
+					field = message.substring(lastDot + 2, end);
+				}
+			}
+			return "The field '%s' is out of range. Allowed range: %d to %d".formatted(
+					field, Long.MIN_VALUE, Long.MAX_VALUE);
+		}
+
+		if (message != null && message.contains("out of range of `int`")) {
+			String field = "value";
+			if (message.contains("reference chain:")) {
+				int lastDot = message.lastIndexOf("[\"");
+				int end = message.lastIndexOf("\"]");
+				if (lastDot >= 0 && end > lastDot) {
+					field = message.substring(lastDot + 2, end);
+				}
+			}
+			return "The field '%s' is out of range. Allowed range: %d to %d".formatted(
+					field, Integer.MIN_VALUE, Integer.MAX_VALUE);
+		}
+
+		return "Invalid request body. Please check your input.";
 	}
 }
