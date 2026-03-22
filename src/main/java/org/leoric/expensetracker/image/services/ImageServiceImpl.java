@@ -34,6 +34,21 @@ public class ImageServiceImpl implements ImageService {
 	}
 
 	@Override
+	public String uploadFile(MultipartFile file, String folder) {
+		try {
+			Map<?, ?> result = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
+					"folder", folder,
+					"resource_type", "auto"
+			));
+			String secureUrl = (String) result.get("secure_url");
+			log.info("File uploaded to Cloudinary: {}", secureUrl);
+			return secureUrl;
+		} catch (IOException e) {
+			throw new RuntimeException("Failed to upload file to Cloudinary", e);
+		}
+	}
+
+	@Override
 	public void deleteImage(String publicId) {
 		try {
 			cloudinary.uploader().destroy(publicId, ObjectUtils.emptyMap());

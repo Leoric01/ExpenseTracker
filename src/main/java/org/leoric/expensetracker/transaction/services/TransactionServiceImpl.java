@@ -10,14 +10,18 @@ import org.leoric.expensetracker.category.repositories.CategoryRepository;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
+import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
 import org.leoric.expensetracker.transaction.dto.UpdateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.mapstruct.TransactionMapper;
 import org.leoric.expensetracker.transaction.models.Transaction;
+import org.leoric.expensetracker.transaction.models.TransactionAttachment;
 import org.leoric.expensetracker.transaction.models.constants.BalanceAdjustmentDirection;
 import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
+import org.leoric.expensetracker.transaction.repositories.TransactionAttachmentRepository;
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.leoric.expensetracker.transaction.services.interfaces.TransactionService;
 import org.leoric.expensetracker.wallet.models.Wallet;
@@ -26,7 +30,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -35,10 +42,21 @@ import java.util.UUID;
 public class TransactionServiceImpl implements TransactionService {
 
 	private final TransactionRepository transactionRepository;
+	private final TransactionAttachmentRepository attachmentRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final WalletRepository walletRepository;
 	private final CategoryRepository categoryRepository;
 	private final TransactionMapper transactionMapper;
+	private final ImageService imageService;
+
+	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+			"application/pdf",
+			"image/jpeg",
+			"image/png",
+			"image/webp",
+			"image/heic",
+			"image/heif"
+	);
 
 	@Override
 	@Transactional
@@ -300,6 +318,66 @@ public class TransactionServiceImpl implements TransactionService {
 				walletRepository.save(wallet);
 			}
 		}
+	}
+
+	// ── Attachments ──
+
+	@Override
+	@Transactional
+	public TransactionAttachmentResponseDto transactionUploadAttachment(User currentUser, UUID trackerId, UUID transactionId, MultipartFile file) {
+		Transaction transaction = getTransactionOrThrow(transactionId);
+		assertTransactionBelongsToTracker(transaction, trackerId);
+
+		String contentType = file.getContentType();
+		if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
+			throw new OperationNotPermittedException(
+					"Unsupported file type '%s'. Allowed: PDF, JPEG, PNG, WEBP, HEIC".formatted(contentType));
+		}
+
+		String fileUrl = imageService.uploadFile(file, "expense-tracker/attachments");
+
+		TransactionAttachment attachment = TransactionAttachment.builder()
+				.transaction(transaction)
+				.fileName(file.getOriginalFilename())
+				.fileUrl(fileUrl)
+				.contentType(contentType)
+				.fileSize(file.getSize())
+				.build();
+
+		attachment = attachmentRepository.save(attachment);
+		log.info("User {} uploaded attachment '{}' to transaction '{}' in tracker '{}'",
+				currentUser.getEmail(), attachment.getFileName(), transactionId, trackerId);
+
+		return transactionMapper.toAttachmentResponse(attachment);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<TransactionAttachmentResponseDto> transactionFindAttachments(User currentUser, UUID trackerId, UUID transactionId) {
+		Transaction transaction = getTransactionOrThrow(transactionId);
+		assertTransactionBelongsToTracker(transaction, trackerId);
+
+		return attachmentRepository.findByTransactionId(transactionId).stream()
+				.map(transactionMapper::toAttachmentResponse)
+				.toList();
+	}
+
+	@Override
+	@Transactional
+	public void transactionDeleteAttachment(User currentUser, UUID trackerId, UUID transactionId, UUID attachmentId) {
+		Transaction transaction = getTransactionOrThrow(transactionId);
+		assertTransactionBelongsToTracker(transaction, trackerId);
+
+		TransactionAttachment attachment = attachmentRepository.findById(attachmentId)
+				.orElseThrow(() -> new EntityNotFoundException("Attachment not found"));
+
+		if (!attachment.getTransaction().getId().equals(transactionId)) {
+			throw new EntityNotFoundException("Attachment not found on this transaction");
+		}
+
+		attachmentRepository.delete(attachment);
+		log.info("User {} deleted attachment '{}' from transaction '{}' in tracker '{}'",
+				currentUser.getEmail(), attachment.getFileName(), transactionId, trackerId);
 	}
 
 	// ── Helpers ──

@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
+import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
 import org.leoric.expensetracker.transaction.dto.UpdateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.services.interfaces.TransactionService;
@@ -23,7 +24,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
@@ -83,5 +86,36 @@ public class TransactionController {
 			@PathVariable UUID transactionId) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
 		return ResponseEntity.ok(transactionService.transactionCancel(currentUser, trackerId, transactionId));
+	}
+
+	@PostMapping("/{trackerId}/{transactionId}/attachments")
+	public ResponseEntity<TransactionAttachmentResponseDto> transactionUploadAttachment(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID transactionId,
+			@RequestParam("file") MultipartFile file) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.status(HttpStatus.CREATED)
+				.body(transactionService.transactionUploadAttachment(currentUser, trackerId, transactionId, file));
+	}
+
+	@GetMapping("/{trackerId}/{transactionId}/attachments")
+	public ResponseEntity<List<TransactionAttachmentResponseDto>> transactionFindAttachments(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID transactionId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(transactionService.transactionFindAttachments(currentUser, trackerId, transactionId));
+	}
+
+	@DeleteMapping("/{trackerId}/{transactionId}/attachments/{attachmentId}")
+	public ResponseEntity<Void> transactionDeleteAttachment(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID transactionId,
+			@PathVariable UUID attachmentId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		transactionService.transactionDeleteAttachment(currentUser, trackerId, transactionId, attachmentId);
+		return ResponseEntity.noContent().build();
 	}
 }

@@ -1,7 +1,9 @@
 package org.leoric.expensetracker.transaction.mapstruct;
 
+import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
 import org.leoric.expensetracker.transaction.models.Transaction;
+import org.leoric.expensetracker.transaction.models.TransactionAttachment;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -21,6 +23,8 @@ public interface TransactionMapper {
 	@Mapping(source = "category.id", target = "categoryId")
 	@Mapping(source = "category.name", target = "categoryName")
 	TransactionResponseDto toResponse(Transaction entity);
+
+	TransactionAttachmentResponseDto toAttachmentResponse(TransactionAttachment entity);
 
 	default OffsetDateTime map(Instant instant) {
 		return instant == null ? null : instant.atOffset(ZoneOffset.UTC);

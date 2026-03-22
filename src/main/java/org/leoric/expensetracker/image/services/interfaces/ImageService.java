@@ -8,5 +8,6 @@ public interface ImageService {
 
 	String uploadImage(MultipartFile file, String folder);
 
+	String uploadFile(MultipartFile file, String folder);
 	void deleteImage(String publicId);
 }
