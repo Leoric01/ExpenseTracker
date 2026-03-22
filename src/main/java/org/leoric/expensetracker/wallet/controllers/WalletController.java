@@ -6,7 +6,9 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.wallet.dto.CreateWalletRequestDto;
 import org.leoric.expensetracker.wallet.dto.UpdateWalletRequestDto;
+import org.leoric.expensetracker.wallet.dto.WalletDashboardResponseDto;
 import org.leoric.expensetracker.wallet.dto.WalletResponseDto;
+import org.leoric.expensetracker.wallet.dto.WalletSummaryResponseDto;
 import org.leoric.expensetracker.wallet.services.interfaces.WalletService;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
@@ -25,6 +27,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
@@ -46,6 +51,24 @@ public class WalletController {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(walletService.walletCreate(currentUser, trackerId, request));
+	}
+
+	@GetMapping("/{trackerId}/dashboard")
+	public ResponseEntity<WalletDashboardResponseDto> walletDashboard(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@RequestParam(required = false) Instant from,
+			@RequestParam(required = false) Instant to) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+
+		if (from == null) {
+			from = YearMonth.now(ZoneOffset.UTC).atDay(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+		}
+		if (to == null) {
+			to = Instant.now();
+		}
+
+		return ResponseEntity.ok(walletService.walletDashboard(currentUser, trackerId, from, to));
 	}
 
 	@GetMapping("/{trackerId}")
@@ -85,6 +108,25 @@ public class WalletController {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
 		walletService.walletDeactivate(currentUser, trackerId, walletId);
 		return ResponseEntity.noContent().build();
+	}
+
+	@GetMapping("/{trackerId}/{walletId}/summary")
+	public ResponseEntity<WalletSummaryResponseDto> walletSummary(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID walletId,
+			@RequestParam(required = false) Instant from,
+			@RequestParam(required = false) Instant to) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+
+		if (from == null) {
+			from = YearMonth.now(ZoneOffset.UTC).atDay(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+		}
+		if (to == null) {
+			to = Instant.now();
+		}
+
+		return ResponseEntity.ok(walletService.walletSummary(currentUser, trackerId, walletId, from, to));
 	}
 
 	@PostMapping("/{trackerId}/{walletId}/icon")

@@ -1,7 +1,6 @@
 package org.leoric.expensetracker.transaction.repositories;
 
 import org.leoric.expensetracker.transaction.models.Transaction;
-import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -19,18 +18,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 	Page<Transaction> findByExpenseTrackerId(UUID expenseTrackerId, Pageable pageable);
 
 	void deleteByExpenseTrackerId(UUID expenseTrackerId);
-
-	List<Transaction> findByExpenseTrackerIdAndTransactionDateBetween(
-			UUID expenseTrackerId, Instant from, Instant to);
-
-	List<Transaction> findByExpenseTrackerIdAndWalletIdAndTransactionDateBetween(
-			UUID expenseTrackerId, UUID walletId, Instant from, Instant to);
-
-	List<Transaction> findByExpenseTrackerIdAndCategoryIdAndTransactionDateBetween(
-			UUID expenseTrackerId, UUID categoryId, Instant from, Instant to);
-
-	List<Transaction> findByExpenseTrackerIdAndTransactionTypeAndTransactionDateBetween(
-			UUID expenseTrackerId, TransactionType transactionType, Instant from, Instant to);
 
 	@Query("""
 			SELECT t FROM Transaction t
@@ -51,4 +38,16 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 			@Param("trackerId") UUID trackerId,
 			@Param("search") String search,
 			Pageable pageable);
+
+	@Query("""
+			SELECT t FROM Transaction t
+			WHERE t.status = org.leoric.expensetracker.transaction.models.constants.TransactionStatus.COMPLETED
+			AND t.transactionDate >= :from
+			AND t.transactionDate < :to
+			AND (t.wallet.id = :walletId OR t.sourceWallet.id = :walletId OR t.targetWallet.id = :walletId)
+			""")
+	List<Transaction> findCompletedByWalletAndDateRange(
+			@Param("walletId") UUID walletId,
+			@Param("from") Instant from,
+			@Param("to") Instant to);
 }
