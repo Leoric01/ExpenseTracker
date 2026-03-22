@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
 import org.leoric.expensetracker.handler.exceptions.EmailAlreadyInUseException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateExpenseTrackerNameException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateBudgetPlanNameException;
 import org.leoric.expensetracker.handler.exceptions.CategoryHasActiveChildrenException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateCategoryNameException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateWalletNameException;
@@ -169,6 +170,12 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionResponse> handleCategoryHasActiveChildrenException(CategoryHasActiveChildrenException ex) {
 		log.warn("[{}] {}", CATEGORY_HAS_ACTIVE_CHILDREN.getCode(), ex.getMessage(), ex);
 		return build(CATEGORY_HAS_ACTIVE_CHILDREN, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateBudgetPlanNameException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateBudgetPlanNameException(DuplicateBudgetPlanNameException ex) {
+		log.warn("[{}] {}", DUPLICATE_BUDGET_PLAN_NAME.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_BUDGET_PLAN_NAME, ex.getMessage());
 	}
 
 	@ExceptionHandler(OperationNotPermittedException.class)

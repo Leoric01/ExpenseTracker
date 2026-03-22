@@ -39,6 +39,8 @@ public enum BusinessErrorCodes {
 	DUPLICATE_CATEGORY_NAME("B-4001", CONFLICT, "A category with this name already exists at this level"),
 	CATEGORY_HAS_ACTIVE_CHILDREN("B-4002", CONFLICT, "Category has active subcategories"),
 
+	DUPLICATE_BUDGET_PLAN_NAME("B-5001", CONFLICT, "A budget plan with this name already exists in this expense tracker"),
+
 	INTERNAL_ERROR("B-9999", INTERNAL_SERVER_ERROR, "Internal error, please contact the admin");
 
 	private final String code;

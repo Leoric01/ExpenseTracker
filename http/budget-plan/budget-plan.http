@@ -1,0 +1,61 @@
+### Create Budget Plan (with category)
+POST {{host}}/api/budget-plan/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Monthly Food Budget",
+  "amount": 1500000,
+  "currencyCode": "CZK",
+  "periodType": "MONTHLY",
+  "validFrom": "2026-01-01",
+  "categoryId": "{{category_id}}"
+}
+
+> {%
+    client.assert(response.status === 201, "Create failed");
+    client.global.set("budget_plan_id", response.body.id);
+%}
+
+### Create Budget Plan (without category — total budget)
+POST {{host}}/api/budget-plan/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Overall Monthly Budget",
+  "amount": 5000000,
+  "currencyCode": "CZK",
+  "periodType": "MONTHLY",
+  "validFrom": "2026-01-01"
+}
+
+### Find all Budget Plans (pageable)
+GET {{host}}/api/budget-plan/{{tracker_id}}?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find all with search
+GET {{host}}/api/budget-plan/{{tracker_id}}?search=Food&page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find all active Budget Plans
+GET {{host}}/api/budget-plan/{{tracker_id}}/active?page=0&size=10
+Authorization: Bearer {{auth_token}}
+
+### Find Budget Plan by ID
+GET {{host}}/api/budget-plan/{{tracker_id}}/{{budget_plan_id}}
+Authorization: Bearer {{auth_token}}
+
+### Update Budget Plan
+PATCH {{host}}/api/budget-plan/{{tracker_id}}/{{budget_plan_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Monthly Food Budget (Updated)",
+  "amount": 2000000
+}
+
+### Deactivate Budget Plan
+DELETE {{host}}/api/budget-plan/{{tracker_id}}/{{budget_plan_id}}
+Authorization: Bearer {{auth_token}}
