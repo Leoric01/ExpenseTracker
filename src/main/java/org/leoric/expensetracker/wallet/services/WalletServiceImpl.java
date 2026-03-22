@@ -219,21 +219,27 @@ public class WalletServiceImpl implements WalletService {
 								_ -> new CategoryBucket(t.getCategory().getId(), t.getCategory().getName())).total += t.getAmount();
 					}
 				}
-				case TRANSFER -> {
-					if (t.getSourceWallet() != null && t.getSourceWallet().getId().equals(walletId)) {
-						totalTransferOut += t.getAmount();
-					}
-					if (t.getTargetWallet() != null && t.getTargetWallet().getId().equals(walletId)) {
-						totalTransferIn += t.getAmount();
-					}
+			case TRANSFER -> {
+				if (t.getSourceWallet() != null && t.getSourceWallet().getId().equals(walletId)) {
+					totalTransferOut += t.getAmount();
+					totalExpense += t.getAmount();
 				}
-				case BALANCE_ADJUSTMENT -> {
-					// Balance adjustments don't count as income/expense for summary
+				if (t.getTargetWallet() != null && t.getTargetWallet().getId().equals(walletId)) {
+					totalTransferIn += t.getAmount();
+					totalIncome += t.getAmount();
 				}
+			}
+			case BALANCE_ADJUSTMENT -> {
+				if (t.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION) {
+					totalIncome += t.getAmount();
+				} else {
+					totalExpense += t.getAmount();
+				}
+			}
 			}
 		}
 
-		long difference = totalIncome + totalTransferIn - totalExpense - totalTransferOut;
+		long difference = totalIncome - totalExpense;
 		long netPeriod = computeNetEffect(periodTxns, walletId);
 		long endBalance = startBalance + netPeriod;
 
