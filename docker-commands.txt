@@ -1,0 +1,12 @@
+# Vybuildit lokalni databazi pro vyvoj a testovani
+docker compose -f docker-compose.dev-db.yml up -d
+
+# Vybuildit a pushnout backendovou aplikaci do Docker Hubu
+docker build -t leorickk/expense-tracker-be:1.0.1 .
+docker push leorickk/expense-tracker-be:1.0.1
+
+# Spustit hlavni aplikaci, frontend a backend a databazi
+docker compose up -d
+docker compose up -d --build
+
+docker compose pull frontend

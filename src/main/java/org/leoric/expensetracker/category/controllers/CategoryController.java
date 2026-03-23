@@ -3,6 +3,7 @@ package org.leoric.expensetracker.category.controllers;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryRequestDto;
 import org.leoric.expensetracker.category.dto.UpdateCategoryRequestDto;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
@@ -46,6 +48,16 @@ public class CategoryController {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(categoryService.categoryCreate(currentUser, trackerId, request));
+	}
+
+	@PostMapping("/{trackerId}/bulk")
+	public ResponseEntity<List<CategoryResponseDto>> categoryCreateBulk(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@Valid @RequestBody List<CreateCategoryBulkRequestDto> request) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.status(HttpStatus.CREATED)
+				.body(categoryService.categoryCreateBulk(currentUser, trackerId, request));
 	}
 
 	@GetMapping("/{trackerId}")

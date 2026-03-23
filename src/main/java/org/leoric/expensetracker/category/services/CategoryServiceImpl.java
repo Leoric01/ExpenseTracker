@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryRequestDto;
 import org.leoric.expensetracker.category.dto.UpdateCategoryRequestDto;
@@ -24,7 +25,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -67,6 +71,67 @@ public class CategoryServiceImpl implements CategoryService {
 		log.info("User {} created category '{}' in tracker '{}'", currentUser.getEmail(), category.getName(), tracker.getName());
 
 		return categoryMapper.toResponse(category);
+	}
+
+	@Override
+	@Transactional
+	public List<CategoryResponseDto> categoryCreateBulk(User currentUser, UUID trackerId, List<CreateCategoryBulkRequestDto> request) {
+		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
+
+		List<Category> allCategories = new ArrayList<>();
+		Set<String> duplicateCheck = new HashSet<>();
+
+		for (CreateCategoryBulkRequestDto rootDto : request) {
+			flattenTree(rootDto, null, rootDto.categoryKind(), tracker, trackerId, allCategories, duplicateCheck);
+		}
+
+		categoryRepository.saveAll(allCategories);
+
+		List<Category> roots = allCategories.stream()
+				.filter(c -> c.getParent() == null)
+				.toList();
+
+		log.info("User {} bulk-created {} categories in tracker '{}'",
+				currentUser.getEmail(), allCategories.size(), tracker.getName());
+
+		return roots.stream()
+				.map(categoryMapper::toResponse)
+				.toList();
+	}
+
+	private void flattenTree(CreateCategoryBulkRequestDto dto, Category parent, CategoryKind rootKind,
+	                         ExpenseTracker tracker, UUID trackerId, List<Category> collector, Set<String> duplicateCheck) {
+		if (dto.categoryKind() != rootKind) {
+			throw new OperationNotPermittedException(
+					"Category '%s' has kind '%s' but the root of this branch is '%s'. All categories in a branch must share the same kind"
+							.formatted(dto.name(), dto.categoryKind(), rootKind));
+		}
+
+		UUID parentId = parent != null ? parent.getId() : null;
+		String dupeKey = trackerId + "|" + parentId + "|" + dto.name().toLowerCase();
+		if (!duplicateCheck.add(dupeKey)) {
+			throw new DuplicateCategoryNameException(
+					"Category with name '%s' already exists at this level".formatted(dto.name()));
+		}
+
+		if (categoryRepository.existsByExpenseTrackerIdAndParentIdAndNameIgnoreCase(trackerId, parentId, dto.name())) {
+			throw new DuplicateCategoryNameException(
+					"Category with name '%s' already exists at this level".formatted(dto.name()));
+		}
+
+		Category category = Category.builder()
+				.expenseTracker(tracker)
+				.name(dto.name())
+				.categoryKind(rootKind)
+				.parent(parent)
+				.sortOrder(dto.sortOrder())
+				.build();
+
+		collector.add(category);
+
+		for (CreateCategoryBulkRequestDto childDto : dto.children()) {
+			flattenTree(childDto, category, rootKind, tracker, trackerId, collector, duplicateCheck);
+		}
 	}
 
 	@Override
