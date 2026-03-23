@@ -1,0 +1,24 @@
+services:
+  mariadb-dev:
+    image: mariadb:11.8
+    container_name: expensetracker-mariadb-dev
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: expensetracker_dev
+      MARIADB_USER: expensetracker
+      MARIADB_PASSWORD: expensetracker
+      TZ: UTC
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - expensetracker_mariadb_dev_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  expensetracker_mariadb_dev_data:
+    name: expensetracker_mariadb_dev_data
