@@ -45,7 +45,7 @@ services:
 
 
   frontend:
-    image: leorickk/expense-tracker-fe:latest
+    image: leorickk/expense-tracker-frontend:latest
     container_name: expensetracker-frontend
     restart: unless-stopped
     depends_on:
