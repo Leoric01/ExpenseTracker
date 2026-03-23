@@ -10,7 +10,7 @@ services:
       MARIADB_PASSWORD: expensetracker
       TZ: UTC
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - expensetracker_mariadb_data:/var/lib/mysql
     healthcheck:
@@ -19,6 +19,44 @@ services:
       timeout: 5s
       retries: 10
 
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: expensetracker-backend
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:mariadb://mariadb:3306/expensetracker
+      DB_USERNAME: expensetracker
+      DB_PASSWORD: expensetracker
+      JWT_SECRET: 8OnMwU91F8/rWb/AWvjd2UN5TxFcrpQFlPVzZNPDhiQ9l7W14WTdfeGx9c/Phv1mgHJDFqAyRQgFuDV1YEbRjQ==
+      JWT_EXPIRATION: 86400000
+      DEFAULT_ADMIN_EMAIL: admin@admin.com
+      DEFAULT_ADMIN_PASSWORD: admin
+      DEFAULT_ADMIN_FIRST_NAME: System
+      DEFAULT_ADMIN_LAST_NAME: Administrator
+      CLOUDINARY_CLOUD_NAME: your-cloud-name
+      CLOUDINARY_API_KEY: your-api-key
+      CLOUDINARY_API_SECRET: your-api-secret
+    ports:
+      - "8080:8080"
+
+  frontend:
+    image: leorickk/expense-tracker-fe:latest
+    container_name: expensetracker-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
 volumes:
   expensetracker_mariadb_data:
     name: expensetracker_mariadb_data
+
+#    docker build --build-arg VITE_API_URL=http://localhost:8080 -t leorickk/expense-tracker-fe:latest .
+#    docker push leorickk/expense-tracker-fe:latest
