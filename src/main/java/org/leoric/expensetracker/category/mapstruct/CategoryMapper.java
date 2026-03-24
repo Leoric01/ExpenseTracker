@@ -17,14 +17,15 @@ import java.time.ZoneOffset;
 
 @Mapper(componentModel = "spring")
 public interface CategoryMapper {
-
 	@Mapping(source = "parent.id", target = "parentId")
 	@Mapping(source = "parent.name", target = "parentName")
+	@Mapping(target = "activeBudgetPlan", ignore = true)
 	CategoryResponseDto toResponse(Category entity);
 
 	@Named("flat")
 	@Mapping(source = "parent.id", target = "parentId")
 	@Mapping(source = "parent.name", target = "parentName")
+	@Mapping(target = "activeBudgetPlan", ignore = true)
 	@Mapping(target = "children", expression = "java(java.util.Collections.emptyList())")
 	CategoryResponseDto toFlatResponse(Category entity);
 

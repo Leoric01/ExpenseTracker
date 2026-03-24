@@ -65,22 +65,6 @@ public interface BudgetPlanRepository extends JpaRepository<BudgetPlan, UUID> {
 			@Param("search") String search,
 			Pageable pageable);
 
-	@Query("""
-			SELECT b FROM BudgetPlan b
-			WHERE b.expenseTracker.id = :trackerId
-			AND b.active = true
-			AND (
-				LOWER(b.name) LIKE LOWER(CONCAT('%', :search, '%'))
-				OR LOWER(b.currencyCode) LIKE LOWER(CONCAT('%', :search, '%'))
-				OR LOWER(CAST(b.periodType AS string)) LIKE LOWER(CONCAT('%', :search, '%'))
-				OR (b.category IS NOT NULL AND LOWER(b.category.name) LIKE LOWER(CONCAT('%', :search, '%')))
-			)
-			""")
-	Page<BudgetPlan> findByExpenseTrackerIdAndActiveTrueWithSearch(
-			@Param("trackerId") UUID trackerId,
-			@Param("search") String search,
-			Pageable pageable);
-
 	boolean existsByExpenseTrackerIdAndNameIgnoreCase(UUID expenseTrackerId, String name);
 
 	@Query("""
@@ -92,5 +76,17 @@ public interface BudgetPlanRepository extends JpaRepository<BudgetPlan, UUID> {
 			""")
 	List<BudgetPlan> findCurrentActiveByRecurringTemplateId(
 			@Param("templateId") UUID templateId,
+			@Param("today") LocalDate today);
+
+	@Query("""
+		SELECT b FROM BudgetPlan b
+		WHERE b.expenseTracker.id = :trackerId
+		AND b.category IS NOT NULL
+		AND b.active = true
+		AND b.validFrom <= :today
+		AND (b.validTo IS NULL OR b.validTo >= :today)
+		""")
+	List<BudgetPlan> findAllCurrentActiveByExpenseTrackerIdWithCategory(
+			@Param("trackerId") UUID trackerId,
 			@Param("today") LocalDate today);
 }

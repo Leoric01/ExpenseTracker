@@ -1,5 +1,6 @@
 package org.leoric.expensetracker.category.dto;
 
+import org.leoric.expensetracker.budget.dto.CategoryActiveBudgetPlanDto;
 import org.leoric.expensetracker.category.models.constants.CategoryKind;
 
 import java.time.OffsetDateTime;
@@ -16,6 +17,7 @@ public record CategoryResponseDto(
 		boolean active,
 		String iconUrl,
 		String iconColor,
+		CategoryActiveBudgetPlanDto activeBudgetPlan,
 		List<CategoryResponseDto> children,
 		OffsetDateTime createdDate,
 		OffsetDateTime lastModifiedDate

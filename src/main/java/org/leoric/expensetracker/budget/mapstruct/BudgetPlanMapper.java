@@ -1,6 +1,7 @@
 package org.leoric.expensetracker.budget.mapstruct;
 
 import org.leoric.expensetracker.budget.dto.BudgetPlanResponseDto;
+import org.leoric.expensetracker.budget.dto.CategoryActiveBudgetPlanDto;
 import org.leoric.expensetracker.budget.dto.UpdateBudgetPlanRequestDto;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.mapstruct.BeanMapping;
@@ -19,8 +20,11 @@ public interface BudgetPlanMapper {
 
 	@Mapping(source = "category.id", target = "categoryId")
 	@Mapping(source = "category.name", target = "categoryName")
-	@Mapping(target = "alreadySpent", constant = "0L")
+	@Mapping(target = "alreadySpent", expression = "java(0L)")
 	BudgetPlanResponseDto toResponse(BudgetPlan entity);
+
+	@Mapping(target = "alreadySpent", expression = "java(0L)")
+	CategoryActiveBudgetPlanDto toCategoryActiveBudgetPlanDto(BudgetPlan entity);
 
 	@BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE,
 			unmappedTargetPolicy = ReportingPolicy.IGNORE)

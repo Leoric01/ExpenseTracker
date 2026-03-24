@@ -4,12 +4,17 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
-import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
+import org.leoric.expensetracker.budget.dto.CategoryActiveBudgetPlanDto;
+import org.leoric.expensetracker.budget.mapstruct.BudgetPlanMapper;
+import org.leoric.expensetracker.budget.models.BudgetPlan;
+import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
+import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryRequestDto;
 import org.leoric.expensetracker.category.dto.UpdateCategoryRequestDto;
 import org.leoric.expensetracker.category.mapstruct.CategoryMapper;
 import org.leoric.expensetracker.category.models.Category;
+import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.category.repositories.CategoryRepository;
 import org.leoric.expensetracker.category.services.interfaces.CategoryService;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
@@ -17,28 +22,35 @@ import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepos
 import org.leoric.expensetracker.handler.exceptions.CategoryHasActiveChildrenException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateCategoryNameException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
-import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
+import org.leoric.expensetracker.utils.BudgetPlanSpentCalculator;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class CategoryServiceImpl implements CategoryService {
 
+	private final BudgetPlanSpentCalculator budgetPlanSpentCalculator;
 	private final CategoryRepository categoryRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
+	private final BudgetPlanRepository budgetPlanRepository;
 	private final CategoryMapper categoryMapper;
+	private final BudgetPlanMapper budgetPlanMapper;
 	private final ImageService imageService;
 
 	@Override
@@ -92,7 +104,7 @@ public class CategoryServiceImpl implements CategoryService {
 				.toList();
 
 		log.info("User {} bulk-created {} categories in tracker '{}'",
-				currentUser.getEmail(), allCategories.size(), tracker.getName());
+		         currentUser.getEmail(), allCategories.size(), tracker.getName());
 
 		return roots.stream()
 				.map(categoryMapper::toResponse)
@@ -100,7 +112,7 @@ public class CategoryServiceImpl implements CategoryService {
 	}
 
 	private void flattenTree(CreateCategoryBulkRequestDto dto, Category parent, CategoryKind rootKind,
-	                         ExpenseTracker tracker, UUID trackerId, List<Category> collector, Set<String> duplicateCheck) {
+			ExpenseTracker tracker, UUID trackerId, List<Category> collector, Set<String> duplicateCheck) {
 		if (dto.categoryKind() != rootKind) {
 			throw new OperationNotPermittedException(
 					"Category '%s' has kind '%s' but the root of this branch is '%s'. All categories in a branch must share the same kind"
@@ -156,12 +168,27 @@ public class CategoryServiceImpl implements CategoryService {
 	@Override
 	@Transactional(readOnly = true)
 	public Page<CategoryResponseDto> categoryFindAllActive(User currentUser, UUID trackerId, String search, Pageable pageable) {
+		LocalDate today = LocalDate.now();
+
+		Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId = budgetPlanRepository
+				.findAllCurrentActiveByExpenseTrackerIdWithCategory(trackerId, today)
+				.stream()
+				.collect(Collectors.toMap(
+						plan -> plan.getCategory().getId(),
+						Function.identity(),
+						(existing, _) -> {
+							throw new IllegalStateException(
+									"Multiple active budget plans found for category " + existing.getCategory().getId());
+						}
+				));
+
 		if (search != null && !search.isBlank()) {
 			return categoryRepository.findActiveByExpenseTrackerIdWithSearch(trackerId, search, pageable)
-					.map(categoryMapper::toFlatResponse);
+					.map(category -> toFlatResponse(category, activeBudgetPlansByCategoryId));
 		}
+
 		return categoryRepository.findByExpenseTrackerIdAndActiveTrueAndParentIsNull(trackerId, pageable)
-				.map(this::toActiveResponse);
+				.map(category -> toActiveResponse(category, activeBudgetPlansByCategoryId));
 	}
 
 	@Override
@@ -192,7 +219,7 @@ public class CategoryServiceImpl implements CategoryService {
 		category = categoryRepository.save(category);
 
 		log.info("User {} updated category '{}' in tracker '{}'",
-				currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
+		         currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
 		return categoryMapper.toResponse(category);
 	}
 
@@ -215,7 +242,7 @@ public class CategoryServiceImpl implements CategoryService {
 
 		deactivateRecursively(category);
 		log.info("User {} deactivated category '{}' (cascade={}) in tracker '{}'",
-				currentUser.getEmail(), category.getName(), cascade, category.getExpenseTracker().getName());
+		         currentUser.getEmail(), category.getName(), cascade, category.getExpenseTracker().getName());
 	}
 
 	@Override
@@ -230,7 +257,7 @@ public class CategoryServiceImpl implements CategoryService {
 		category = categoryRepository.save(category);
 
 		log.info("User {} uploaded icon for category '{}' in tracker '{}'",
-				currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
+		         currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
 		return categoryMapper.toResponse(category);
 	}
 
@@ -245,7 +272,7 @@ public class CategoryServiceImpl implements CategoryService {
 		category = categoryRepository.save(category);
 
 		log.info("User {} deleted icon for category '{}' in tracker '{}'",
-				currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
+		         currentUser.getEmail(), category.getName(), category.getExpenseTracker().getName());
 		return categoryMapper.toResponse(category);
 	}
 
@@ -290,17 +317,76 @@ public class CategoryServiceImpl implements CategoryService {
 		}
 	}
 
-	private CategoryResponseDto toActiveResponse(Category category) {
+	private CategoryResponseDto toActiveResponse(Category category, Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId) {
 		CategoryResponseDto mapped = categoryMapper.toResponse(category);
+
+		CategoryActiveBudgetPlanDto activeBudgetPlan = mapActiveBudgetPlan(category, activeBudgetPlansByCategoryId);
+
 		List<CategoryResponseDto> activeChildren = category.getChildren().stream()
 				.filter(Category::isActive)
-				.map(this::toActiveResponse)
+				.map(child -> toActiveResponse(child, activeBudgetPlansByCategoryId))
 				.toList();
+
 		return new CategoryResponseDto(
-				mapped.id(), mapped.name(), mapped.categoryKind(),
-				mapped.parentId(), mapped.parentName(), mapped.sortOrder(),
-				mapped.active(), mapped.iconUrl(), mapped.iconColor(),
-				activeChildren, mapped.createdDate(), mapped.lastModifiedDate()
+				mapped.id(),
+				mapped.name(),
+				mapped.categoryKind(),
+				mapped.parentId(),
+				mapped.parentName(),
+				mapped.sortOrder(),
+				mapped.active(),
+				mapped.iconUrl(),
+				mapped.iconColor(),
+				activeBudgetPlan,
+				activeChildren,
+				mapped.createdDate(),
+				mapped.lastModifiedDate()
+		);
+	}
+
+	private CategoryResponseDto toFlatResponse(Category category, Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId) {
+		CategoryResponseDto mapped = categoryMapper.toFlatResponse(category);
+
+		CategoryActiveBudgetPlanDto activeBudgetPlan = mapActiveBudgetPlan(category, activeBudgetPlansByCategoryId);
+
+		return new CategoryResponseDto(
+				mapped.id(),
+				mapped.name(),
+				mapped.categoryKind(),
+				mapped.parentId(),
+				mapped.parentName(),
+				mapped.sortOrder(),
+				mapped.active(),
+				mapped.iconUrl(),
+				mapped.iconColor(),
+				activeBudgetPlan,
+				mapped.children(),
+				mapped.createdDate(),
+				mapped.lastModifiedDate()
+		);
+	}
+
+	private CategoryActiveBudgetPlanDto mapActiveBudgetPlan(Category category, Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId) {
+		BudgetPlan plan = activeBudgetPlansByCategoryId.get(category.getId());
+		return plan == null ? null : toCategoryActiveBudgetPlanResponse(plan);
+	}
+
+	private CategoryActiveBudgetPlanDto toCategoryActiveBudgetPlanResponse(BudgetPlan plan) {
+		long alreadySpent = budgetPlanSpentCalculator.computeAlreadySpent(plan);
+		CategoryActiveBudgetPlanDto mapped = budgetPlanMapper.toCategoryActiveBudgetPlanDto(plan);
+
+		return new CategoryActiveBudgetPlanDto(
+				mapped.id(),
+				mapped.name(),
+				mapped.amount(),
+				mapped.currencyCode(),
+				mapped.periodType(),
+				mapped.validFrom(),
+				mapped.validTo(),
+				mapped.active(),
+				alreadySpent,
+				mapped.createdDate(),
+				mapped.lastModifiedDate()
 		);
 	}
 }

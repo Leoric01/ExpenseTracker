@@ -12,24 +12,19 @@ import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
 import org.leoric.expensetracker.budget.services.interfaces.BudgetPlanService;
 import org.leoric.expensetracker.category.models.Category;
-import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.category.repositories.CategoryRepository;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.DuplicateBudgetPlanNameException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
-import org.leoric.expensetracker.transaction.models.constants.TransactionType;
-import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
+import org.leoric.expensetracker.utils.BudgetPlanSpentCalculator;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -37,10 +32,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BudgetPlanServiceImpl implements BudgetPlanService {
 
+	private final BudgetPlanSpentCalculator budgetPlanSpentCalculator;
 	private final BudgetPlanRepository budgetPlanRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final CategoryRepository categoryRepository;
-	private final TransactionRepository transactionRepository;
 	private final BudgetPlanMapper budgetPlanMapper;
 
 	@Override
@@ -72,7 +67,7 @@ public class BudgetPlanServiceImpl implements BudgetPlanService {
 
 		budgetPlan = budgetPlanRepository.save(budgetPlan);
 		log.info("User {} created budget plan '{}' in tracker '{}'",
-				currentUser.getEmail(), budgetPlan.getName(), tracker.getName());
+		         currentUser.getEmail(), budgetPlan.getName(), tracker.getName());
 
 		return toResponseWithSpent(budgetPlan);
 	}
@@ -128,7 +123,7 @@ public class BudgetPlanServiceImpl implements BudgetPlanService {
 
 		budgetPlan = budgetPlanRepository.save(budgetPlan);
 		log.info("User {} updated budget plan '{}' in tracker '{}'",
-				currentUser.getEmail(), budgetPlan.getName(), budgetPlan.getExpenseTracker().getName());
+		         currentUser.getEmail(), budgetPlan.getName(), budgetPlan.getExpenseTracker().getName());
 
 		return toResponseWithSpent(budgetPlan);
 	}
@@ -146,13 +141,13 @@ public class BudgetPlanServiceImpl implements BudgetPlanService {
 		budgetPlan.setActive(false);
 		budgetPlanRepository.save(budgetPlan);
 		log.info("User {} deactivated budget plan '{}' in tracker '{}'",
-				currentUser.getEmail(), budgetPlan.getName(), budgetPlan.getExpenseTracker().getName());
+		         currentUser.getEmail(), budgetPlan.getName(), budgetPlan.getExpenseTracker().getName());
 	}
 
 	// ── Response builder ──
 
 	private BudgetPlanResponseDto toResponseWithSpent(BudgetPlan plan) {
-		long alreadySpent = computeAlreadySpent(plan);
+		long alreadySpent = budgetPlanSpentCalculator.computeAlreadySpent(plan);
 		return new BudgetPlanResponseDto(
 				plan.getId(),
 				plan.getName(),
@@ -169,44 +164,6 @@ public class BudgetPlanServiceImpl implements BudgetPlanService {
 				plan.getLastModifiedDate() != null ? plan.getLastModifiedDate().atOffset(ZoneOffset.UTC) : null
 		);
 	}
-
-	private long computeAlreadySpent(BudgetPlan plan) {
-		if (plan.getCategory() == null) {
-			return 0;
-		}
-
-		// Collect this category + all descendants
-		Set<UUID> categoryIds = new HashSet<>();
-		collectCategoryIds(plan.getCategory(), categoryIds);
-
-		// Determine transaction type from category kind
-		TransactionType txType = plan.getCategory().getCategoryKind() == CategoryKind.INCOME
-				? TransactionType.INCOME
-				: TransactionType.EXPENSE;
-
-		// Date range: validFrom (start of day UTC) to validTo+1 (exclusive) or now
-		Instant from = plan.getValidFrom().atStartOfDay().toInstant(ZoneOffset.UTC);
-		Instant to;
-		if (plan.getValidTo() != null) {
-			to = plan.getValidTo().plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
-		} else {
-			to = Instant.now();
-		}
-
-		return transactionRepository.sumAmountByCategoryIdsAndDateRange(
-				plan.getExpenseTracker().getId(), txType, categoryIds, from, to);
-	}
-
-	private void collectCategoryIds(Category category, Set<UUID> ids) {
-		ids.add(category.getId());
-		if (category.getChildren() != null) {
-			for (Category child : category.getChildren()) {
-				collectCategoryIds(child, ids);
-			}
-		}
-	}
-
-	// ── Helpers ──
 
 	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {
 		return expenseTrackerRepository.findById(trackerId)
