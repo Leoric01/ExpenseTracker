@@ -176,9 +176,19 @@ public class CategoryServiceImpl implements CategoryService {
 				.collect(Collectors.toMap(
 						plan -> plan.getCategory().getId(),
 						Function.identity(),
-						(existing, _) -> {
-							throw new IllegalStateException(
-									"Multiple active budget plans found for category " + existing.getCategory().getId());
+						(existing, duplicate) -> {
+							BudgetPlan chosen = choosePreferredBudgetPlan(existing, duplicate);
+							BudgetPlan discarded = chosen == existing ? duplicate : existing;
+
+							log.warn(
+									"Multiple active budget plans found for category {} in tracker {}. Keeping budget plan {}, ignoring {}",
+									chosen.getCategory().getId(),
+									trackerId,
+									chosen.getId(),
+									discarded.getId()
+							);
+
+							return chosen;
 						}
 				));
 
@@ -189,6 +199,26 @@ public class CategoryServiceImpl implements CategoryService {
 
 		return categoryRepository.findByExpenseTrackerIdAndActiveTrueAndParentIsNull(trackerId, pageable)
 				.map(category -> toActiveResponse(category, activeBudgetPlansByCategoryId));
+	}
+
+	private BudgetPlan choosePreferredBudgetPlan(BudgetPlan left, BudgetPlan right) {
+		if (left.getValidFrom().isAfter(right.getValidFrom())) {
+			return left;
+		}
+		if (right.getValidFrom().isAfter(left.getValidFrom())) {
+			return right;
+		}
+
+		if (left.getLastModifiedDate() != null && right.getLastModifiedDate() != null) {
+			if (left.getLastModifiedDate().isAfter(right.getLastModifiedDate())) {
+				return left;
+			}
+			if (right.getLastModifiedDate().isAfter(left.getLastModifiedDate())) {
+				return right;
+			}
+		}
+
+		return left;
 	}
 
 	@Override
