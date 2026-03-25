@@ -11,8 +11,10 @@ import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
+import org.leoric.expensetracker.transaction.TransactionSpecification;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
+import org.leoric.expensetracker.transaction.dto.TransactionFilter;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
 import org.leoric.expensetracker.transaction.dto.UpdateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.mapstruct.TransactionMapper;
@@ -27,14 +29,20 @@ import org.leoric.expensetracker.transaction.services.interfaces.TransactionServ
 import org.leoric.expensetracker.wallet.models.Wallet;
 import org.leoric.expensetracker.wallet.repositories.WalletRepository;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -81,12 +89,25 @@ public class TransactionServiceImpl implements TransactionService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public Page<TransactionResponseDto> transactionFindAll(User currentUser, UUID trackerId, String search, Pageable pageable) {
-		if (search != null && !search.isBlank()) {
-			return transactionRepository.findByExpenseTrackerIdWithSearch(trackerId, search, pageable)
-					.map(transactionMapper::toResponse);
-		}
-		return transactionRepository.findByExpenseTrackerId(trackerId, pageable)
+	public Page<TransactionResponseDto> transactionFindAllPageable(User currentUser, UUID trackerId, TransactionFilter filter, Pageable pageable) {
+		List<Category> categories = categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId);
+		Map<UUID, List<Category>> childrenByParentId = categories.stream()
+				.filter(category -> category.getParent() != null)
+				.collect(Collectors.groupingBy(category -> category.getParent().getId()));
+
+		Set<UUID> explicitCategoryIds = resolveDescendantCategoryIds(filter.categoryId(), childrenByParentId);
+		Set<UUID> searchCategoryIds = resolveSearchMatchedCategoryIds(filter.search(), categories, childrenByParentId);
+
+		Pageable normalizedPageable = normalizeTransactionPageable(pageable);
+
+		Specification<Transaction> specification = TransactionSpecification.filter(
+				trackerId,
+				filter,
+				explicitCategoryIds,
+				searchCategoryIds
+		);
+
+		return transactionRepository.findAll(specification, normalizedPageable)
 				.map(transactionMapper::toResponse);
 	}
 
@@ -123,7 +144,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} updated transaction '{}' in tracker '{}'",
-				currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
+		         currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
 		return transactionMapper.toResponse(transaction);
 	}
 
@@ -139,14 +160,64 @@ public class TransactionServiceImpl implements TransactionService {
 		transaction = transactionRepository.save(transaction);
 
 		log.info("User {} cancelled transaction '{}' in tracker '{}'",
-				currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
+		         currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
 		return transactionMapper.toResponse(transaction);
 	}
 
-	// ── INCOME / EXPENSE ──
+	private Pageable normalizeTransactionPageable(Pageable pageable) {
+		List<Sort.Order> mappedOrders = pageable.getSort().stream()
+				.map(order -> switch (order.getProperty()) {
+					case "transactionDate" -> new Sort.Order(order.getDirection(), "transactionDate");
+					case "walletName" -> new Sort.Order(order.getDirection(), "wallet.name");
+					case "transactionType" -> new Sort.Order(order.getDirection(), "transactionType");
+					default -> new Sort.Order(Sort.Direction.DESC, "transactionDate");
+				})
+				.toList();
+
+		Sort sort = mappedOrders.isEmpty() ? Sort.by(Sort.Order.desc("transactionDate")) : Sort.by(mappedOrders);
+
+		return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
+	}
+
+	private Set<UUID> resolveDescendantCategoryIds(UUID categoryId, Map<UUID, List<Category>> childrenByParentId) {
+		if (categoryId == null) {
+			return Set.of();
+		}
+
+		Set<UUID> result = new HashSet<>();
+		collectDescendants(categoryId, childrenByParentId, result);
+		return result;
+	}
+
+	private Set<UUID> resolveSearchMatchedCategoryIds(String search, List<Category> categories, Map<UUID, List<Category>> childrenByParentId) {
+		if (search == null || search.isBlank()) {
+			return Set.of();
+		}
+
+		String normalizedSearch = search.toLowerCase();
+		Set<UUID> result = new HashSet<>();
+
+		for (Category category : categories) {
+			if (category.getName() != null && category.getName().toLowerCase().contains(normalizedSearch)) {
+				collectDescendants(category.getId(), childrenByParentId, result);
+			}
+		}
+
+		return result;
+	}
+
+	private void collectDescendants(UUID categoryId, Map<UUID, List<Category>> childrenByParentId, Set<UUID> result) {
+		if (!result.add(categoryId)) {
+			return;
+		}
+
+		for (Category child : childrenByParentId.getOrDefault(categoryId, List.of())) {
+			collectDescendants(child.getId(), childrenByParentId, result);
+		}
+	}
 
 	private TransactionResponseDto createIncomeOrExpense(User currentUser, ExpenseTracker tracker,
-	                                                     CreateTransactionRequestDto request, TransactionType type) {
+			CreateTransactionRequestDto request, TransactionType type) {
 		if (request.walletId() == null) {
 			throw new OperationNotPermittedException("Wallet is required for %s transactions".formatted(type));
 		}
@@ -188,7 +259,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created {} transaction '{}' ({} {}) in tracker '{}'",
-				currentUser.getEmail(), type, transaction.getId(), request.amount(), wallet.getCurrencyCode(), tracker.getName());
+		         currentUser.getEmail(), type, transaction.getId(), request.amount(), wallet.getCurrencyCode(), tracker.getName());
 		return transactionMapper.toResponse(transaction);
 	}
 
@@ -234,8 +305,8 @@ public class TransactionServiceImpl implements TransactionService {
 
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created TRANSFER '{}' ({} {}) {} → {} in tracker '{}'",
-				currentUser.getEmail(), transaction.getId(), request.amount(), source.getCurrencyCode(),
-				source.getName(), target.getName(), tracker.getName());
+		         currentUser.getEmail(), transaction.getId(), request.amount(), source.getCurrencyCode(),
+		         source.getName(), target.getName(), tracker.getName());
 		return transactionMapper.toResponse(transaction);
 	}
 
@@ -282,8 +353,8 @@ public class TransactionServiceImpl implements TransactionService {
 
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created BALANCE_ADJUSTMENT '{}' ({} {} {}) on wallet '{}' in tracker '{}'",
-				currentUser.getEmail(), transaction.getId(), direction, absAmount,
-				wallet.getCurrencyCode(), wallet.getName(), tracker.getName());
+		         currentUser.getEmail(), transaction.getId(), direction, absAmount,
+		         wallet.getCurrencyCode(), wallet.getName(), tracker.getName());
 		return transactionMapper.toResponse(transaction);
 	}
 
@@ -346,7 +417,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		attachment = attachmentRepository.save(attachment);
 		log.info("User {} uploaded attachment '{}' to transaction '{}' in tracker '{}'",
-				currentUser.getEmail(), attachment.getFileName(), transactionId, trackerId);
+		         currentUser.getEmail(), attachment.getFileName(), transactionId, trackerId);
 
 		return transactionMapper.toAttachmentResponse(attachment);
 	}
@@ -377,7 +448,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		attachmentRepository.delete(attachment);
 		log.info("User {} deleted attachment '{}' from transaction '{}' in tracker '{}'",
-				currentUser.getEmail(), attachment.getFileName(), transactionId, trackerId);
+		         currentUser.getEmail(), attachment.getFileName(), transactionId, trackerId);
 	}
 
 	// ── Helpers ──

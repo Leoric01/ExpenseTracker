@@ -3,6 +3,7 @@ package org.leoric.expensetracker.transaction.services.interfaces;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
+import org.leoric.expensetracker.transaction.dto.TransactionFilter;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
 import org.leoric.expensetracker.transaction.dto.UpdateTransactionRequestDto;
 import org.springframework.data.domain.Page;
@@ -20,7 +21,7 @@ public interface TransactionService {
 
 	TransactionResponseDto transactionFindById(User currentUser, UUID trackerId, UUID transactionId);
 
-	Page<TransactionResponseDto> transactionFindAll(User currentUser, UUID trackerId, String search, Pageable pageable);
+	Page<TransactionResponseDto> transactionFindAllPageable(User currentUser, UUID trackerId, TransactionFilter filter, Pageable pageable);
 
 	TransactionResponseDto transactionUpdate(User currentUser, UUID trackerId, UUID transactionId, UpdateTransactionRequestDto request);
 

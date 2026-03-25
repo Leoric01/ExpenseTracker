@@ -6,8 +6,11 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
+import org.leoric.expensetracker.transaction.dto.TransactionFilter;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
 import org.leoric.expensetracker.transaction.dto.UpdateTransactionRequestDto;
+import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
+import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.services.interfaces.TransactionService;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,9 +59,18 @@ public class TransactionController {
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
 			@RequestParam(required = false) String search,
+			@RequestParam(required = false) UUID categoryId,
+			@RequestParam(required = false) UUID walletId,
+			@RequestParam(required = false) TransactionType transactionType,
+			@RequestParam(required = false) TransactionStatus status,
+			@RequestParam(required = false) Instant dateFrom,
+			@RequestParam(required = false) Instant dateTo,
 			@ParameterObject Pageable pageable) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
-		return ResponseEntity.ok(transactionService.transactionFindAll(currentUser, trackerId, search, pageable));
+
+		TransactionFilter filter = new TransactionFilter(search, categoryId, walletId, transactionType, status, dateFrom, dateTo);
+
+		return ResponseEntity.ok(transactionService.transactionFindAllPageable(currentUser, trackerId, filter, pageable));
 	}
 
 	@GetMapping("/{trackerId}/{transactionId}")
