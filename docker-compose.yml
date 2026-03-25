@@ -21,7 +21,7 @@ services:
 
   backend:
     image: leorickk/expense-tracker-be:latest
-    container_name: expensetracker-backend
+    container_name: expense-tracker-backend
     restart: unless-stopped
     depends_on:
       mariadb:
@@ -45,8 +45,8 @@ services:
 
 
   frontend:
-    image: leorickk/expense-tracker-frontend:latest
-    container_name: expensetracker-frontend
+    image: leorickk/expense-tracker-fe:latest
+    container_name: expense-tracker-fe
     restart: unless-stopped
     depends_on:
       - backend

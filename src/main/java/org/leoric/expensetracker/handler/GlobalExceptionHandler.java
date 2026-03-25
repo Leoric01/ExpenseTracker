@@ -3,6 +3,7 @@ package org.leoric.expensetracker.handler;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateWidgetItemEntityIdsException;
 import org.leoric.expensetracker.handler.exceptions.EmailAlreadyInUseException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateExpenseTrackerNameException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateBudgetPlanNameException;
@@ -14,6 +15,7 @@ import org.leoric.expensetracker.handler.exceptions.InsufficientRoleException;
 import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchException;
 import org.leoric.expensetracker.handler.exceptions.NotAuthorizedForThisExpenseTrackerException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.handler.exceptions.WidgetItemReorderMismatchException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -200,6 +202,17 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionResponse> handleGeneralException(Exception ex) {
 		log.error("[{}] Unhandled exception", INTERNAL_ERROR.getCode(), ex);
 		return build(INTERNAL_ERROR, ex.getMessage());
+	}
+	@ExceptionHandler(DuplicateWidgetItemEntityIdsException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateWidgetItemEntityIdsException(DuplicateWidgetItemEntityIdsException ex) {
+		log.warn("[{}] {}", DUPLICATE_WIDGET_ITEM_ENTITY_IDS.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_WIDGET_ITEM_ENTITY_IDS, ex.getMessage());
+	}
+
+	@ExceptionHandler(WidgetItemReorderMismatchException.class)
+	public ResponseEntity<ExceptionResponse> handleWidgetItemReorderMismatchException(WidgetItemReorderMismatchException ex) {
+		log.warn("[{}] {}", WIDGET_ITEM_REORDER_MISMATCH.getCode(), ex.getMessage(), ex);
+		return build(WIDGET_ITEM_REORDER_MISMATCH, ex.getMessage());
 	}
 
 	private ResponseEntity<ExceptionResponse> build(BusinessErrorCodes code, String errorMessage) {

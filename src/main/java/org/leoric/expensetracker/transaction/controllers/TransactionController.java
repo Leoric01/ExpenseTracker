@@ -51,7 +51,7 @@ public class TransactionController {
 	}
 
 	@GetMapping("/{trackerId}")
-	public ResponseEntity<Page<TransactionResponseDto>> transactionFindAll(
+	public ResponseEntity<Page<TransactionResponseDto>> transactionFindAllPageable(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
 			@RequestParam(required = false) String search,

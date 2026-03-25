@@ -40,7 +40,8 @@ public enum BusinessErrorCodes {
 	CATEGORY_HAS_ACTIVE_CHILDREN("B-4002", CONFLICT, "Category has active subcategories"),
 
 	DUPLICATE_BUDGET_PLAN_NAME("B-5001", CONFLICT, "A budget plan with this name already exists in this expense tracker"),
-
+	DUPLICATE_WIDGET_ITEM_ENTITY_IDS("B-6001", BAD_REQUEST, "Widget reorder contains duplicate entity ids"),
+	WIDGET_ITEM_REORDER_MISMATCH("B-6002", BAD_REQUEST, "Widget reorder payload does not match existing widget items"),
 	INTERNAL_ERROR("B-9999", INTERNAL_SERVER_ERROR, "Internal error, please contact the admin");
 
 	private final String code;
