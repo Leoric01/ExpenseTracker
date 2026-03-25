@@ -67,15 +67,15 @@ public final class TransactionSpecification {
 				String like = "%" + filter.search().toLowerCase() + "%";
 
 				List<Predicate> searchPredicates = new ArrayList<>();
-				searchPredicates.add(cb.like(cb.lower(root.get("description")), like));
-				searchPredicates.add(cb.like(cb.lower(root.get("note")), like));
-				searchPredicates.add(cb.like(cb.lower(root.get("currencyCode")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(root.get("description"), "")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(root.get("note"), "")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(root.get("currencyCode"), "")), like));
 				searchPredicates.add(cb.like(cb.lower(root.get("transactionType").as(String.class)), like));
 				searchPredicates.add(cb.like(cb.lower(root.get("status").as(String.class)), like));
-				searchPredicates.add(cb.like(cb.lower(walletJoin.get("name")), like));
-				searchPredicates.add(cb.like(cb.lower(sourceWalletJoin.get("name")), like));
-				searchPredicates.add(cb.like(cb.lower(targetWalletJoin.get("name")), like));
-				searchPredicates.add(cb.like(cb.lower(categoryJoin.get("name")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(walletJoin.get("name"), "")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(sourceWalletJoin.get("name"), "")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(targetWalletJoin.get("name"), "")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(categoryJoin.get("name"), "")), like));
 
 				if (!searchCategoryIds.isEmpty()) {
 					searchPredicates.add(categoryJoin.get("id").in(searchCategoryIds));

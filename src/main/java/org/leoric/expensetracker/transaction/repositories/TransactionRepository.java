@@ -2,8 +2,6 @@ package org.leoric.expensetracker.transaction.repositories;
 
 import org.leoric.expensetracker.transaction.models.Transaction;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -18,29 +16,7 @@ import java.util.UUID;
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, UUID>, JpaSpecificationExecutor<Transaction> {
 
-	Page<Transaction> findByExpenseTrackerId(UUID expenseTrackerId, Pageable pageable);
-
 	void deleteByExpenseTrackerId(UUID expenseTrackerId);
-
-	@Query("""
-			SELECT t FROM Transaction t
-			WHERE t.expenseTracker.id = :trackerId
-			AND (
-				LOWER(t.description) LIKE LOWER(CONCAT('%', :search, '%'))
-				OR LOWER(t.note) LIKE LOWER(CONCAT('%', :search, '%'))
-				OR LOWER(t.currencyCode) LIKE LOWER(CONCAT('%', :search, '%'))
-				OR LOWER(CAST(t.transactionType AS string)) LIKE LOWER(CONCAT('%', :search, '%'))
-				OR LOWER(CAST(t.status AS string)) LIKE LOWER(CONCAT('%', :search, '%'))
-				OR (t.wallet IS NOT NULL AND LOWER(t.wallet.name) LIKE LOWER(CONCAT('%', :search, '%')))
-				OR (t.sourceWallet IS NOT NULL AND LOWER(t.sourceWallet.name) LIKE LOWER(CONCAT('%', :search, '%')))
-				OR (t.targetWallet IS NOT NULL AND LOWER(t.targetWallet.name) LIKE LOWER(CONCAT('%', :search, '%')))
-				OR (t.category IS NOT NULL AND LOWER(t.category.name) LIKE LOWER(CONCAT('%', :search, '%')))
-			)
-			""")
-	Page<Transaction> findByExpenseTrackerIdWithSearch(
-			@Param("trackerId") UUID trackerId,
-			@Param("search") String search,
-			Pageable pageable);
 
 	@Query("""
 			SELECT t FROM Transaction t

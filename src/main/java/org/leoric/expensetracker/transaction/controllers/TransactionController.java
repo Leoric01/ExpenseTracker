@@ -7,13 +7,13 @@ import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrack
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionFilter;
+import org.leoric.expensetracker.transaction.dto.TransactionPageResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
 import org.leoric.expensetracker.transaction.dto.UpdateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.services.interfaces.TransactionService;
 import org.springdoc.core.annotations.ParameterObject;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -55,7 +55,7 @@ public class TransactionController {
 	}
 
 	@GetMapping("/{trackerId}")
-	public ResponseEntity<Page<TransactionResponseDto>> transactionFindAllPageable(
+	public ResponseEntity<TransactionPageResponseDto> transactionFindAllPageable(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
 			@RequestParam(required = false) String search,
@@ -68,7 +68,15 @@ public class TransactionController {
 			@ParameterObject Pageable pageable) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 
-		TransactionFilter filter = new TransactionFilter(search, categoryId, walletId, transactionType, status, dateFrom, dateTo);
+		TransactionFilter filter = new TransactionFilter(
+				search,
+				categoryId,
+				walletId,
+				transactionType,
+				status,
+				dateFrom,
+				dateTo
+		);
 
 		return ResponseEntity.ok(transactionService.transactionFindAllPageable(currentUser, trackerId, filter, pageable));
 	}

@@ -13,9 +13,12 @@ import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedExcepti
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.transaction.TransactionSpecification;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
+import org.leoric.expensetracker.transaction.dto.PageMetaDto;
 import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionFilter;
+import org.leoric.expensetracker.transaction.dto.TransactionPageResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
+import org.leoric.expensetracker.transaction.dto.TransactionTotalsDto;
 import org.leoric.expensetracker.transaction.dto.UpdateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.mapstruct.TransactionMapper;
 import org.leoric.expensetracker.transaction.models.Transaction;
@@ -40,6 +43,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -89,7 +93,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public Page<TransactionResponseDto> transactionFindAllPageable(User currentUser, UUID trackerId, TransactionFilter filter, Pageable pageable) {
+	public TransactionPageResponseDto transactionFindAllPageable(User currentUser, UUID trackerId, TransactionFilter filter, Pageable pageable) {
 		List<Category> categories = categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId);
 		Map<UUID, List<Category>> childrenByParentId = categories.stream()
 				.filter(category -> category.getParent() != null)
@@ -107,8 +111,25 @@ public class TransactionServiceImpl implements TransactionService {
 				searchCategoryIds
 		);
 
-		return transactionRepository.findAll(specification, normalizedPageable)
-				.map(transactionMapper::toResponse);
+		Page<Transaction> transactionPage = transactionRepository.findAll(specification, normalizedPageable);
+
+		TransactionTotalsDto totals = calculateTotals(
+				transactionRepository.findAll(specification),
+				filter.walletId()
+		);
+
+		return new TransactionPageResponseDto(
+				transactionPage.getContent().stream()
+						.map(transactionMapper::toResponse)
+						.toList(),
+				new PageMetaDto(
+						transactionPage.getSize(),
+						transactionPage.getNumber(),
+						transactionPage.getTotalElements(),
+						transactionPage.getTotalPages()
+				),
+				totals
+		);
 	}
 
 	@Override
@@ -164,17 +185,64 @@ public class TransactionServiceImpl implements TransactionService {
 		return transactionMapper.toResponse(transaction);
 	}
 
+	private TransactionTotalsDto calculateTotals(List<Transaction> transactions, UUID walletId) {
+		long incomeAmount = 0;
+		long expenseAmount = 0;
+
+		for (Transaction transaction : transactions) {
+			if (transaction.getStatus() != TransactionStatus.COMPLETED) {
+				continue;
+			}
+
+			switch (transaction.getTransactionType()) {
+				case INCOME -> incomeAmount += transaction.getAmount();
+				case EXPENSE -> expenseAmount += transaction.getAmount();
+				case BALANCE_ADJUSTMENT -> {
+					if (transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION) {
+						incomeAmount += transaction.getAmount();
+					} else if (transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.DEDUCTION) {
+						expenseAmount += transaction.getAmount();
+					}
+				}
+				case TRANSFER -> {
+					if (walletId == null) {
+						continue;
+					}
+
+					boolean outgoing = transaction.getSourceWallet() != null && walletId.equals(transaction.getSourceWallet().getId());
+					boolean incoming = transaction.getTargetWallet() != null && walletId.equals(transaction.getTargetWallet().getId());
+
+					if (outgoing) {
+						expenseAmount += transaction.getAmount();
+					}
+					if (incoming) {
+						incomeAmount += transaction.getAmount();
+					}
+				}
+			}
+		}
+
+		return new TransactionTotalsDto(
+				incomeAmount,
+				expenseAmount,
+				incomeAmount - expenseAmount
+		);
+	}
+
 	private Pageable normalizeTransactionPageable(Pageable pageable) {
 		List<Sort.Order> mappedOrders = pageable.getSort().stream()
 				.map(order -> switch (order.getProperty()) {
 					case "transactionDate" -> new Sort.Order(order.getDirection(), "transactionDate");
 					case "walletName" -> new Sort.Order(order.getDirection(), "wallet.name");
 					case "transactionType" -> new Sort.Order(order.getDirection(), "transactionType");
-					default -> new Sort.Order(Sort.Direction.DESC, "transactionDate");
+					default -> null;
 				})
+				.filter(Objects::nonNull)
 				.toList();
 
-		Sort sort = mappedOrders.isEmpty() ? Sort.by(Sort.Order.desc("transactionDate")) : Sort.by(mappedOrders);
+		Sort sort = mappedOrders.isEmpty()
+				? Sort.by(Sort.Order.desc("transactionDate"))
+				: Sort.by(mappedOrders);
 
 		return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
 	}
