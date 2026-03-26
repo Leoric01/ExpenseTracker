@@ -8,7 +8,6 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
-
 public record TransactionResponseDto(
 		UUID id,
 		TransactionType transactionType,
@@ -21,6 +20,8 @@ public record TransactionResponseDto(
 		String targetWalletName,
 		UUID categoryId,
 		String categoryName,
+		UUID rootCategoryId,
+		String rootCategoryName,
 		long amount,
 		String currencyCode,
 		BalanceAdjustmentDirection balanceAdjustmentDirection,

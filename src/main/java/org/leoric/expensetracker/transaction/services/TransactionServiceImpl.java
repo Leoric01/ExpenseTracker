@@ -40,12 +40,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -90,14 +92,16 @@ public class TransactionServiceImpl implements TransactionService {
 		assertTransactionBelongsToTracker(transaction, trackerId);
 		return transactionMapper.toResponse(transaction);
 	}
-
 	@Override
 	@Transactional(readOnly = true)
 	public TransactionPageResponseDto transactionFindAllPageable(User currentUser, UUID trackerId, TransactionFilter filter, Pageable pageable) {
 		List<Category> categories = categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId);
+
 		Map<UUID, List<Category>> childrenByParentId = categories.stream()
 				.filter(category -> category.getParent() != null)
 				.collect(Collectors.groupingBy(category -> category.getParent().getId()));
+
+		Map<UUID, RootCategoryInfo> rootCategoryByCategoryId = buildRootCategoryMap(categories);
 
 		Set<UUID> explicitCategoryIds = resolveDescendantCategoryIds(filter.categoryId(), childrenByParentId);
 		Set<UUID> searchCategoryIds = resolveSearchMatchedCategoryIds(filter.search(), categories, childrenByParentId);
@@ -118,10 +122,12 @@ public class TransactionServiceImpl implements TransactionService {
 				filter.walletId()
 		);
 
+		List<TransactionResponseDto> content = transactionPage.getContent().stream()
+				.map(transaction -> toTransactionResponse(transaction, rootCategoryByCategoryId))
+				.toList();
+
 		return new TransactionPageResponseDto(
-				transactionPage.getContent().stream()
-						.map(transactionMapper::toResponse)
-						.toList(),
+				content,
 				new PageMetaDto(
 						transactionPage.getSize(),
 						transactionPage.getNumber(),
@@ -184,7 +190,45 @@ public class TransactionServiceImpl implements TransactionService {
 		         currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
 		return transactionMapper.toResponse(transaction);
 	}
+	private TransactionResponseDto toTransactionResponse(Transaction transaction, Map<UUID, RootCategoryInfo> rootCategoryByCategoryId) {
+		TransactionResponseDto dto = transactionMapper.toResponse(transaction);
 
+		if (dto.categoryId() == null) {
+			return dto;
+		}
+
+		RootCategoryInfo rootCategory = rootCategoryByCategoryId.get(dto.categoryId());
+
+		if (rootCategory == null) {
+			return dto;
+		}
+
+		return new TransactionResponseDto(
+				dto.id(),
+				dto.transactionType(),
+				dto.status(),
+				dto.walletId(),
+				dto.walletName(),
+				dto.sourceWalletId(),
+				dto.sourceWalletName(),
+				dto.targetWalletId(),
+				dto.targetWalletName(),
+				dto.categoryId(),
+				dto.categoryName(),
+				rootCategory.id(),
+				rootCategory.name(),
+				dto.amount(),
+				dto.currencyCode(),
+				dto.balanceAdjustmentDirection(),
+				dto.transactionDate(),
+				dto.description(),
+				dto.note(),
+				dto.externalRef(),
+				dto.attachments(),
+				dto.createdDate(),
+				dto.lastModifiedDate()
+		);
+	}
 	private TransactionTotalsDto calculateTotals(List<Transaction> transactions, UUID walletId) {
 		long incomeAmount = 0;
 		long expenseAmount = 0;
@@ -520,7 +564,33 @@ public class TransactionServiceImpl implements TransactionService {
 	}
 
 	// ── Helpers ──
+	private Map<UUID, RootCategoryInfo> buildRootCategoryMap(List<Category> categories) {
+		Map<UUID, Category> categoryById = categories.stream()
+				.collect(Collectors.toMap(Category::getId, Function.identity()));
 
+		Map<UUID, RootCategoryInfo> result = new HashMap<>();
+
+		for (Category category : categories) {
+			Category root = findRootCategory(category, categoryById);
+			result.put(category.getId(), new RootCategoryInfo(root.getId(), root.getName()));
+		}
+
+		return result;
+	}
+
+	private Category findRootCategory(Category category, Map<UUID, Category> categoryById) {
+		Category current = category;
+
+		while (current.getParent() != null) {
+			Category parent = categoryById.get(current.getParent().getId());
+			if (parent == null) {
+				break;
+			}
+			current = parent;
+		}
+
+		return current;
+	}
 	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {
 		return expenseTrackerRepository.findById(trackerId)
 				.orElseThrow(() -> new EntityNotFoundException("Expense tracker not found"));
@@ -578,5 +648,11 @@ public class TransactionServiceImpl implements TransactionService {
 					"Category '%s' is of kind %s but transaction type is %s".formatted(
 							category.getName(), category.getCategoryKind(), type));
 		}
+	}
+
+	private record RootCategoryInfo(
+			UUID id,
+			String name
+	) {
 	}
 }
