@@ -2,6 +2,7 @@ package org.leoric.expensetracker.category.controllers;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
@@ -26,6 +27,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,6 +39,7 @@ import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER
 @RestController
 @RequestMapping("/api/category")
 @RequiredArgsConstructor
+@Slf4j
 public class CategoryController {
 
 	private final CategoryService categoryService;
@@ -75,9 +80,15 @@ public class CategoryController {
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
 			@RequestParam(required = false) String search,
+			@RequestParam(required = false) Instant dateFrom,
+			@RequestParam(required = false) Instant dateTo,
 			@ParameterObject Pageable pageable) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
-		return ResponseEntity.ok(categoryService.categoryFindAllActive(currentUser, trackerId, search, pageable));
+		LocalDate from = dateFrom != null ? dateFrom.atZone(ZoneOffset.UTC).toLocalDate() : null;
+		LocalDate to = dateTo != null ? dateTo.atZone(ZoneOffset.UTC).toLocalDate() : null;
+		log.debug("categoryFindAllActive — dateFrom(Instant)={}, dateTo(Instant)={}, from(LocalDate)={}, to(LocalDate)={}",
+				dateFrom, dateTo, from, to);
+		return ResponseEntity.ok(categoryService.categoryFindAllActive(currentUser, trackerId, search, from, to, pageable));
 	}
 
 	@GetMapping("/{trackerId}/{categoryId}")

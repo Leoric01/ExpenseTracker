@@ -89,4 +89,17 @@ public interface BudgetPlanRepository extends JpaRepository<BudgetPlan, UUID> {
 	List<BudgetPlan> findAllCurrentActiveByExpenseTrackerIdWithCategory(
 			@Param("trackerId") UUID trackerId,
 			@Param("today") LocalDate today);
+
+	@Query("""
+		SELECT b FROM BudgetPlan b
+		WHERE b.expenseTracker.id = :trackerId
+		AND b.category IS NOT NULL
+		AND b.active = true
+		AND b.validFrom <= :rangeTo
+		AND (b.validTo IS NULL OR b.validTo >= :rangeFrom)
+		""")
+	List<BudgetPlan> findAllActiveByExpenseTrackerIdWithCategoryInRange(
+			@Param("trackerId") UUID trackerId,
+			@Param("rangeFrom") LocalDate rangeFrom,
+			@Param("rangeTo") LocalDate rangeTo);
 }
