@@ -1,15 +1,11 @@
-package org.leoric.expensetracker.expensetracker.models;
+package org.leoric.expensetracker.wallet.reworked;
 
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
@@ -18,9 +14,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.UuidGenerator;
-import org.leoric.expensetracker.auth.models.User;
-import org.leoric.expensetracker.auth.models.UserExpenseTrackerRole;
-import org.leoric.expensetracker.wallet.reworked.Asset;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -28,53 +21,42 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "expense_tracker", uniqueConstraints = {
-		@UniqueConstraint(columnNames = {"created_by_owner_id", "name"})
-})
+@Table(name = "holding", uniqueConstraints = {@UniqueConstraint(columnNames = {"account_id", "asset_id"})})
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @EntityListeners(AuditingEntityListener.class)
-public class ExpenseTracker {
+public class Holding {
 
 	@Id
 	@UuidGenerator(style = UuidGenerator.Style.AUTO)
 	@Column(columnDefinition = "BINARY(16)")
 	private UUID id;
 
+	@ManyToOne(optional = false)
+	@JoinColumn(name = "account_id", nullable = false)
+	private Account account;
+
+	@ManyToOne(optional = false)
+	@JoinColumn(name = "asset_id", nullable = false)
+	private Asset asset;
+
+	@Builder.Default
 	@Column(nullable = false)
-	private String name;
+	private long initialAmount = 0;
 
-	private String description;
-
+	@Builder.Default
 	@Column(nullable = false)
-	private String defaultCurrencyCode;
-
-	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "default_asset_id", nullable = false)
-	private Asset defaultAsset;
+	private long currentAmount = 0;
 
 	@Builder.Default
 	@Column(nullable = false)
 	private boolean active = true;
-
-	@ManyToOne(optional = false)
-	private User createdByOwner;
-
-	@Builder.Default
-	@ManyToMany(mappedBy = "expenseTrackers", fetch = FetchType.EAGER)
-	private List<User> users = new ArrayList<>();
-
-	@Builder.Default
-	@OneToMany(mappedBy = "expenseTracker", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
-	private List<UserExpenseTrackerRole> userExpenseTrackerRoles = new ArrayList<>();
 
 	@CreatedDate
 	@Column(updatable = false, nullable = false)

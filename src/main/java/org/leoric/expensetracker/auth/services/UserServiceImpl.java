@@ -3,6 +3,7 @@ package org.leoric.expensetracker.auth.services;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.leoric.expensetracker.auth.dto.AdminPasswordResetDto;
 import org.leoric.expensetracker.auth.dto.UserInfoResponseDto;
 import org.leoric.expensetracker.auth.dto.UserPasswordChangeDto;
 import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
@@ -94,6 +95,16 @@ public class UserServiceImpl implements UserService {
 		if (!dto.newPassword().equals(dto.newConfirmationPassword())) {
 			throw new NewPasswordDoesNotMatchException("New password and confirmation do not match");
 		}
+
+		user.setPassword(passwordEncoder.encode(dto.newPassword()));
+		userRepository.save(user);
+	}
+
+	@Override
+	@Transactional
+	public void adminResetPassword(AdminPasswordResetDto dto) {
+		User user = userRepository.findByEmail(dto.email())
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
 		user.setPassword(passwordEncoder.encode(dto.newPassword()));
 		userRepository.save(user);

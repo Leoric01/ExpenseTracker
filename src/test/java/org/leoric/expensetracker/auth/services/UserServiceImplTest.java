@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.leoric.expensetracker.auth.dto.AdminPasswordResetDto;
 import org.leoric.expensetracker.auth.dto.UserInfoResponseDto;
 import org.leoric.expensetracker.auth.dto.UserPasswordChangeDto;
 import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
@@ -199,5 +200,33 @@ class UserServiceImplTest {
 
 		assertThatThrownBy(() -> userService.profileChangePassword(user, dto))
 				.isInstanceOf(EntityNotFoundException.class);
+	}
+
+	// --- adminResetPassword ---
+
+	@Test
+	void adminResetPassword_shouldChangePasswordSuccessfully() {
+		var dto = new AdminPasswordResetDto("john@test.com", "newPassword1");
+
+		when(userRepository.findByEmail("john@test.com")).thenReturn(Optional.of(user));
+		when(passwordEncoder.encode("newPassword1")).thenReturn("new-encoded");
+
+		userService.adminResetPassword(dto);
+
+		verify(userRepository).save(user);
+		assertThat(user.getPassword()).isEqualTo("new-encoded");
+	}
+
+	@Test
+	void adminResetPassword_shouldThrowWhenUserNotFound() {
+		var dto = new AdminPasswordResetDto("missing@test.com", "newPassword1");
+
+		when(userRepository.findByEmail("missing@test.com")).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> userService.adminResetPassword(dto))
+				.isInstanceOf(EntityNotFoundException.class)
+				.hasMessage("User not found");
+
+		verify(userRepository, never()).save(any());
 	}
 }
