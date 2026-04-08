@@ -13,8 +13,8 @@ public record CreateRecurringTransactionRequestDto(
 		@NotNull(message = "Transaction type is required")
 		TransactionType transactionType,
 
-		@NotNull(message = "Wallet is required")
-		UUID walletId,
+		@NotNull(message = "Holding is required")
+		UUID holdingId,
 
 		UUID categoryId,
 

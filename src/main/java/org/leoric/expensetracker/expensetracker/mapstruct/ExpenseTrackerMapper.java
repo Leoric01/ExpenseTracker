@@ -22,10 +22,14 @@ public interface ExpenseTrackerMapper {
 
 	@Mapping(source = "createdByOwner.fullname", target = "ownerFullName")
 	@Mapping(source = "userExpenseTrackerRoles", target = "members")
+	@Mapping(source = "preferredDisplayAsset.id", target = "preferredDisplayAssetId")
+	@Mapping(source = "preferredDisplayAsset.code", target = "preferredDisplayAssetCode")
 	ExpenseTrackerResponseDto toResponse(ExpenseTracker entity);
 
 	@Mapping(source = "entity.createdByOwner.fullname", target = "ownerFullName")
 	@Mapping(source = "entity.userExpenseTrackerRoles", target = "members")
+	@Mapping(source = "entity.preferredDisplayAsset.id", target = "preferredDisplayAssetId")
+	@Mapping(source = "entity.preferredDisplayAsset.code", target = "preferredDisplayAssetCode")
 	@Mapping(source = "role", target = "role")
 	ExpenseTrackerMineResponseDto toMineResponse(ExpenseTracker entity, String role);
 
@@ -38,6 +42,7 @@ public interface ExpenseTrackerMapper {
 
 	@BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE,
 			unmappedTargetPolicy = ReportingPolicy.IGNORE)
+	@Mapping(target = "preferredDisplayAsset", ignore = true)
 	void updateFromDto(UpdateExpenseTrackerRequestDto dto, @MappingTarget ExpenseTracker entity);
 
 	default OffsetDateTime map(Instant instant) {

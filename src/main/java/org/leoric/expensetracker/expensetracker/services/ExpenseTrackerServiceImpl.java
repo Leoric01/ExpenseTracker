@@ -18,6 +18,8 @@ import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepos
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerService;
 import org.leoric.expensetracker.handler.exceptions.DuplicateExpenseTrackerNameException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.asset.models.Asset;
+import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,7 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 	private final ExpenseTrackerMapper expenseTrackerMapper;
 	private final RoleRepository roleRepository;
 	private final UserRepository userRepository;
+	private final AssetRepository assetRepository;
 
 	@Override
 	@Transactional
@@ -51,10 +54,16 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 		Role ownerRole = roleRepository.findByName(EXPENSETRACKER_OWNER)
 				.orElseThrow(() -> new EntityNotFoundException("Role " + EXPENSETRACKER_OWNER + " not found"));
 
+		Asset displayAsset = null;
+		if (request.preferredDisplayAssetId() != null) {
+			displayAsset = assetRepository.findById(request.preferredDisplayAssetId())
+					.orElseThrow(() -> new EntityNotFoundException("Asset not found"));
+		}
+
 		ExpenseTracker tracker = ExpenseTracker.builder()
 				.name(request.name())
 				.description(request.description())
-				.defaultCurrencyCode(request.defaultCurrencyCode().toUpperCase())
+				.preferredDisplayAsset(displayAsset)
 				.createdByOwner(currentUser)
 				.build();
 
@@ -134,6 +143,13 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 		ExpenseTracker tracker = getTrackerOrThrow(id);
 
 		expenseTrackerMapper.updateFromDto(request, tracker);
+
+		if (request.preferredDisplayAssetId() != null) {
+			Asset displayAsset = assetRepository.findById(request.preferredDisplayAssetId())
+					.orElseThrow(() -> new EntityNotFoundException("Asset not found"));
+			tracker.setPreferredDisplayAsset(displayAsset);
+		}
+
 		tracker = expenseTrackerRepository.save(tracker);
 
 		log.info("User {} updated expense tracker '{}'", currentUser.getEmail(), tracker.getName());

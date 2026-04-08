@@ -23,7 +23,9 @@ import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchExcep
 import org.leoric.expensetracker.recurring.repositories.RecurringBudgetTemplateRepository;
 import org.leoric.expensetracker.recurring.repositories.RecurringTransactionTemplateRepository;
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
-import org.leoric.expensetracker.wallet.repositories.WalletRepository;
+import org.leoric.expensetracker.holding.repositories.HoldingRepository;
+import org.leoric.expensetracker.account.repositories.AccountRepository;
+import org.leoric.expensetracker.institution.repositories.InstitutionRepository;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -59,7 +61,11 @@ class UserServiceImplTest {
 	@Mock
 	private TransactionRepository transactionRepository;
 	@Mock
-	private WalletRepository walletRepository;
+	private HoldingRepository holdingRepository;
+	@Mock
+	private AccountRepository accountRepository;
+	@Mock
+	private InstitutionRepository institutionRepository;
 	@Mock
 	private CategoryRepository categoryRepository;
 	@Mock

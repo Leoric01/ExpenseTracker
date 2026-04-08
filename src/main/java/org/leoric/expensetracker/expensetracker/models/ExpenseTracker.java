@@ -20,7 +20,7 @@ import lombok.Setter;
 import org.hibernate.annotations.UuidGenerator;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.models.UserExpenseTrackerRole;
-import org.leoric.expensetracker.wallet.reworked.Asset;
+import org.leoric.expensetracker.asset.models.Asset;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -54,12 +54,9 @@ public class ExpenseTracker {
 
 	private String description;
 
-	@Column(nullable = false)
-	private String defaultCurrencyCode;
-
 	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "default_asset_id", nullable = false)
-	private Asset defaultAsset;
+	@JoinColumn(name = "preferred_display_asset_id")
+	private Asset preferredDisplayAsset;
 
 	@Builder.Default
 	@Column(nullable = false)

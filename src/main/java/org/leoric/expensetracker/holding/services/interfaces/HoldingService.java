@@ -1,0 +1,29 @@
+package org.leoric.expensetracker.holding.services.interfaces;
+
+import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.holding.dto.CreateHoldingRequestDto;
+import org.leoric.expensetracker.holding.dto.HoldingDashboardResponseDto;
+import org.leoric.expensetracker.holding.dto.HoldingResponseDto;
+import org.leoric.expensetracker.holding.dto.HoldingSummaryResponseDto;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Service
+public interface HoldingService {
+
+	HoldingResponseDto holdingCreate(User currentUser, UUID trackerId, CreateHoldingRequestDto request);
+
+	HoldingResponseDto holdingFindById(User currentUser, UUID trackerId, UUID holdingId);
+
+	Page<HoldingResponseDto> holdingFindAll(User currentUser, UUID trackerId, String search, Pageable pageable);
+
+	void holdingDeactivate(User currentUser, UUID trackerId, UUID holdingId);
+
+	HoldingSummaryResponseDto holdingSummary(User currentUser, UUID trackerId, UUID holdingId, Instant from, Instant to);
+
+	HoldingDashboardResponseDto holdingDashboard(User currentUser, UUID trackerId, Instant from, Instant to);
+}

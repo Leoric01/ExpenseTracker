@@ -29,8 +29,8 @@ import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.repositories.TransactionAttachmentRepository;
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.leoric.expensetracker.transaction.services.interfaces.TransactionService;
-import org.leoric.expensetracker.wallet.models.Wallet;
-import org.leoric.expensetracker.wallet.repositories.WalletRepository;
+import org.leoric.expensetracker.holding.models.Holding;
+import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -40,6 +40,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -58,7 +60,7 @@ public class TransactionServiceImpl implements TransactionService {
 	private final TransactionRepository transactionRepository;
 	private final TransactionAttachmentRepository attachmentRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
-	private final WalletRepository walletRepository;
+	private final HoldingRepository holdingRepository;
 	private final CategoryRepository categoryRepository;
 	private final TransactionMapper transactionMapper;
 	private final ImageService imageService;
@@ -119,7 +121,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		TransactionTotalsDto totals = calculateTotals(
 				transactionRepository.findAll(specification),
-				filter.walletId()
+				filter.holdingId()
 		);
 
 		List<TransactionResponseDto> content = transactionPage.getContent().stream()
@@ -207,18 +209,21 @@ public class TransactionServiceImpl implements TransactionService {
 				dto.id(),
 				dto.transactionType(),
 				dto.status(),
-				dto.walletId(),
-				dto.walletName(),
-				dto.sourceWalletId(),
-				dto.sourceWalletName(),
-				dto.targetWalletId(),
-				dto.targetWalletName(),
+				dto.holdingId(),
+				dto.holdingName(),
+				dto.sourceHoldingId(),
+				dto.sourceHoldingName(),
+				dto.targetHoldingId(),
+				dto.targetHoldingName(),
 				dto.categoryId(),
 				dto.categoryName(),
 				rootCategory.id(),
 				rootCategory.name(),
 				dto.amount(),
 				dto.currencyCode(),
+				dto.exchangeRate(),
+				dto.feeAmount(),
+				dto.settledAmount(),
 				dto.balanceAdjustmentDirection(),
 				dto.transactionDate(),
 				dto.description(),
@@ -229,7 +234,7 @@ public class TransactionServiceImpl implements TransactionService {
 				dto.lastModifiedDate()
 		);
 	}
-	private TransactionTotalsDto calculateTotals(List<Transaction> transactions, UUID walletId) {
+	private TransactionTotalsDto calculateTotals(List<Transaction> transactions, UUID holdingId) {
 		long incomeAmount = 0;
 		long expenseAmount = 0;
 
@@ -249,12 +254,12 @@ public class TransactionServiceImpl implements TransactionService {
 					}
 				}
 				case TRANSFER -> {
-					if (walletId == null) {
+					if (holdingId == null) {
 						continue;
 					}
 
-					boolean outgoing = transaction.getSourceWallet() != null && walletId.equals(transaction.getSourceWallet().getId());
-					boolean incoming = transaction.getTargetWallet() != null && walletId.equals(transaction.getTargetWallet().getId());
+					boolean outgoing = transaction.getSourceHolding() != null && holdingId.equals(transaction.getSourceHolding().getId());
+					boolean incoming = transaction.getTargetHolding() != null && holdingId.equals(transaction.getTargetHolding().getId());
 
 					if (outgoing) {
 						expenseAmount += transaction.getAmount();
@@ -277,7 +282,7 @@ public class TransactionServiceImpl implements TransactionService {
 		List<Sort.Order> mappedOrders = pageable.getSort().stream()
 				.map(order -> switch (order.getProperty()) {
 					case "transactionDate" -> new Sort.Order(order.getDirection(), "transactionDate");
-					case "walletName" -> new Sort.Order(order.getDirection(), "wallet.name");
+					case "walletName" -> new Sort.Order(order.getDirection(), "holding.account.name");
 					case "transactionType" -> new Sort.Order(order.getDirection(), "transactionType");
 					default -> null;
 				})
@@ -330,8 +335,8 @@ public class TransactionServiceImpl implements TransactionService {
 
 	private TransactionResponseDto createIncomeOrExpense(User currentUser, ExpenseTracker tracker,
 			CreateTransactionRequestDto request, TransactionType type) {
-		if (request.walletId() == null) {
-			throw new OperationNotPermittedException("Wallet is required for %s transactions".formatted(type));
+		if (request.holdingId() == null) {
+			throw new OperationNotPermittedException("Holding is required for %s transactions".formatted(type));
 		}
 		if (request.categoryId() == null) {
 			throw new OperationNotPermittedException("Category is required for %s transactions".formatted(type));
@@ -340,29 +345,57 @@ public class TransactionServiceImpl implements TransactionService {
 			throw new OperationNotPermittedException("Amount must be a positive number");
 		}
 
-		Wallet wallet = getWalletOrThrow(request.walletId());
-		assertWalletBelongsToTracker(wallet, tracker.getId());
-		assertWalletActive(wallet);
+		Holding holding = getHoldingOrThrow(request.holdingId());
+		assertHoldingBelongsToTracker(holding, tracker.getId());
+		assertHoldingActive(holding);
 
 		Category category = getCategoryOrThrow(request.categoryId());
 		assertCategoryBelongsToTracker(category, tracker.getId());
 		assertCategoryMatchesTransactionType(category, type);
 
-		if (type == TransactionType.INCOME) {
-			wallet.setCurrentBalance(wallet.getCurrentBalance() + request.amount());
+		String holdingAssetCode = holding.getAsset().getCode();
+		String txnCurrency = request.currencyCode() != null ? request.currencyCode().toUpperCase() : holdingAssetCode;
+		boolean crossCurrency = !txnCurrency.equals(holdingAssetCode);
+
+		BigDecimal exchangeRate = null;
+		long feeAmount = request.feeAmount() != null ? request.feeAmount() : 0;
+		Long settledAmount = null;
+		long balanceEffect;
+
+		if (crossCurrency) {
+			if (request.exchangeRate() == null || request.exchangeRate().compareTo(BigDecimal.ZERO) <= 0) {
+				throw new OperationNotPermittedException(
+						"Exchange rate is required for cross-currency transactions (transaction %s, holding %s)"
+								.formatted(txnCurrency, holdingAssetCode));
+			}
+			exchangeRate = request.exchangeRate();
+			settledAmount = BigDecimal.valueOf(request.amount())
+					.multiply(exchangeRate)
+					.setScale(0, RoundingMode.HALF_UP)
+					.longValueExact() + feeAmount;
+			balanceEffect = settledAmount;
 		} else {
-			wallet.setCurrentBalance(wallet.getCurrentBalance() - request.amount());
+			balanceEffect = request.amount();
 		}
-		walletRepository.save(wallet);
+
+		if (type == TransactionType.INCOME) {
+			holding.setCurrentAmount(holding.getCurrentAmount() + balanceEffect);
+		} else {
+			holding.setCurrentAmount(holding.getCurrentAmount() - balanceEffect);
+		}
+		holdingRepository.save(holding);
 
 		Transaction transaction = Transaction.builder()
 				.expenseTracker(tracker)
 				.transactionType(type)
 				.status(TransactionStatus.COMPLETED)
-				.wallet(wallet)
+				.holding(holding)
 				.category(category)
 				.amount(request.amount())
-				.currencyCode(wallet.getCurrencyCode())
+				.currencyCode(txnCurrency)
+				.exchangeRate(exchangeRate)
+				.feeAmount(feeAmount)
+				.settledAmount(settledAmount)
 				.transactionDate(request.transactionDate())
 				.description(request.description())
 				.note(request.note())
@@ -370,45 +403,76 @@ public class TransactionServiceImpl implements TransactionService {
 				.build();
 
 		transaction = transactionRepository.save(transaction);
-		log.info("User {} created {} transaction '{}' ({} {}) in tracker '{}'",
-		         currentUser.getEmail(), type, transaction.getId(), request.amount(), wallet.getCurrencyCode(), tracker.getName());
+		log.info("User {} created {} transaction '{}' ({} {}{}) in tracker '{}'",
+		         currentUser.getEmail(), type, transaction.getId(), request.amount(), txnCurrency,
+		         crossCurrency ? " → " + settledAmount + " " + holdingAssetCode : "", tracker.getName());
 		return transactionMapper.toResponse(transaction);
 	}
 
 	// ── TRANSFER ──
 
 	private TransactionResponseDto createTransfer(User currentUser, ExpenseTracker tracker, CreateTransactionRequestDto request) {
-		if (request.sourceWalletId() == null || request.targetWalletId() == null) {
-			throw new OperationNotPermittedException("Source and target wallets are required for TRANSFER transactions");
+		if (request.sourceHoldingId() == null || request.targetHoldingId() == null) {
+			throw new OperationNotPermittedException("Source and target holdings are required for TRANSFER transactions");
 		}
-		if (request.sourceWalletId().equals(request.targetWalletId())) {
-			throw new OperationNotPermittedException("Source and target wallets must be different");
+		if (request.sourceHoldingId().equals(request.targetHoldingId())) {
+			throw new OperationNotPermittedException("Source and target holdings must be different");
 		}
 		if (request.amount() == null || request.amount() <= 0) {
 			throw new OperationNotPermittedException("Amount must be a positive number");
 		}
 
-		Wallet source = getWalletOrThrow(request.sourceWalletId());
-		assertWalletBelongsToTracker(source, tracker.getId());
-		assertWalletActive(source);
+		Holding source = getHoldingOrThrow(request.sourceHoldingId());
+		assertHoldingBelongsToTracker(source, tracker.getId());
+		assertHoldingActive(source);
 
-		Wallet target = getWalletOrThrow(request.targetWalletId());
-		assertWalletBelongsToTracker(target, tracker.getId());
-		assertWalletActive(target);
+		Holding target = getHoldingOrThrow(request.targetHoldingId());
+		assertHoldingBelongsToTracker(target, tracker.getId());
+		assertHoldingActive(target);
 
-		source.setCurrentBalance(source.getCurrentBalance() - request.amount());
-		target.setCurrentBalance(target.getCurrentBalance() + request.amount());
-		walletRepository.save(source);
-		walletRepository.save(target);
+		String sourceAssetCode = source.getAsset().getCode();
+		String targetAssetCode = target.getAsset().getCode();
+		String txnCurrency = request.currencyCode() != null ? request.currencyCode().toUpperCase() : sourceAssetCode;
+		boolean crossCurrency = !sourceAssetCode.equals(targetAssetCode);
+
+		BigDecimal exchangeRate = null;
+		long feeAmount = request.feeAmount() != null ? request.feeAmount() : 0;
+		Long settledAmount = null;
+		long sourceDeduction = request.amount();
+		long targetAddition = request.amount();
+
+		if (crossCurrency) {
+			if (request.exchangeRate() == null || request.exchangeRate().compareTo(BigDecimal.ZERO) <= 0) {
+				throw new OperationNotPermittedException(
+						"Exchange rate is required for cross-currency transfers (%s → %s)"
+								.formatted(sourceAssetCode, targetAssetCode));
+			}
+			exchangeRate = request.exchangeRate();
+			// amount is in source currency, settledAmount is what target receives
+			settledAmount = BigDecimal.valueOf(request.amount())
+					.multiply(exchangeRate)
+					.setScale(0, RoundingMode.HALF_UP)
+					.longValueExact();
+			sourceDeduction = request.amount() + feeAmount; // fee charged from source
+			targetAddition = settledAmount;
+		}
+
+		source.setCurrentAmount(source.getCurrentAmount() - sourceDeduction);
+		target.setCurrentAmount(target.getCurrentAmount() + targetAddition);
+		holdingRepository.save(source);
+		holdingRepository.save(target);
 
 		Transaction transaction = Transaction.builder()
 				.expenseTracker(tracker)
 				.transactionType(TransactionType.TRANSFER)
 				.status(TransactionStatus.COMPLETED)
-				.sourceWallet(source)
-				.targetWallet(target)
+				.sourceHolding(source)
+				.targetHolding(target)
 				.amount(request.amount())
-				.currencyCode(source.getCurrencyCode())
+				.currencyCode(txnCurrency)
+				.exchangeRate(exchangeRate)
+				.feeAmount(feeAmount)
+				.settledAmount(settledAmount)
 				.transactionDate(request.transactionDate())
 				.description(request.description())
 				.note(request.note())
@@ -416,27 +480,28 @@ public class TransactionServiceImpl implements TransactionService {
 				.build();
 
 		transaction = transactionRepository.save(transaction);
-		log.info("User {} created TRANSFER '{}' ({} {}) {} → {} in tracker '{}'",
-		         currentUser.getEmail(), transaction.getId(), request.amount(), source.getCurrencyCode(),
-		         source.getName(), target.getName(), tracker.getName());
+		log.info("User {} created TRANSFER '{}' ({} {}{}) {} → {} in tracker '{}'",
+		         currentUser.getEmail(), transaction.getId(), request.amount(), txnCurrency,
+		         crossCurrency ? " @" + exchangeRate + " → " + settledAmount + " " + targetAssetCode : "",
+		         source.getAccount().getName(), target.getAccount().getName(), tracker.getName());
 		return transactionMapper.toResponse(transaction);
 	}
 
 	// ── BALANCE ADJUSTMENT ──
 
 	private TransactionResponseDto createBalanceAdjustment(User currentUser, ExpenseTracker tracker, CreateTransactionRequestDto request) {
-		if (request.walletId() == null) {
-			throw new OperationNotPermittedException("Wallet is required for BALANCE_ADJUSTMENT transactions");
+		if (request.holdingId() == null) {
+			throw new OperationNotPermittedException("Holding is required for BALANCE_ADJUSTMENT transactions");
 		}
 		if (request.correctedBalance() == null) {
 			throw new OperationNotPermittedException("Corrected balance is required for BALANCE_ADJUSTMENT transactions");
 		}
 
-		Wallet wallet = getWalletOrThrow(request.walletId());
-		assertWalletBelongsToTracker(wallet, tracker.getId());
-		assertWalletActive(wallet);
+		Holding holding = getHoldingOrThrow(request.holdingId());
+		assertHoldingBelongsToTracker(holding, tracker.getId());
+		assertHoldingActive(holding);
 
-		long diff = request.correctedBalance() - wallet.getCurrentBalance();
+		long diff = request.correctedBalance() - holding.getCurrentAmount();
 		if (diff == 0) {
 			throw new OperationNotPermittedException("Corrected balance is the same as the current balance");
 		}
@@ -446,16 +511,16 @@ public class TransactionServiceImpl implements TransactionService {
 				: BalanceAdjustmentDirection.DEDUCTION;
 		long absAmount = Math.abs(diff);
 
-		wallet.setCurrentBalance(request.correctedBalance());
-		walletRepository.save(wallet);
+		holding.setCurrentAmount(request.correctedBalance());
+		holdingRepository.save(holding);
 
 		Transaction transaction = Transaction.builder()
 				.expenseTracker(tracker)
 				.transactionType(TransactionType.BALANCE_ADJUSTMENT)
 				.status(TransactionStatus.COMPLETED)
-				.wallet(wallet)
+				.holding(holding)
 				.amount(absAmount)
-				.currencyCode(wallet.getCurrencyCode())
+				.currencyCode(holding.getAsset().getCode())
 				.balanceAdjustmentDirection(direction)
 				.transactionDate(request.transactionDate())
 				.description(request.description())
@@ -464,9 +529,9 @@ public class TransactionServiceImpl implements TransactionService {
 				.build();
 
 		transaction = transactionRepository.save(transaction);
-		log.info("User {} created BALANCE_ADJUSTMENT '{}' ({} {} {}) on wallet '{}' in tracker '{}'",
+		log.info("User {} created BALANCE_ADJUSTMENT '{}' ({} {} {}) on holding '{}' in tracker '{}'",
 		         currentUser.getEmail(), transaction.getId(), direction, absAmount,
-		         wallet.getCurrencyCode(), wallet.getName(), tracker.getName());
+		         holding.getAsset().getCode(), holding.getAccount().getName(), tracker.getName());
 		return transactionMapper.toResponse(transaction);
 	}
 
@@ -475,30 +540,34 @@ public class TransactionServiceImpl implements TransactionService {
 	private void reverseBalanceEffect(Transaction transaction) {
 		switch (transaction.getTransactionType()) {
 			case INCOME -> {
-				Wallet wallet = transaction.getWallet();
-				wallet.setCurrentBalance(wallet.getCurrentBalance() - transaction.getAmount());
-				walletRepository.save(wallet);
+				Holding holding = transaction.getHolding();
+				long effect = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+				holding.setCurrentAmount(holding.getCurrentAmount() - effect);
+				holdingRepository.save(holding);
 			}
 			case EXPENSE -> {
-				Wallet wallet = transaction.getWallet();
-				wallet.setCurrentBalance(wallet.getCurrentBalance() + transaction.getAmount());
-				walletRepository.save(wallet);
+				Holding holding = transaction.getHolding();
+				long effect = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+				holding.setCurrentAmount(holding.getCurrentAmount() + effect);
+				holdingRepository.save(holding);
 			}
 			case TRANSFER -> {
-				Wallet source = transaction.getSourceWallet();
-				Wallet target = transaction.getTargetWallet();
-				source.setCurrentBalance(source.getCurrentBalance() + transaction.getAmount());
-				target.setCurrentBalance(target.getCurrentBalance() - transaction.getAmount());
-				walletRepository.save(source);
-				walletRepository.save(target);
+				Holding source = transaction.getSourceHolding();
+				Holding target = transaction.getTargetHolding();
+				long sourceReversal = transaction.getAmount() + transaction.getFeeAmount();
+				long targetReversal = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+				source.setCurrentAmount(source.getCurrentAmount() + sourceReversal);
+				target.setCurrentAmount(target.getCurrentAmount() - targetReversal);
+				holdingRepository.save(source);
+				holdingRepository.save(target);
 			}
 			case BALANCE_ADJUSTMENT -> {
-				Wallet wallet = transaction.getWallet();
+				Holding holding = transaction.getHolding();
 				long reversal = transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION
 						? -transaction.getAmount()
 						: transaction.getAmount();
-				wallet.setCurrentBalance(wallet.getCurrentBalance() + reversal);
-				walletRepository.save(wallet);
+				holding.setCurrentAmount(holding.getCurrentAmount() + reversal);
+				holdingRepository.save(holding);
 			}
 		}
 	}
@@ -601,9 +670,9 @@ public class TransactionServiceImpl implements TransactionService {
 				.orElseThrow(() -> new EntityNotFoundException("Transaction not found"));
 	}
 
-	private Wallet getWalletOrThrow(UUID walletId) {
-		return walletRepository.findById(walletId)
-				.orElseThrow(() -> new EntityNotFoundException("Wallet not found"));
+	private Holding getHoldingOrThrow(UUID holdingId) {
+		return holdingRepository.findById(holdingId)
+				.orElseThrow(() -> new EntityNotFoundException("Holding not found"));
 	}
 
 	private Category getCategoryOrThrow(UUID categoryId) {
@@ -617,9 +686,9 @@ public class TransactionServiceImpl implements TransactionService {
 		}
 	}
 
-	private void assertWalletBelongsToTracker(Wallet wallet, UUID trackerId) {
-		if (!wallet.getExpenseTracker().getId().equals(trackerId)) {
-			throw new EntityNotFoundException("Wallet not found in this expense tracker");
+	private void assertHoldingBelongsToTracker(Holding holding, UUID trackerId) {
+		if (!holding.getAccount().getInstitution().getExpenseTracker().getId().equals(trackerId)) {
+			throw new EntityNotFoundException("Holding not found in this expense tracker");
 		}
 	}
 
@@ -629,9 +698,10 @@ public class TransactionServiceImpl implements TransactionService {
 		}
 	}
 
-	private void assertWalletActive(Wallet wallet) {
-		if (!wallet.isActive()) {
-			throw new OperationNotPermittedException("Wallet '%s' is deactivated".formatted(wallet.getName()));
+	private void assertHoldingActive(Holding holding) {
+		if (!holding.isActive()) {
+			throw new OperationNotPermittedException("Holding '%s/%s' is deactivated".formatted(
+					holding.getAccount().getName(), holding.getAsset().getCode()));
 		}
 	}
 

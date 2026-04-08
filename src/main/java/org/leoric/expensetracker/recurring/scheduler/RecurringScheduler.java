@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.budget.models.constants.PeriodType;
 import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
+import org.leoric.expensetracker.holding.models.Holding;
+import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.recurring.models.RecurringBudgetTemplate;
 import org.leoric.expensetracker.recurring.models.RecurringTransactionTemplate;
 import org.leoric.expensetracker.recurring.repositories.RecurringBudgetTemplateRepository;
@@ -13,8 +15,6 @@ import org.leoric.expensetracker.transaction.models.Transaction;
 import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
-import org.leoric.expensetracker.wallet.models.Wallet;
-import org.leoric.expensetracker.wallet.repositories.WalletRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +32,7 @@ public class RecurringScheduler {
 	private final RecurringBudgetTemplateRepository recurringBudgetRepo;
 	private final TransactionRepository transactionRepository;
 	private final BudgetPlanRepository budgetPlanRepository;
-	private final WalletRepository walletRepository;
+	private final HoldingRepository holdingRepository;
 
 	@Scheduled(cron = "0 0 1 * * *") // Every day at 01:00
 	public void processRecurringItems() {
@@ -88,27 +88,27 @@ public class RecurringScheduler {
 			return;
 		}
 
-		// Check wallet is still active
-		Wallet wallet = template.getWallet();
-		if (wallet == null || !wallet.isActive()) {
-			log.warn("Skipping recurring transaction template '{}' — wallet is null or deactivated", template.getId());
+		// Check holding is still active
+		Holding holding = template.getHolding();
+		if (holding == null || !holding.isActive()) {
+			log.warn("Skipping recurring transaction template '{}' — holding is null or deactivated", template.getId());
 			return;
 		}
 
 		// Apply balance effect
 		if (template.getTransactionType() == TransactionType.INCOME) {
-			wallet.setCurrentBalance(wallet.getCurrentBalance() + template.getAmount());
+			holding.setCurrentAmount(holding.getCurrentAmount() + template.getAmount());
 		} else if (template.getTransactionType() == TransactionType.EXPENSE) {
-			wallet.setCurrentBalance(wallet.getCurrentBalance() - template.getAmount());
+			holding.setCurrentAmount(holding.getCurrentAmount() - template.getAmount());
 		}
-		walletRepository.save(wallet);
+		holdingRepository.save(holding);
 
 		// Create transaction
 		Transaction transaction = Transaction.builder()
 				.expenseTracker(template.getExpenseTracker())
 				.transactionType(template.getTransactionType())
 				.status(TransactionStatus.COMPLETED)
-				.wallet(wallet)
+				.holding(holding)
 				.category(template.getCategory())
 				.amount(template.getAmount())
 				.currencyCode(template.getCurrencyCode())
