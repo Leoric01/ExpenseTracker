@@ -376,7 +376,7 @@ public class CategoryServiceImpl implements CategoryService {
 		CategoryResponseDto mapped = categoryMapper.toResponse(category);
 
 		CategoryActiveBudgetPlanDto activeBudgetPlan = mapActiveBudgetPlan(category, activeBudgetPlansByCategoryId);
-		List<CategoryActiveBudgetPlanDto> budgetPlans = mapBudgetPlansInRange(category, budgetPlansInRangeByCategoryId);
+		List<CategoryActiveBudgetPlanDto> budgetPlansForSelectedPeriod = mapBudgetPlansInRange(category, budgetPlansInRangeByCategoryId);
 
 		List<CategoryResponseDto> activeChildren = category.getChildren().stream()
 				.filter(Category::isActive)
@@ -394,7 +394,7 @@ public class CategoryServiceImpl implements CategoryService {
 				mapped.iconUrl(),
 				mapped.iconColor(),
 				activeBudgetPlan,
-				budgetPlans,
+				budgetPlansForSelectedPeriod,
 				activeChildren,
 				mapped.createdDate(),
 				mapped.lastModifiedDate()
@@ -405,7 +405,7 @@ public class CategoryServiceImpl implements CategoryService {
 		CategoryResponseDto mapped = categoryMapper.toFlatResponse(category);
 
 		CategoryActiveBudgetPlanDto activeBudgetPlan = mapActiveBudgetPlan(category, activeBudgetPlansByCategoryId);
-		List<CategoryActiveBudgetPlanDto> budgetPlans = mapBudgetPlansInRange(category, budgetPlansInRangeByCategoryId);
+		List<CategoryActiveBudgetPlanDto> budgetPlansForSelectedPeriod = mapBudgetPlansInRange(category, budgetPlansInRangeByCategoryId);
 
 		return new CategoryResponseDto(
 				mapped.id(),
@@ -418,7 +418,7 @@ public class CategoryServiceImpl implements CategoryService {
 				mapped.iconUrl(),
 				mapped.iconColor(),
 				activeBudgetPlan,
-				budgetPlans,
+				budgetPlansForSelectedPeriod,
 				mapped.children(),
 				mapped.createdDate(),
 				mapped.lastModifiedDate()
