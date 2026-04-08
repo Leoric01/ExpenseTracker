@@ -2,12 +2,15 @@ package org.leoric.expensetracker.budget.services.interfaces;
 
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.budget.dto.BudgetPlanResponseDto;
+import org.leoric.expensetracker.budget.dto.BulkBudgetImportItemDto;
+import org.leoric.expensetracker.budget.dto.BulkBudgetImportResponseDto;
 import org.leoric.expensetracker.budget.dto.CreateBudgetPlanRequestDto;
 import org.leoric.expensetracker.budget.dto.UpdateBudgetPlanRequestDto;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -24,4 +27,6 @@ public interface BudgetPlanService {
 	BudgetPlanResponseDto budgetPlanUpdate(User currentUser, UUID trackerId, UUID budgetPlanId, UpdateBudgetPlanRequestDto request);
 
 	void budgetPlanDeactivate(User currentUser, UUID trackerId, UUID budgetPlanId);
+
+	BulkBudgetImportResponseDto bulkImport(User currentUser, UUID trackerId, List<BulkBudgetImportItemDto> items);
 }

@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.holding.dto.CreateHoldingRequestDto;
-import org.leoric.expensetracker.holding.dto.HoldingDashboardResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingSummaryResponseDto;
 import org.leoric.expensetracker.holding.services.interfaces.HoldingService;
@@ -50,23 +49,6 @@ public class HoldingController {
 				.body(holdingService.holdingCreate(currentUser, trackerId, request));
 	}
 
-	@GetMapping("/{trackerId}/dashboard")
-	public ResponseEntity<HoldingDashboardResponseDto> holdingDashboard(
-			@AuthenticationPrincipal User currentUser,
-			@PathVariable UUID trackerId,
-			@RequestParam(required = false) Instant from,
-			@RequestParam(required = false) Instant to) {
-		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
-
-		if (from == null) {
-			from = YearMonth.now(ZoneOffset.UTC).atDay(1).atStartOfDay().toInstant(ZoneOffset.UTC);
-		}
-		if (to == null) {
-			to = Instant.now();
-		}
-
-		return ResponseEntity.ok(holdingService.holdingDashboard(currentUser, trackerId, from, to));
-	}
 
 	@GetMapping("/{trackerId}")
 	public ResponseEntity<Page<HoldingResponseDto>> holdingFindAll(

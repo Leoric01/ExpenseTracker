@@ -1,6 +1,6 @@
 package org.leoric.expensetracker.auth.models.constants;
 
 public enum WidgetType {
-	HOLDING,
+	INSTITUTION,
 	EXPENSE_TRACKER
 }

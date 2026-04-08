@@ -19,6 +19,8 @@ public interface RecurringBudgetTemplateRepository extends JpaRepository<Recurri
 
 	List<RecurringBudgetTemplate> findByActiveTrueAndNextRunDateLessThanEqual(LocalDate date);
 
+	List<RecurringBudgetTemplate> findByExpenseTrackerIdAndActiveTrueAndNextRunDateLessThanEqual(UUID expenseTrackerId, LocalDate date);
+
 	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 
 	Page<RecurringBudgetTemplate> findByExpenseTrackerId(UUID expenseTrackerId, Pageable pageable);

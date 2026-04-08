@@ -146,37 +146,41 @@ public class RecurringScheduler {
 			return;
 		}
 
-		// Compute validFrom/validTo for the generated budget plan
-		LocalDate planValidFrom = template.getNextRunDate();
-		LocalDate planValidTo = computeNextRunDate(planValidFrom, template.getPeriodType(), template.getIntervalValue()).minusDays(1);
+		// Generate all missing budget plans until nextRunDate is in the future
+		while (template.getNextRunDate() != null && !template.getNextRunDate().isAfter(today)) {
+			LocalDate planValidFrom = template.getNextRunDate();
+			LocalDate planValidTo = computeNextRunDate(planValidFrom, template.getPeriodType(), template.getIntervalValue()).minusDays(1);
 
-		// Create budget plan
-		BudgetPlan plan = BudgetPlan.builder()
-				.expenseTracker(template.getExpenseTracker())
-				.category(template.getCategory())
-				.name(template.getName())
-				.amount(template.getAmount())
-				.currencyCode(template.getCurrencyCode())
-				.periodType(template.getPeriodType())
-				.validFrom(planValidFrom)
-				.validTo(planValidTo)
-				.build();
+			BudgetPlan plan = BudgetPlan.builder()
+					.expenseTracker(template.getExpenseTracker())
+					.recurringBudgetTemplate(template)
+					.category(template.getCategory())
+					.name(template.getName())
+					.amount(template.getAmount())
+					.currencyCode(template.getCurrencyCode())
+					.periodType(template.getPeriodType())
+					.validFrom(planValidFrom)
+					.validTo(planValidTo)
+					.build();
 
-		budgetPlanRepository.save(plan);
+			budgetPlanRepository.save(plan);
+			log.info("Scheduler generated budget plan '{}' (valid {} — {}) from recurring template '{}'",
+					plan.getName(), planValidFrom, planValidTo, template.getId());
 
-		// Advance nextRunDate
-		LocalDate nextRun = computeNextRunDate(template.getNextRunDate(), template.getPeriodType(), template.getIntervalValue());
+			LocalDate nextRun = computeNextRunDate(template.getNextRunDate(), template.getPeriodType(), template.getIntervalValue());
 
-		if (template.getEndDate() != null && nextRun.isAfter(template.getEndDate())) {
-			template.setActive(false);
+			if (template.getEndDate() != null && nextRun.isAfter(template.getEndDate())) {
+				template.setActive(false);
+				template.setNextRunDate(nextRun);
+				recurringBudgetRepo.save(template);
+				log.info("Processed and deactivated recurring budget template '{}' (next run {} past endDate {})",
+						template.getId(), nextRun, template.getEndDate());
+				return;
+			}
+
 			template.setNextRunDate(nextRun);
 			recurringBudgetRepo.save(template);
-			log.info("Processed and deactivated recurring budget template '{}' (next run {} past endDate {})",
-					template.getId(), nextRun, template.getEndDate());
-		} else {
-			template.setNextRunDate(nextRun);
-			recurringBudgetRepo.save(template);
-			log.info("Processed recurring budget template '{}', next run: {}", template.getId(), nextRun);
+			log.info("Advanced recurring budget template '{}', next run: {}", template.getId(), nextRun);
 		}
 	}
 

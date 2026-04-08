@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.institution.dto.CreateInstitutionRequestDto;
+import org.leoric.expensetracker.institution.dto.InstitutionDashboardResponseDto;
 import org.leoric.expensetracker.institution.dto.InstitutionResponseDto;
 import org.leoric.expensetracker.institution.dto.UpdateInstitutionRequestDto;
 import org.leoric.expensetracker.institution.services.interfaces.InstitutionService;
@@ -25,6 +26,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
@@ -46,6 +50,24 @@ public class InstitutionController {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(institutionService.institutionCreate(currentUser, trackerId, request));
+	}
+
+	@GetMapping("/{trackerId}/dashboard")
+	public ResponseEntity<InstitutionDashboardResponseDto> institutionDashboard(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@RequestParam(required = false) Instant from,
+			@RequestParam(required = false) Instant to) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+
+		if (from == null) {
+			from = YearMonth.now(ZoneOffset.UTC).atDay(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+		}
+		if (to == null) {
+			to = Instant.now();
+		}
+
+		return ResponseEntity.ok(institutionService.institutionDashboard(currentUser, trackerId, from, to));
 	}
 
 	@GetMapping("/{trackerId}")

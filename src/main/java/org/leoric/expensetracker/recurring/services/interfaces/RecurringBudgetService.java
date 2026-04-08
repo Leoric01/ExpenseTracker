@@ -3,6 +3,7 @@ package org.leoric.expensetracker.recurring.services.interfaces;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.recurring.dto.CreateRecurringBudgetRequestDto;
 import org.leoric.expensetracker.recurring.dto.RecurringBudgetResponseDto;
+import org.leoric.expensetracker.recurring.dto.SyncRecurringBudgetResponseDto;
 import org.leoric.expensetracker.recurring.dto.UpdateRecurringBudgetRequestDto;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,4 +25,6 @@ public interface RecurringBudgetService {
 	RecurringBudgetResponseDto recurringBudgetUpdate(User currentUser, UUID trackerId, UUID templateId, UpdateRecurringBudgetRequestDto request);
 
 	void recurringBudgetDeactivate(User currentUser, UUID trackerId, UUID templateId);
+
+	SyncRecurringBudgetResponseDto syncRecurringBudgets(User currentUser, UUID trackerId);
 }

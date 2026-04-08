@@ -14,6 +14,7 @@ import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepos
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.recurring.dto.CreateRecurringBudgetRequestDto;
 import org.leoric.expensetracker.recurring.dto.RecurringBudgetResponseDto;
+import org.leoric.expensetracker.recurring.dto.SyncRecurringBudgetResponseDto;
 import org.leoric.expensetracker.recurring.dto.UpdateRecurringBudgetRequestDto;
 import org.leoric.expensetracker.recurring.mapstruct.RecurringBudgetMapper;
 import org.leoric.expensetracker.recurring.models.RecurringBudgetTemplate;
@@ -148,6 +149,40 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 				currentUser.getEmail(), template.getName(), template.getExpenseTracker().getName());
 	}
 
+	@Override
+	@Transactional
+	public SyncRecurringBudgetResponseDto syncRecurringBudgets(User currentUser, UUID trackerId) {
+		getTrackerOrThrow(trackerId);
+		LocalDate today = LocalDate.now();
+
+		List<RecurringBudgetTemplate> dueTemplates =
+				templateRepository.findByExpenseTrackerIdAndActiveTrueAndNextRunDateLessThanEqual(trackerId, today);
+
+		log.info("User {} triggered budget sync for tracker '{}', found {} due templates",
+				currentUser.getEmail(), trackerId, dueTemplates.size());
+
+		int totalPlansCreated = 0;
+		int templatesProcessed = 0;
+
+		for (RecurringBudgetTemplate template : dueTemplates) {
+			try {
+				int created = generateDueBudgetPlans(template);
+				totalPlansCreated += created;
+				if (created > 0) {
+					templatesProcessed++;
+				}
+			} catch (Exception e) {
+				log.error("Failed to sync recurring budget template '{}' (tracker '{}')",
+						template.getId(), template.getExpenseTracker().getName(), e);
+			}
+		}
+
+		log.info("Budget sync complete for tracker '{}': {} templates processed, {} budget plans created",
+				trackerId, templatesProcessed, totalPlansCreated);
+
+		return new SyncRecurringBudgetResponseDto(templatesProcessed, totalPlansCreated);
+	}
+
 	// ── Helpers ──
 
 	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {
@@ -195,17 +230,18 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 		}
 	}
 
-	private void generateDueBudgetPlans(RecurringBudgetTemplate template) {
+	private int generateDueBudgetPlans(RecurringBudgetTemplate template) {
 		LocalDate today = LocalDate.now();
+		int count = 0;
 
 		while (template.getNextRunDate() != null && !template.getNextRunDate().isAfter(today)) {
 			// Respect endDate
 			if (template.getEndDate() != null && today.isAfter(template.getEndDate())) {
 				template.setActive(false);
 				templateRepository.save(template);
-				log.info("Deactivated expired recurring budget template '{}' during initial catch-up (endDate {})",
+				log.info("Deactivated expired recurring budget template '{}' during catch-up (endDate {})",
 						template.getId(), template.getEndDate());
-				return;
+				return count;
 			}
 
 			LocalDate planValidFrom = template.getNextRunDate();
@@ -224,7 +260,8 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 					.build();
 
 			budgetPlanRepository.save(plan);
-			log.info("Generated initial budget plan '{}' (valid {} — {}) from recurring template '{}'",
+			count++;
+			log.info("Generated budget plan '{}' (valid {} — {}) from recurring template '{}'",
 					plan.getName(), planValidFrom, planValidTo, template.getId());
 
 			LocalDate nextRun = computeNextRunDate(template.getNextRunDate(), template.getPeriodType(), template.getIntervalValue());
@@ -235,12 +272,14 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 				templateRepository.save(template);
 				log.info("Deactivated recurring budget template '{}' after catch-up (next run {} past endDate {})",
 						template.getId(), nextRun, template.getEndDate());
-				return;
+				return count;
 			}
 
 			template.setNextRunDate(nextRun);
 			templateRepository.save(template);
 		}
+
+		return count;
 	}
 
 	private LocalDate computeNextRunDate(LocalDate current, PeriodType periodType, int interval) {

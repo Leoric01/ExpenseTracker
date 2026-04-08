@@ -6,6 +6,7 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.recurring.dto.CreateRecurringBudgetRequestDto;
 import org.leoric.expensetracker.recurring.dto.RecurringBudgetResponseDto;
+import org.leoric.expensetracker.recurring.dto.SyncRecurringBudgetResponseDto;
 import org.leoric.expensetracker.recurring.dto.UpdateRecurringBudgetRequestDto;
 import org.leoric.expensetracker.recurring.services.interfaces.RecurringBudgetService;
 import org.springdoc.core.annotations.ParameterObject;
@@ -45,6 +46,14 @@ public class RecurringBudgetController {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(recurringBudgetService.recurringBudgetCreate(currentUser, trackerId, request));
+	}
+
+	@PostMapping("/{trackerId}/sync")
+	public ResponseEntity<SyncRecurringBudgetResponseDto> syncRecurringBudgets(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(recurringBudgetService.syncRecurringBudgets(currentUser, trackerId));
 	}
 
 	@GetMapping("/{trackerId}")
