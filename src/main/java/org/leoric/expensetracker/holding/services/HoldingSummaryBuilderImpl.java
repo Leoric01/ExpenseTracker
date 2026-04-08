@@ -102,6 +102,7 @@ public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 				holding.getAccount().getName(),
 				holding.getAccount().getInstitution().getName(),
 				holding.getAsset().getCode(),
+				holding.getAsset().getScale(),
 				from, to,
 				startBalance, endBalance,
 				totalIncome, totalExpense,

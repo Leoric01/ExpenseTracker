@@ -9,6 +9,7 @@ public record HoldingSummaryResponseDto(
 		String accountName,
 		String institutionName,
 		String assetCode,
+		int assetScale,
 		Instant periodFrom,
 		Instant periodTo,
 		long startBalance,
