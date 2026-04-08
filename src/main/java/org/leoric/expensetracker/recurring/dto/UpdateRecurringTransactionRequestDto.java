@@ -8,7 +8,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 public record UpdateRecurringTransactionRequestDto(
-		UUID walletId,
+		UUID holdingId,
 
 		UUID categoryId,
 

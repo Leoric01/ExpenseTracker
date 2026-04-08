@@ -167,11 +167,16 @@ public class CategoryServiceImpl implements CategoryService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public Page<CategoryResponseDto> categoryFindAllActive(User currentUser, UUID trackerId, String search, Pageable pageable) {
+	public Page<CategoryResponseDto> categoryFindAllActive(User currentUser, UUID trackerId, String search, LocalDate dateFrom, LocalDate dateTo, Pageable pageable) {
 		LocalDate today = LocalDate.now();
+		log.debug("categoryFindAllActive called — tracker={}, search='{}', dateFrom={}, dateTo={}, today={}",
+				trackerId, search, dateFrom, dateTo, today);
 
-		Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId = budgetPlanRepository
-				.findAllCurrentActiveByExpenseTrackerIdWithCategory(trackerId, today)
+		List<BudgetPlan> currentActivePlans = budgetPlanRepository
+				.findAllCurrentActiveByExpenseTrackerIdWithCategory(trackerId, today);
+		log.debug("Found {} currently active budget plans (today={})", currentActivePlans.size(), today);
+
+		Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId = currentActivePlans
 				.stream()
 				.collect(Collectors.toMap(
 						plan -> plan.getCategory().getId(),
@@ -191,14 +196,34 @@ public class CategoryServiceImpl implements CategoryService {
 							return chosen;
 						}
 				));
+		log.debug("Mapped {} categories with an activeBudgetPlan", activeBudgetPlansByCategoryId.size());
+
+		Map<UUID, List<BudgetPlan>> budgetPlansInRangeByCategoryId;
+		if (dateFrom != null && dateTo != null) {
+			List<BudgetPlan> rangePlans = budgetPlanRepository
+					.findAllActiveByExpenseTrackerIdWithCategoryInRange(trackerId, dateFrom, dateTo);
+			log.debug("Found {} budget plans overlapping range [{} — {}]", rangePlans.size(), dateFrom, dateTo);
+			if (log.isTraceEnabled()) {
+				rangePlans.forEach(p -> log.trace("  range plan: id={}, name='{}', categoryId={}, categoryName='{}', validFrom={}, validTo={}",
+						p.getId(), p.getName(),
+						p.getCategory().getId(), p.getCategory().getName(),
+						p.getValidFrom(), p.getValidTo()));
+			}
+			budgetPlansInRangeByCategoryId = rangePlans.stream()
+					.collect(Collectors.groupingBy(plan -> plan.getCategory().getId()));
+			log.debug("Grouped range plans into {} categories", budgetPlansInRangeByCategoryId.size());
+		} else {
+			budgetPlansInRangeByCategoryId = Map.of();
+			log.debug("No dateFrom/dateTo provided — skipping range budget plan query");
+		}
 
 		if (search != null && !search.isBlank()) {
 			return categoryRepository.findActiveByExpenseTrackerIdWithSearch(trackerId, search, pageable)
-					.map(category -> toFlatResponse(category, activeBudgetPlansByCategoryId));
+					.map(category -> toFlatResponse(category, activeBudgetPlansByCategoryId, budgetPlansInRangeByCategoryId));
 		}
 
 		return categoryRepository.findByExpenseTrackerIdAndActiveTrueAndParentIsNull(trackerId, pageable)
-				.map(category -> toActiveResponse(category, activeBudgetPlansByCategoryId));
+				.map(category -> toActiveResponse(category, activeBudgetPlansByCategoryId, budgetPlansInRangeByCategoryId));
 	}
 
 	private BudgetPlan choosePreferredBudgetPlan(BudgetPlan left, BudgetPlan right) {
@@ -347,14 +372,15 @@ public class CategoryServiceImpl implements CategoryService {
 		}
 	}
 
-	private CategoryResponseDto toActiveResponse(Category category, Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId) {
+	private CategoryResponseDto toActiveResponse(Category category, Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId, Map<UUID, List<BudgetPlan>> budgetPlansInRangeByCategoryId) {
 		CategoryResponseDto mapped = categoryMapper.toResponse(category);
 
 		CategoryActiveBudgetPlanDto activeBudgetPlan = mapActiveBudgetPlan(category, activeBudgetPlansByCategoryId);
+		List<CategoryActiveBudgetPlanDto> budgetPlansForSelectedPeriod = mapBudgetPlansInRange(category, budgetPlansInRangeByCategoryId);
 
 		List<CategoryResponseDto> activeChildren = category.getChildren().stream()
 				.filter(Category::isActive)
-				.map(child -> toActiveResponse(child, activeBudgetPlansByCategoryId))
+				.map(child -> toActiveResponse(child, activeBudgetPlansByCategoryId, budgetPlansInRangeByCategoryId))
 				.toList();
 
 		return new CategoryResponseDto(
@@ -368,16 +394,18 @@ public class CategoryServiceImpl implements CategoryService {
 				mapped.iconUrl(),
 				mapped.iconColor(),
 				activeBudgetPlan,
+				budgetPlansForSelectedPeriod,
 				activeChildren,
 				mapped.createdDate(),
 				mapped.lastModifiedDate()
 		);
 	}
 
-	private CategoryResponseDto toFlatResponse(Category category, Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId) {
+	private CategoryResponseDto toFlatResponse(Category category, Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId, Map<UUID, List<BudgetPlan>> budgetPlansInRangeByCategoryId) {
 		CategoryResponseDto mapped = categoryMapper.toFlatResponse(category);
 
 		CategoryActiveBudgetPlanDto activeBudgetPlan = mapActiveBudgetPlan(category, activeBudgetPlansByCategoryId);
+		List<CategoryActiveBudgetPlanDto> budgetPlansForSelectedPeriod = mapBudgetPlansInRange(category, budgetPlansInRangeByCategoryId);
 
 		return new CategoryResponseDto(
 				mapped.id(),
@@ -390,6 +418,7 @@ public class CategoryServiceImpl implements CategoryService {
 				mapped.iconUrl(),
 				mapped.iconColor(),
 				activeBudgetPlan,
+				budgetPlansForSelectedPeriod,
 				mapped.children(),
 				mapped.createdDate(),
 				mapped.lastModifiedDate()
@@ -418,5 +447,15 @@ public class CategoryServiceImpl implements CategoryService {
 				mapped.createdDate(),
 				mapped.lastModifiedDate()
 		);
+	}
+
+	private List<CategoryActiveBudgetPlanDto> mapBudgetPlansInRange(Category category, Map<UUID, List<BudgetPlan>> budgetPlansInRangeByCategoryId) {
+		List<BudgetPlan> plans = budgetPlansInRangeByCategoryId.get(category.getId());
+		if (plans == null || plans.isEmpty()) {
+			return null;
+		}
+		return plans.stream()
+				.map(this::toCategoryActiveBudgetPlanResponse)
+				.toList();
 	}
 }

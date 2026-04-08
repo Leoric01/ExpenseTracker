@@ -10,8 +10,8 @@ import java.util.UUID;
 public record RecurringTransactionResponseDto(
 		UUID id,
 		TransactionType transactionType,
-		UUID walletId,
-		String walletName,
+		UUID holdingId,
+		String holdingName,
 		UUID categoryId,
 		String categoryName,
 		long amount,

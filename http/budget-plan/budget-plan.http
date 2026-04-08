@@ -59,3 +59,10 @@ Content-Type: application/json
 ### Deactivate Budget Plan
 DELETE {{host}}/api/budget-plan/{{tracker_id}}/{{budget_plan_id}}
 Authorization: Bearer {{auth_token}}
+
+### Bulk Import Budget Plans (from JSON)
+POST {{host}}/api/budget-plan/{{tracker_id}}/import
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+< ../../src/main/resources/init/budgets-mapped.json

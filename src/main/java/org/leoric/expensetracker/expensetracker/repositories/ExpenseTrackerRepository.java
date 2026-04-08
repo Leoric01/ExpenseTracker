@@ -44,7 +44,7 @@ public interface ExpenseTrackerRepository extends JpaRepository<ExpenseTracker, 
 			AND (
 				LOWER(et.name) LIKE LOWER(CONCAT('%', :search, '%'))
 				OR LOWER(CONCAT(et.createdByOwner.firstName, ' ', et.createdByOwner.lastName)) LIKE LOWER(CONCAT('%', :search, '%'))
-				OR LOWER(et.defaultCurrencyCode) LIKE LOWER(CONCAT('%', :search, '%'))
+				OR LOWER(et.preferredDisplayAsset.code) LIKE LOWER(CONCAT('%', :search, '%'))
 				OR LOWER(et.description) LIKE LOWER(CONCAT('%', :search, '%'))
 			)
 			""")

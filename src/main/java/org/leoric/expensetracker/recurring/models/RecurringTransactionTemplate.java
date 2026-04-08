@@ -20,7 +20,7 @@ import org.leoric.expensetracker.budget.models.constants.PeriodType;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
-import org.leoric.expensetracker.wallet.models.Wallet;
+import org.leoric.expensetracker.holding.models.Holding;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -55,7 +55,7 @@ public class RecurringTransactionTemplate {
 	private TransactionType transactionType;
 
 	@ManyToOne(fetch = FetchType.LAZY)
-	private Wallet wallet;
+	private Holding holding;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	private Category category;

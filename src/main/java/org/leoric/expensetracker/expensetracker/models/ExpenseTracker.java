@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
@@ -19,6 +20,7 @@ import lombok.Setter;
 import org.hibernate.annotations.UuidGenerator;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.models.UserExpenseTrackerRole;
+import org.leoric.expensetracker.asset.models.Asset;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -52,8 +54,9 @@ public class ExpenseTracker {
 
 	private String description;
 
-	@Column(nullable = false, length = 3)
-	private String defaultCurrencyCode;
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "preferred_display_asset_id")
+	private Asset preferredDisplayAsset;
 
 	@Builder.Default
 	@Column(nullable = false)

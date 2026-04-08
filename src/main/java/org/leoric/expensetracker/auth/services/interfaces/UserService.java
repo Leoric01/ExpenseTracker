@@ -1,5 +1,6 @@
 package org.leoric.expensetracker.auth.services.interfaces;
 
+import org.leoric.expensetracker.auth.dto.AdminPasswordResetDto;
 import org.leoric.expensetracker.auth.dto.UserInfoResponseDto;
 import org.leoric.expensetracker.auth.dto.UserPasswordChangeDto;
 import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
@@ -16,6 +17,8 @@ public interface UserService {
 	UserResponseFullDto profileUpdate(User currentUser, UserProfileUpdateDto dto);
 
 	void profileChangePassword(User currentUser, UserPasswordChangeDto dto);
+
+	void adminResetPassword(AdminPasswordResetDto dto);
 
 	Page<UserResponseFullDto> profileFindAllPageable(String search, Pageable pageable);
 

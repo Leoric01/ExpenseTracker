@@ -18,6 +18,7 @@ public record CategoryResponseDto(
 		String iconUrl,
 		String iconColor,
 		CategoryActiveBudgetPlanDto activeBudgetPlan,
+		List<CategoryActiveBudgetPlanDto> budgetPlansForSelectedPeriod,
 		List<CategoryResponseDto> children,
 		OffsetDateTime createdDate,
 		OffsetDateTime lastModifiedDate

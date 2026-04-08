@@ -23,10 +23,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 			WHERE t.status = org.leoric.expensetracker.transaction.models.constants.TransactionStatus.COMPLETED
 			AND t.transactionDate >= :from
 			AND t.transactionDate < :to
-			AND (t.wallet.id = :walletId OR t.sourceWallet.id = :walletId OR t.targetWallet.id = :walletId)
+			AND (t.holding.id = :holdingId OR t.sourceHolding.id = :holdingId OR t.targetHolding.id = :holdingId)
 			""")
-	List<Transaction> findCompletedByWalletAndDateRange(
-			@Param("walletId") UUID walletId,
+	List<Transaction> findCompletedByHoldingAndDateRange(
+			@Param("holdingId") UUID holdingId,
 			@Param("from") Instant from,
 			@Param("to") Instant to);
 

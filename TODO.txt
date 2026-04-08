@@ -1,0 +1,202 @@
+Takže bych šel tímhle stylem:
+
+Co zachovat
+kategorie
+tracker
+uživatele
+auth
+většinu transaction logiky jako koncept
+export stávajících dat jako pojistku
+
+Co překreslit:
+
+wallet model
+currency/asset model
+primary currency / reporting currency
+dashboard agregace
+validace create/update requestů
+Co bych udělal jako cílový model
+
+Nejpřirozenější je misto wallet:
+
+Institution
+Account
+Holding
+Asset
+
+To je čisté a do budoucna použitelné.
+
+Příklad
+Institution: Komerční banka
+  Account: Běžný účet
+    Holding: CZK
+Institution: AnyCoin
+  Account: Spot
+    Holding: BTC
+    Holding: XMR
+Institution: Personal
+  Account: Cash Wallet
+    Holding: CZK
+
+
+Minimum pro čistý nový start
+nový datový model
+create/read/update/delete pro institution/account
+holdings nebo aspoň account-asset vazbu
+transakce navázané na nový model
+kategorie zachovat
+základní dashboard
+export starých dat
+možnost nastavit primary currency
+jednoduchý asset registry
+
+
+refactor základního modelu
+další feature creep
+
+Refactor základního modelu má smysl teď.
+Feature creep nemá smysl cpát do stejné vlny.
+
+Jinými slovy:
+udělej teď správnou kostru,
+ale nesnaž se teď vymyslet i všechny budoucí orgány, svaly, implantáty a vesmírnou loď.
+
+Praktický doporučený postup
+
+Já bych to udělal takhle:
+
+Fáze A
+
+Dnes / zítra:
+
+export kategorií
+export transakcí
+export walletů
+sepsat cílový model
+rozhodnout názvy entit jednou a dost
+Fáze B
+
+Do 1. 4.:
+
+refactor DB modelu
+upravit entity, repository, DTO, service
+rozchodit create flow
+rozchodit transaction flow
+rozchodit základní dashboard
+začít od 1. 4. zapisovat čistě
+Fáze C
+
+Po 1. 4.:
+
+import starých dat jen pokud budeš chtít
+ceny
+přepočty net worth
+historie kurzů
+další UX nápady
+
+To je podle mě správné pořadí.
+
+Kritická poznámka
+
+Jediné, před čím bych tě varoval:
+nesnaž se migrovat starý model automaticky za každou cenu, pokud máš jen 2 týdny dat.
+
+Někdy je levnější:
+
+export stará data
+zachovat je bokem
+nový model naplnit ručně nebo polo-ručně
+
+než vyrábět komplikovanou migraci, kterou už nikdy nepoužiješ.
+
+Pokud máš 2 týdny dat, migrace může být spíš zbytečně heroický výkon než rozumná investice.
+
+Verdikt
+
+Za téhle situace bych to udělal taky:
+
+full refactor teď
+čistý start od 1. 4. 2026
+stará data vyexportovat jako zálohu
+kategorii zachovat
+nezkoušet teď přidat všechno najednou
+
+To není chaos. To je naopak dost dobrý timing. Horší by bylo čekat další 3 měsíce a pak zjistit, že přepisuješ už půl aplikace i s daty, která tě mezitím uvěznila v blbém modelu.
+
+kategorie:
+Vetsi veci
+doma
+Pokuty
+Kluby
+Deliveries
+Spotrebni
+Uber/Bolt/Taxi
+Kino
+Restaurace - luxusnejsi
+AI Gpt a dalsi
+Benefity
+Wearable
+GIFTS
+CLOTHING
+Sauna
+LOANS
+LIFESTYLE
+Najem+Energie
+Steam
+Software licence
+Opravy/Renovace
+Brigady
+Poplatky (radio atd)
+Do domacnosti
+Commerzbank
+Lime/Recola
+bar/hospoda
+"Auto - provoz (pojistka, benzin, servis atd...)"
+Pracovni
+Kamaradi / znami
+Nabytek/Vybaveni
+Divadlo
+KB - poplatky (vyhnutelne - nikoliv uroky)
+Playstation
+Kokain
+GOVERNMENT
+PC Komponenty
+SUBSCRIPTIONS
+GAMES
+Restaurace - obedy
+NIkotin
+Vylet
+Prasky
+DROGY
+Osobni - obleceni domu a ven
+Ja
+Sportovni
+Sport
+TRANSPORTATION
+FEES
+Tata
+Groceries - drogerie included
+Ostatni
+Alkohol
+AnyTime/Pujcovna
+veev
+Telefon - mobilni tarif
+Rodina
+"Motorka - provoz (pojistka, benzin, servis atd...)"
+Zakroky
+Bonusy
+Hracky
+Pritelkyne
+ELECTRONICS
+HOUSEHOLD
+KB Uver
+Pro radost
+Internet
+INCOMES
+FOOD
+Barber
+HEALTH
+Vysetreni
+Kama
+Aplikace
+EROTIKA

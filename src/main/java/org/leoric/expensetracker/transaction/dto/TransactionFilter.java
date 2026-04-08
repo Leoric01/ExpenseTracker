@@ -9,7 +9,7 @@ import java.util.UUID;
 public record TransactionFilter(
 		String search,
 		UUID categoryId,
-		UUID walletId,
+		UUID holdingId,
 		TransactionType transactionType,
 		TransactionStatus status,
 		Instant dateFrom,

@@ -4,6 +4,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.budget.dto.BudgetPlanResponseDto;
+import org.leoric.expensetracker.budget.dto.BulkBudgetImportItemDto;
+import org.leoric.expensetracker.budget.dto.BulkBudgetImportResponseDto;
 import org.leoric.expensetracker.budget.dto.CreateBudgetPlanRequestDto;
 import org.leoric.expensetracker.budget.dto.UpdateBudgetPlanRequestDto;
 import org.leoric.expensetracker.budget.services.interfaces.BudgetPlanService;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
@@ -94,5 +97,15 @@ public class BudgetPlanController {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
 		budgetPlanService.budgetPlanDeactivate(currentUser, trackerId, budgetPlanId);
 		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping("/{trackerId}/import")
+	public ResponseEntity<BulkBudgetImportResponseDto> bulkImport(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@Valid @RequestBody List<BulkBudgetImportItemDto> items) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
+		return ResponseEntity.status(HttpStatus.CREATED)
+				.body(budgetPlanService.bulkImport(currentUser, trackerId, items));
 	}
 }

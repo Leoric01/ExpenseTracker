@@ -11,6 +11,8 @@ import org.leoric.expensetracker.category.repositories.CategoryRepository;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.holding.models.Holding;
+import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.recurring.dto.CreateRecurringTransactionRequestDto;
 import org.leoric.expensetracker.recurring.dto.RecurringTransactionResponseDto;
 import org.leoric.expensetracker.recurring.dto.UpdateRecurringTransactionRequestDto;
@@ -22,8 +24,6 @@ import org.leoric.expensetracker.transaction.models.Transaction;
 import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
-import org.leoric.expensetracker.wallet.models.Wallet;
-import org.leoric.expensetracker.wallet.repositories.WalletRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -41,7 +41,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 	private final RecurringTransactionTemplateRepository templateRepository;
 	private final TransactionRepository transactionRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
-	private final WalletRepository walletRepository;
+	private final HoldingRepository holdingRepository;
 	private final CategoryRepository categoryRepository;
 	private final RecurringTransactionMapper mapper;
 
@@ -54,8 +54,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 			throw new OperationNotPermittedException("Recurring templates only support INCOME and EXPENSE transaction types");
 		}
 
-		Wallet wallet = getWalletOrThrow(request.walletId());
-		assertWalletBelongsToTracker(wallet, trackerId);
+		Holding holding = getHoldingOrThrow(request.holdingId());
+		assertHoldingBelongsToTracker(holding, trackerId);
 
 		Category category = null;
 		if (request.categoryId() != null) {
@@ -67,10 +67,10 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 		RecurringTransactionTemplate template = RecurringTransactionTemplate.builder()
 				.expenseTracker(tracker)
 				.transactionType(request.transactionType())
-				.wallet(wallet)
+				.holding(holding)
 				.category(category)
 				.amount(request.amount())
-				.currencyCode(request.currencyCode().toUpperCase())
+				.currencyCode(holding.getAsset().getCode())
 				.description(request.description())
 				.note(request.note())
 				.periodType(request.periodType())
@@ -126,10 +126,10 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 		RecurringTransactionTemplate template = getTemplateOrThrow(templateId);
 		assertTemplateBelongsToTracker(template, trackerId);
 
-		if (request.walletId() != null) {
-			Wallet wallet = getWalletOrThrow(request.walletId());
-			assertWalletBelongsToTracker(wallet, trackerId);
-			template.setWallet(wallet);
+		if (request.holdingId() != null) {
+			Holding holding = getHoldingOrThrow(request.holdingId());
+			assertHoldingBelongsToTracker(holding, trackerId);
+			template.setHolding(holding);
 		}
 
 		if (request.categoryId() != null) {
@@ -180,9 +180,9 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 				.orElseThrow(() -> new EntityNotFoundException("Recurring transaction template not found"));
 	}
 
-	private Wallet getWalletOrThrow(UUID walletId) {
-		return walletRepository.findById(walletId)
-				.orElseThrow(() -> new EntityNotFoundException("Wallet not found"));
+	private Holding getHoldingOrThrow(UUID holdingId) {
+		return holdingRepository.findById(holdingId)
+				.orElseThrow(() -> new EntityNotFoundException("Holding not found"));
 	}
 
 	private Category getCategoryOrThrow(UUID categoryId) {
@@ -196,9 +196,9 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 		}
 	}
 
-	private void assertWalletBelongsToTracker(Wallet wallet, UUID trackerId) {
-		if (!wallet.getExpenseTracker().getId().equals(trackerId)) {
-			throw new EntityNotFoundException("Wallet not found in this expense tracker");
+	private void assertHoldingBelongsToTracker(Holding holding, UUID trackerId) {
+		if (!holding.getAccount().getInstitution().getExpenseTracker().getId().equals(trackerId)) {
+			throw new EntityNotFoundException("Holding not found in this expense tracker");
 		}
 	}
 
@@ -230,26 +230,26 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 				return;
 			}
 
-			Wallet wallet = template.getWallet();
-			if (wallet == null || !wallet.isActive()) {
-				log.warn("Skipping catch-up for recurring transaction template '{}' — wallet is null or deactivated",
+			Holding holding = template.getHolding();
+			if (holding == null || !holding.isActive()) {
+				log.warn("Skipping catch-up for recurring transaction template '{}' — holding is null or deactivated",
 						template.getId());
 				return;
 			}
 
 			// Apply balance effect
 			if (template.getTransactionType() == TransactionType.INCOME) {
-				wallet.setCurrentBalance(wallet.getCurrentBalance() + template.getAmount());
+				holding.setCurrentAmount(holding.getCurrentAmount() + template.getAmount());
 			} else if (template.getTransactionType() == TransactionType.EXPENSE) {
-				wallet.setCurrentBalance(wallet.getCurrentBalance() - template.getAmount());
+				holding.setCurrentAmount(holding.getCurrentAmount() - template.getAmount());
 			}
-			walletRepository.save(wallet);
+			holdingRepository.save(holding);
 
 			Transaction transaction = Transaction.builder()
 					.expenseTracker(template.getExpenseTracker())
 					.transactionType(template.getTransactionType())
 					.status(TransactionStatus.COMPLETED)
-					.wallet(wallet)
+					.holding(holding)
 					.category(template.getCategory())
 					.amount(template.getAmount())
 					.currencyCode(template.getCurrencyCode())

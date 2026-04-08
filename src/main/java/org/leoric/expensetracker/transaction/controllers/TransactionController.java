@@ -60,7 +60,7 @@ public class TransactionController {
 			@PathVariable UUID trackerId,
 			@RequestParam(required = false) String search,
 			@RequestParam(required = false) UUID categoryId,
-			@RequestParam(required = false) UUID walletId,
+			@RequestParam(required = false) UUID holdingId,
 			@RequestParam(required = false) TransactionType transactionType,
 			@RequestParam(required = false) TransactionStatus status,
 			@RequestParam(required = false) Instant dateFrom,
@@ -71,7 +71,7 @@ public class TransactionController {
 		TransactionFilter filter = new TransactionFilter(
 				search,
 				categoryId,
-				walletId,
+				holdingId,
 				transactionType,
 				status,
 				dateFrom,

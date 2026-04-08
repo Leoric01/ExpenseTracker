@@ -4,9 +4,9 @@ import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import org.leoric.expensetracker.category.models.Category;
+import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.transaction.dto.TransactionFilter;
 import org.leoric.expensetracker.transaction.models.Transaction;
-import org.leoric.expensetracker.wallet.models.Wallet;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.util.ArrayList;
@@ -28,18 +28,18 @@ public final class TransactionSpecification {
 		return (root, query, cb) -> {
 			List<Predicate> predicates = new ArrayList<>();
 
-			Join<Transaction, Wallet> walletJoin = root.join("wallet", JoinType.LEFT);
-			Join<Transaction, Wallet> sourceWalletJoin = root.join("sourceWallet", JoinType.LEFT);
-			Join<Transaction, Wallet> targetWalletJoin = root.join("targetWallet", JoinType.LEFT);
+			Join<Transaction, Holding> holdingJoin = root.join("holding", JoinType.LEFT);
+			Join<Transaction, Holding> sourceHoldingJoin = root.join("sourceHolding", JoinType.LEFT);
+			Join<Transaction, Holding> targetHoldingJoin = root.join("targetHolding", JoinType.LEFT);
 			Join<Transaction, Category> categoryJoin = root.join("category", JoinType.LEFT);
 
 			predicates.add(cb.equal(root.get("expenseTracker").get("id"), trackerId));
 
-			if (filter.walletId() != null) {
+			if (filter.holdingId() != null) {
 				predicates.add(cb.or(
-						cb.equal(walletJoin.get("id"), filter.walletId()),
-						cb.equal(sourceWalletJoin.get("id"), filter.walletId()),
-						cb.equal(targetWalletJoin.get("id"), filter.walletId())
+						cb.equal(holdingJoin.get("id"), filter.holdingId()),
+						cb.equal(sourceHoldingJoin.get("id"), filter.holdingId()),
+						cb.equal(targetHoldingJoin.get("id"), filter.holdingId())
 				));
 			}
 
@@ -72,9 +72,9 @@ public final class TransactionSpecification {
 				searchPredicates.add(cb.like(cb.lower(cb.coalesce(root.get("currencyCode"), "")), like));
 				searchPredicates.add(cb.like(cb.lower(root.get("transactionType").as(String.class)), like));
 				searchPredicates.add(cb.like(cb.lower(root.get("status").as(String.class)), like));
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(walletJoin.get("name"), "")), like));
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(sourceWalletJoin.get("name"), "")), like));
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(targetWalletJoin.get("name"), "")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(holdingJoin.get("account").get("name"), "")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(sourceHoldingJoin.get("account").get("name"), "")), like));
+				searchPredicates.add(cb.like(cb.lower(cb.coalesce(targetHoldingJoin.get("account").get("name"), "")), like));
 				searchPredicates.add(cb.like(cb.lower(cb.coalesce(categoryJoin.get("name"), "")), like));
 
 				if (!searchCategoryIds.isEmpty()) {

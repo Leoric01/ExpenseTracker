@@ -17,15 +17,15 @@ import java.time.ZoneOffset;
 @Mapper(componentModel = "spring")
 public interface RecurringTransactionMapper {
 
-	@Mapping(source = "wallet.id", target = "walletId")
-	@Mapping(source = "wallet.name", target = "walletName")
+	@Mapping(source = "holding.id", target = "holdingId")
+	@Mapping(source = "holding.account.name", target = "holdingName")
 	@Mapping(source = "category.id", target = "categoryId")
 	@Mapping(source = "category.name", target = "categoryName")
 	RecurringTransactionResponseDto toResponse(RecurringTransactionTemplate entity);
 
 	@BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE,
 			unmappedTargetPolicy = ReportingPolicy.IGNORE)
-	@Mapping(target = "wallet", ignore = true)
+	@Mapping(target = "holding", ignore = true)
 	@Mapping(target = "category", ignore = true)
 	void updateFromDto(UpdateRecurringTransactionRequestDto dto, @MappingTarget RecurringTransactionTemplate entity);
 

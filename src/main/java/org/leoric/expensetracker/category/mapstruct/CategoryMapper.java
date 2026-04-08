@@ -20,12 +20,14 @@ public interface CategoryMapper {
 	@Mapping(source = "parent.id", target = "parentId")
 	@Mapping(source = "parent.name", target = "parentName")
 	@Mapping(target = "activeBudgetPlan", ignore = true)
+	@Mapping(target = "budgetPlansForSelectedPeriod", ignore = true)
 	CategoryResponseDto toResponse(Category entity);
 
 	@Named("flat")
 	@Mapping(source = "parent.id", target = "parentId")
 	@Mapping(source = "parent.name", target = "parentName")
 	@Mapping(target = "activeBudgetPlan", ignore = true)
+	@Mapping(target = "budgetPlansForSelectedPeriod", ignore = true)
 	@Mapping(target = "children", expression = "java(java.util.Collections.emptyList())")
 	CategoryResponseDto toFlatResponse(Category entity);
 

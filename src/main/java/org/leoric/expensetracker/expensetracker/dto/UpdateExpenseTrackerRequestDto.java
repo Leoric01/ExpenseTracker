@@ -1,13 +1,12 @@
 package org.leoric.expensetracker.expensetracker.dto;
 
-import org.leoric.expensetracker.validation.ValidCurrencyCode;
+import java.util.UUID;
 
 public record UpdateExpenseTrackerRequestDto(
 		String name,
 
 		String description,
 
-		@ValidCurrencyCode
-		String defaultCurrencyCode
+		UUID preferredDisplayAssetId
 ) {
 }

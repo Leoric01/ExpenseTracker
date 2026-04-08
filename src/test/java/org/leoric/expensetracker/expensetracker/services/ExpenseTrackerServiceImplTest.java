@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.auth.models.Role;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
@@ -39,6 +40,8 @@ class ExpenseTrackerServiceImplTest {
 	private RoleRepository roleRepository;
 	@Mock
 	private UserRepository userRepository;
+	@Mock
+	private AssetRepository assetRepository;
 
 	@InjectMocks
 	private ExpenseTrackerServiceImpl expenseTrackerService;
@@ -68,9 +71,9 @@ class ExpenseTrackerServiceImplTest {
 
 	@Test
 	void create_shouldCreateExpenseTrackerSuccessfully() {
-		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", "CZK");
+		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", null);
 		var response = new ExpenseTrackerResponseDto(
-				UUID.randomUUID(), "Personal", "My tracker", "CZK",
+				UUID.randomUUID(), "Personal", "My tracker", null, null,
 				true, "John Doe", List.of(), OffsetDateTime.now(), OffsetDateTime.now()
 		);
 
@@ -89,7 +92,7 @@ class ExpenseTrackerServiceImplTest {
 
 	@Test
 	void create_shouldThrowWhenNameAlreadyExistsForUser() {
-		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", "CZK");
+		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", null);
 
 		when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 		when(expenseTrackerRepository.existsByCreatedByOwnerIdAndNameIgnoreCase(userId, "Personal")).thenReturn(true);
@@ -103,7 +106,7 @@ class ExpenseTrackerServiceImplTest {
 
 	@Test
 	void create_shouldThrowWhenUserNotFound() {
-		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", "CZK");
+		var request = new CreateExpenseTrackerRequestDto("Personal", "My tracker", null);
 
 		when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
