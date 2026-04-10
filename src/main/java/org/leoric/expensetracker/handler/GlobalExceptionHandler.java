@@ -5,12 +5,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateWidgetItemEntityIdsException;
 import org.leoric.expensetracker.handler.exceptions.EmailAlreadyInUseException;
-import org.leoric.expensetracker.handler.exceptions.DuplicateExpenseTrackerNameException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateBudgetPlanNameException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateExpenseTrackerNameException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateHabitNameException;
+import org.leoric.expensetracker.handler.exceptions.HabitNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.CategoryHasActiveChildrenException;
 import org.leoric.expensetracker.handler.exceptions.DuplicateCategoryNameException;
 import org.leoric.expensetracker.handler.exceptions.IncorrectCurrentPasswordException;
 import org.leoric.expensetracker.handler.exceptions.InsufficientRoleException;
+import org.leoric.expensetracker.handler.exceptions.InvalidHabitException;
+import org.leoric.expensetracker.handler.exceptions.InvalidHabitCompletionException;
 import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchException;
 import org.leoric.expensetracker.handler.exceptions.NotAuthorizedForThisExpenseTrackerException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
@@ -207,6 +211,30 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionResponse> handleWidgetItemReorderMismatchException(WidgetItemReorderMismatchException ex) {
 		log.warn("[{}] {}", WIDGET_ITEM_REORDER_MISMATCH.getCode(), ex.getMessage(), ex);
 		return build(WIDGET_ITEM_REORDER_MISMATCH, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateHabitNameException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateHabitNameException(DuplicateHabitNameException ex) {
+		log.warn("[{}] {}", DUPLICATE_HABIT_NAME.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_HABIT_NAME, ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidHabitException.class)
+	public ResponseEntity<ExceptionResponse> handleInvalidHabitException(InvalidHabitException ex) {
+		log.warn("[{}] {}", INVALID_HABIT.getCode(), ex.getMessage(), ex);
+		return build(INVALID_HABIT, ex.getMessage());
+	}
+
+	@ExceptionHandler(HabitNotFoundException.class)
+	public ResponseEntity<ExceptionResponse> handleHabitNotFoundException(HabitNotFoundException ex) {
+		log.warn("[{}] {}", HABIT_NOT_FOUND.getCode(), ex.getMessage(), ex);
+		return build(HABIT_NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidHabitCompletionException.class)
+	public ResponseEntity<ExceptionResponse> handleInvalidHabitCompletionException(InvalidHabitCompletionException ex) {
+		log.warn("[{}] {}", INVALID_HABIT_COMPLETION.getCode(), ex.getMessage(), ex);
+		return build(INVALID_HABIT_COMPLETION, ex.getMessage());
 	}
 
 	private ResponseEntity<ExceptionResponse> build(BusinessErrorCodes code, String errorMessage) {

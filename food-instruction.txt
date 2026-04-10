@@ -1,0 +1,715 @@
+NutritionProfile je 1:1 na tracker. To je správně, jeden tracker reprezentuje jednu „nutriční identitu“.
+
+GoalPlan je časová vrstva. Tohle potřebuješ, jinak každá změna cíle zničí historii.
+
+NutritionTarget je verzovaný snapshot doporučení. Bez něj nebudeš umět auditovat změny targetu.
+
+DailyNutritionLog a DailyBodyMeasurementLog jsou oddělené schválně. Nesnaž se to slít do jedné tabulky jen proto, že oboje má datum. To je líný model, ne chytrý model.
+
+WeeklyCheckin je materializovaný agregát. Ano, šlo by to počítat on-demand. Ne, není to vždy chytré. Jakmile budeš chtít historičnost algoritmu a stabilní snapshoty, budeš rád, že to máš uložené.
+
+TdeeAdjustmentEvent je audit algoritmu. To není kosmetika, to je jádro té aplikace.
+
+Tady je kritická poznámka: NutritionTargetService nemá samo počítat TDEE ani makra. Má orchestrace:
+
+natáhne profil, plán, logy
+zavolá calculation services
+uloží snapshot
+vrátí DTO
+
+To je správně. Jakmile začneš cpát vzorce do service impl, za měsíc nepoznáš, co je use-case a co je matematika.
+
+Doporučené impl boundaries
+
+NutritionProfileServiceImpl
+Odpovědnost:
+
+create/update profilu trackeru
+validace jednotek a antropometrie
+žádné výpočty kromě případného přepočtu input units -> cm/kg
+
+GoalPlanServiceImpl
+Odpovědnost:
+
+create/update/activate/deactivate plánu
+zajištění max jednoho active goal planu na tracker
+kontrola konzistence start date, end date, weekly target
+případně po vytvoření vygenerovat initial nutrition target
+
+NutritionTargetServiceImpl
+Odpovědnost:
+
+generování initial targetu
+manual override
+načtení current targetu
+zavolání TdeeCalculationService a MacroCalculationService
+
+DailyNutritionLogServiceImpl
+Odpovědnost:
+
+upsert denního logu
+vazba na aktivní GoalPlan
+validace data a hodnot
+žádný přímý přepočet weekly checkinu uvnitř, maximálně trigger orchestrace
+
+DailyBodyMeasurementLogServiceImpl
+Odpovědnost:
+
+upsert obvodů
+výpočet BF přes BodyFatCalculationService
+vazba na aktivní goal plan
+
+WeeklyCheckinServiceImpl
+Odpovědnost:
+
+sestavení týdenního snapshotu z daily logů
+uložení WeeklyCheckin
+případně po 4. týdnu spustit adaptivní recalculation
+uložit TdeeAdjustmentEvent a nový NutritionTarget
+
+NutritionDashboardServiceImpl
+Odpovědnost:
+
+summary endpointy
+grafy, timeline, weekly trendy
+čistě query/read model
+
+Tohle je přesně hranice, kterou chceš.
+
+Co snapshotovat a co dopočítávat
+
+Snapshotovat:
+
+NutritionTarget
+WeeklyCheckin
+TdeeAdjustmentEvent
+
+Dopočítávat on-demand:
+
+acceptable macro ranges
+warningy/reminders
+chart projections
+aktuální dashboard summary
+BF, pokud chceš jen „preview“ bez uložení
+
+Přepočítat a uložit:
+
+BF při uložení DailyBodyMeasurementLog, protože to je auditovatelný derived fact
+weekly snapshot při uzavření týdne nebo po změně záznamů v týdnu
+nový nutrition target při adaptivní korekci
+
+Neukládat:
+
+stringy typu "150 - 190"
+texty typu "Reminder: your calories..."
+názvy dnů
+měsíční summary řádky
+
+Doporučený orchestration flow
+
+Flow pro první setup:
+
+upsert NutritionProfile
+create GoalPlan
+generate initial NutritionTarget
+
+Flow pro denní log:
+
+upsert DailyNutritionLog
+pokud jde o konec týdne nebo explicitní recalc, vygenerovat WeeklyCheckin
+pokud existuje dost týdnů, spustit AdaptiveNutritionAdjustmentService
+uložit TdeeAdjustmentEvent
+uložit nový NutritionTarget
+
+Flow pro obvody:
+
+upsert DailyBodyMeasurementLog
+spočítat BF
+uložit BF
+pokud je relevantní týdenní checkin, přepočítat ho
+
+Dobře. Teď konečně to podstatné, ne další katalog tříd. Níže máš implementace výpočetních služeb v pořadí, které dává smysl. Držím je co nejblíž tomu Google Sheetu, ne nějakému „lepšími lidmi vymyšlenému“ fitness modelu.
+
+Zásady, které držím stejně jako sheet:
+
+interně všechno v kg a cm
+BF z obvodů podle US Navy rovnic, přesně podle toho, co máš v sheetu
+baseline TDEE z Katch-McArdle
+targetCalories = baselineTdee + dailyAdjustment
+denní adjustment z týdenní změny váhy přes 7700 kcal / kg / 7
+protein heuristika podle BF %
+fat heuristika podle BF %
+carbs jako zbytek
+adaptive adjustment podle reálné změny vs očekávané změny
+až od 4. checkpointu, stejně jako sheet naznačuje
+
+Níže používám pár rozumných konstant. Když budeš chtít absolutní 1:1 shodu se sheetem i v detailech zaokrouhlování a smoothingu, doladíme to na základě těch schovaných sloupců typu AX, AY, AW. Teď ti dávám robustní jádro, které už je velmi blízko.
+
+USER FLOW / CONTROLLERS EXPLANATION
+
+Základní logika používání
+
+User s tím pracuje ve 4 fázích:
+
+nastaví profil
+založí plán
+vygeneruje počáteční target
+průběžně loguje data a občas generuje týdenní checkin
+sleduje dashboard a summary
+
+Teď endpoint po endpointu.
+
+NutritionProfileController
+
+PUT /api/nutrition-profile/{trackerId}
+Slouží k vytvoření nebo úpravě základního profilu pro tracker.
+
+Co tam user nastavuje:
+
+jednotky
+pohlaví
+výšku
+activity multiplier
+jestli chce BF z obvodů automaticky
+
+Kdy se používá:
+
+na začátku při setupu
+kdykoliv později, když user změní profilové údaje
+
+Důležité:
+
+bez tohohle endpointu nemá systém dost dat pro smysluplné výpočty targetu
+typicky je to první krok vůbec
+
+Prakticky:
+
+frontend otevře „Nutrition setup“
+user vyplní profil
+frontend zavolá tenhle endpoint
+
+GET /api/nutrition-profile/{trackerId}
+Vrací aktuální profil trackeru.
+
+Kdy se používá:
+
+při otevření stránky nastavení
+když chceš předvyplnit formulář pro editaci
+
+Takže:
+
+PUT = uložit
+GET = načíst
+
+_________
+
+GoalPlanController
+
+POST /api/goal-plan/{trackerId}
+Založí nový goal plan.
+
+Co user zadává:
+
+název plánu
+typ cíle
+start date
+start weight
+start body fat
+target weekly weight change
+strategie maker
+
+Kdy se používá:
+
+když user zakládá nový cut / maintenance / bulk
+
+Tohle je druhý krok po profilu.
+
+Důležité:
+
+plán je časová jednotka
+jakmile user začne nový režim, zakládá nový plan
+neupdatuje donekonečna jeden starý plan, jinak si zničí historii
+
+GET /api/goal-plan/{trackerId}
+Vrací seznam všech plánů v trackeru.
+
+Kdy se používá:
+
+historie plánů
+přehled aktivního a starých plánů
+výběr plánu pro summary
+
+GET /api/goal-plan/{trackerId}/{goalPlanId}
+Vrací detail jednoho plánu.
+
+Kdy se používá:
+
+detail plánu
+editace konkrétního plánu
+
+PATCH /api/goal-plan/{trackerId}/{goalPlanId}
+Upraví plán.
+
+Kdy se používá:
+
+když user opraví start weight
+změní weekly target
+změní název
+upraví strategie maker
+
+Pozor:
+
+když měníš něco zásadního, může být potřeba znovu vygenerovat nutrition target
+endpoint sám o sobě nepřepočítává všechno automaticky, pokud sis to tak extra nedodělal
+
+POST /api/goal-plan/{trackerId}/{goalPlanId}/activate
+Aktivuje zvolený plán.
+
+Kdy se používá:
+
+user má více plánů a chce jeden označit jako aktuální
+například skončil cut a chce aktivovat maintenance plan
+
+Smysl:
+
+denní logy se vážou na aktivní plan
+tohle určuje, kam nové záznamy padají
+
+DELETE /api/goal-plan/{trackerId}/{goalPlanId}
+Ve tvém návrhu to ve skutečnosti znamená deactivate, ne fyzické smazání.
+
+Kdy se používá:
+
+user chce plán ukončit / vypnout
+ale nechce smazat historii
+
+Takže z pohledu usera:
+
+create = založit plán
+activate = přepnout na něj
+delete = vypnout ho
+
+_________
+
+NutritionTargetController
+
+Tohle je vrstva doporučení kalorií a maker.
+
+POST /api/nutrition-target/{trackerId}/{goalPlanId}/initial
+Vygeneruje počáteční target z profilu a goal plánu.
+
+Kdy se používá:
+
+hned po založení plánu
+případně po významné změně plánu, pokud chceš target přegenerovat
+
+Tohle je prakticky třetí krok v setupu:
+
+profil
+plan
+initial target
+
+Výstup:
+
+baseline TDEE
+calorie adjustment
+target calories
+protein/fat/carbs
+
+To user uvidí jako „začni jíst tolik a tolik“.
+
+GET /api/nutrition-target/{trackerId}/current
+Vrací aktuální platný target.
+
+Kdy se používá:
+
+dashboard
+karta „current calories/macros“
+zobrazení aktuálního doporučení v appce
+
+Tohle bude frontend volat často.
+
+GET /api/nutrition-target/{trackerId}
+Vrací historii targetů.
+
+Kdy se používá:
+
+user chce vidět, jak se target měnil v čase
+audit adaptivních úprav
+timeline doporučení
+
+POST /api/nutrition-target/{trackerId}/{goalPlanId}/manual-override
+Ruční přepsání targetu.
+
+Kdy se používá:
+
+user nechce auto target a chce zadat vlastní kalorie/makra
+trenér mu nastavil jiný režim
+chce dočasně override
+
+Praktický dopad:
+
+systém vytvoří nový target snapshot
+v tvé logice pak adaptive auto-adjust typicky nechceš provádět nad manual override targetem
+
+Tohle je endpoint pro pokročilejší použití, ne pro základní setup.
+
+_________
+
+NutritionTargetController
+
+Tohle je vrstva doporučení kalorií a maker.
+
+POST /api/nutrition-target/{trackerId}/{goalPlanId}/initial
+Vygeneruje počáteční target z profilu a goal plánu.
+
+Kdy se používá:
+
+hned po založení plánu
+případně po významné změně plánu, pokud chceš target přegenerovat
+
+Tohle je prakticky třetí krok v setupu:
+
+profil
+plan
+initial target
+
+Výstup:
+
+baseline TDEE
+calorie adjustment
+target calories
+protein/fat/carbs
+
+To user uvidí jako „začni jíst tolik a tolik“.
+
+GET /api/nutrition-target/{trackerId}/current
+Vrací aktuální platný target.
+
+Kdy se používá:
+
+dashboard
+karta „current calories/macros“
+zobrazení aktuálního doporučení v appce
+
+Tohle bude frontend volat často.
+
+GET /api/nutrition-target/{trackerId}
+Vrací historii targetů.
+
+Kdy se používá:
+
+user chce vidět, jak se target měnil v čase
+audit adaptivních úprav
+timeline doporučení
+
+POST /api/nutrition-target/{trackerId}/{goalPlanId}/manual-override
+Ruční přepsání targetu.
+
+Kdy se používá:
+
+user nechce auto target a chce zadat vlastní kalorie/makra
+trenér mu nastavil jiný režim
+chce dočasně override
+
+Praktický dopad:
+
+systém vytvoří nový target snapshot
+v tvé logice pak adaptive auto-adjust typicky nechceš provádět nad manual override targetem
+
+Tohle je endpoint pro pokročilejší použití, ne pro základní setup.
+
+
+__________
+
+DailyNutritionLogController
+
+Tohle je každodenní provoz.
+
+PUT /api/daily-nutrition-log/{trackerId}
+Vytvoří nebo upraví denní log pro konkrétní datum.
+
+Co user zadává:
+
+datum
+váhu
+kalorie
+případně makra
+poznámku
+
+Kdy se používá:
+
+prakticky každý den
+hlavní datový vstup celé aplikace
+
+Tohle je nejčastější endpoint běžného používání.
+
+Důležité:
+
+pro stejné datum dělá upsert, ne vytváření duplicit
+user tedy může log doplnit nebo opravit později
+
+GET /api/daily-nutrition-log/{trackerId}/{logDate}
+Vrací log pro konkrétní den.
+
+Kdy se používá:
+
+při otevření detailu dne
+při editaci logu konkrétního dne
+
+GET /api/daily-nutrition-log/{trackerId}?from=...&to=...
+Vrací logy v intervalu, nebo obecně stránkovaný seznam.
+
+Kdy se používá:
+
+kalendář
+seznam záznamů
+grafy
+historie logování
+
+DELETE /api/daily-nutrition-log/{trackerId}/{logDate}
+Smaže log pro daný den.
+
+Kdy se používá:
+
+user zapsal nesmysl
+chce záznam odstranit
+
+Z pohledu user flow:
+
+tohle je každodenní input pro Step 3
+
+__________
+
+DailyBodyMeasurementLogController
+
+Tohle je volitelný doplněk k denním logům.
+
+PUT /api/daily-body-measurement-log/{trackerId}
+Uloží obvody těla pro daný den a dopočítá BF %.
+
+Co user zadává:
+
+datum
+waist
+neck
+případně hip
+
+Kdy se používá:
+
+ne nutně každý den
+spíš týdně, ob týdny, nebo při checkinu
+
+K čemu slouží:
+
+přesnější sledování body composition
+BF trend
+podklad pro checkin a adaptive logiku
+
+GET /api/daily-body-measurement-log/{trackerId}/{logDate}
+Vrací measurement log pro daný den.
+
+Kdy se používá:
+
+detail dne
+editace záznamu
+
+GET /api/daily-body-measurement-log/{trackerId}?from=...&to=...
+Vrací measurement logy v intervalu.
+
+Kdy se používá:
+
+historie měření
+BF timeline
+
+DELETE /api/daily-body-measurement-log/{trackerId}/{logDate}
+Smaže measurement log pro daný den.
+
+Kdy se používá:
+
+user opravil špatně zadané obvody
+nechce daný measurement držet
+
+Tohle není povinná část flow, ale je užitečná.
+
+__________
+
+WeeklyCheckinController
+
+Tohle je klíčový přechod od denních dat k adaptivnímu řízení.
+
+POST /api/weekly-checkin/{trackerId}/{goalPlanId}/{weekIndex}
+Vygeneruje týdenní checkin.
+
+Co dělá:
+
+sebere denní logy za daný týden
+spočítá průměrnou váhu
+spočítá průměrné kalorie
+vezme BF, pokud existuje
+spočítá změnu oproti startu / minulému checkinu
+případně po dostatečném počtu týdnů provede adaptive adjustment targetu
+
+Kdy se používá:
+
+na konci týdne
+třeba každou neděli
+nebo po uzavření týdne tlačítkem „Generate weekly check-in“
+
+Tohle je nejdůležitější endpoint po denním logování.
+
+Praktický smysl:
+
+z denních dat vznikne oficiální checkpoint
+odtud se upravují cíle podle reality
+
+GET /api/weekly-checkin/{trackerId}/{goalPlanId}/{weekIndex}
+Vrací konkrétní týdenní checkin.
+
+Kdy se používá:
+
+detail týdne
+zobrazení výsledku checkinu
+stránka „week 6 result“
+
+GET /api/weekly-checkin/{trackerId}/{goalPlanId}
+Vrací všechny checkiny plánu.
+
+Kdy se používá:
+
+historie týdnů
+timeline progresu
+data pro summary grafy
+
+User flow:
+
+každý den loguje
+jednou za týden vygeneruje checkin
+od 4. týdne dál se podle toho může měnit target
+
+__________
+
+NutritionDashboardController
+
+Tohle je čistě čtecí vrstva pro UI.
+
+GET /api/nutrition-dashboard/{trackerId}
+Vrací dashboard za zvolené období.
+
+Co vrací:
+
+current target
+latest checkin
+timeline váhy
+timeline kalorií
+weekly checkin body
+
+Kdy se používá:
+
+hlavní dashboard obrazovka
+overview
+
+Pokud from/to nejsou zadány:
+
+vezme defaultní období
+
+Tohle je endpoint, který frontend bude volat po otevření hlavní nutrition stránky.
+
+GET /api/nutrition-dashboard/{trackerId}/{goalPlanId}/summary
+Vrací summary konkrétního goal plánu.
+
+Co vrací:
+
+základní info o plánu
+týdenní přehledy
+měsíční souhrny
+
+Kdy se používá:
+
+detail plánu
+retrospektiva plánu
+analytická summary stránka
+
+Tohle je spíš „reporting endpoint“, ne denní provoz.
+
+>>>>>>>>>>>>>>>>>>
+
+Praktické user flow od nuly
+
+Teď úplně jednoduše, jak s tím user pracuje krok po kroku.
+
+Scénář A: první setup
+
+PUT /api/nutrition-profile/{trackerId}
+User nastaví profil.
+POST /api/goal-plan/{trackerId}
+User založí plán.
+POST /api/nutrition-target/{trackerId}/{goalPlanId}/initial
+Systém spočítá první target.
+GET /api/nutrition-target/{trackerId}/current
+Frontend zobrazí aktuální doporučení.
+
+To je základní onboarding.
+
+Scénář B: běžné denní používání
+
+GET /api/nutrition-target/{trackerId}/current
+User vidí, kolik má jíst.
+PUT /api/daily-nutrition-log/{trackerId}
+User zapíše dnešní váhu a kalorie.
+volitelně PUT /api/daily-body-measurement-log/{trackerId}
+User zapíše obvody.
+GET /api/nutrition-dashboard/{trackerId}
+Frontend ukáže aktualizovaný graf a stav.
+
+To je denní rutina.
+
+Scénář C: konec týdne
+
+user má za týden nalogovaná data
+frontend zavolá POST /api/weekly-checkin/{trackerId}/{goalPlanId}/{weekIndex}
+backend vytvoří týdenní snapshot
+pokud už je dost týdnů, může vzniknout nový target
+frontend zavolá GET /api/nutrition-target/{trackerId}/current
+user vidí nový target
+
+To je weekly maintenance flow.
+
+Scénář D: změna režimu
+
+user dokončí cut
+založí nový plán přes POST /api/goal-plan/{trackerId}
+aktivuje ho nebo je rovnou active
+zavolá se POST /api/nutrition-target/{trackerId}/{goalPlanId}/initial
+jede dál pod novým plánem
+
+To je lifecycle mezi plány.
+
+Scénář E: user chce ručně přepsat target
+
+POST /api/nutrition-target/{trackerId}/{goalPlanId}/manual-override
+backend založí nový target snapshot
+GET /api/nutrition-target/{trackerId}/current
+frontend ukáže override target
+
+To je advanced flow.
+
+Které endpointy jsou pro usera „core“
+
+Nejdůležitější:
+
+PUT /api/nutrition-profile/{trackerId}
+POST /api/goal-plan/{trackerId}
+POST /api/nutrition-target/{trackerId}/{goalPlanId}/initial
+PUT /api/daily-nutrition-log/{trackerId}
+POST /api/weekly-checkin/{trackerId}/{goalPlanId}/{weekIndex}
+GET /api/nutrition-dashboard/{trackerId}
+GET /api/nutrition-target/{trackerId}/current
+
+Zbytek je support:
+
+editace
+historie
+summary
+manual override
+body measurements

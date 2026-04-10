@@ -1,0 +1,499 @@
+================================================================================
+FRONTEND PROMPT: Habit Tracker
+================================================================================
+
+Habit tracker je nový modul aplikace. Umožňuje uživateli definovat denní
+návyky (habits), naplánovat je do rozvrhu (schedule slots) a trackovat
+jejich plnění (completions). Každý habit patří pod ExpenseTracker.
+
+Datový model:
+- Habit = návyk (název, typ, očekávaná délka, platnost od-do, aktivní/neaktivní,
+  satisfactionScore 0-10, utilityScore 0-10, estimatedPrice)
+- HabitScheduleSlot = kdy se má habit dělat (den v týdnu + denní blok)
+- HabitCompletion = záznam splnění/přeskočení/vynechání pro konkrétní datum
+  (satisfactionScore 0-10, executionScore 0-10, actualPrice)
+
+Skóre (všechna int, 0-10 včetně, 0 = nevyplněno/default):
+- satisfactionScore na Habit = obecné uspokojení z návyku
+- utilityScore na Habit = obecný užitek návyku
+- satisfactionScore na HabitCompletion = jak mě to bavilo ten konkrétní den
+- executionScore na HabitCompletion = jak kvalitně jsem to provedl
+
+Cena (Integer, nullable — nepovinné):
+- estimatedPrice na Habit = odhadovaná cena návyku (kolik to stojí typicky)
+- actualPrice na HabitCompletion = skutečná cena za konkrétní den
+
+Denní bloky (DayBlock): RANO, DOPOLEDNE, ODPOLEDNE, VECER, PRED_SPANIM
+Typy habitu (HabitType): PHYSICAL, MENTAL, EDUCATIONAL, SOCIAL, HEALTH,
+                          SLEEP, DISCIPLINE, HOUSEHOLD, OTHER
+Stavy splnění (CompletionStatus): DONE, SKIPPED, MISSED
+
+
+================================================================================
+SEKCE 1: CRUD — správa habitů
+================================================================================
+
+Cíl: Uživatel může vytvořit, prohlédnout, upravit, aktivovat/deaktivovat
+a smazat (soft delete) habit.
+
+### Backend metody:
+
+1) `habitCreate` — POST, vrací HabitResponseDto (201)
+   - Body (HabitUpsertRequestDto):
+     ```json
+     {
+       "name": "Ranní cvičení",
+       "description": "Protažení a posilování",
+       "habitType": "PHYSICAL",
+       "expectedMinutes": 30,
+       "validFrom": "2026-04-01",
+       "validTo": null,
+       "active": true,
+       "sortOrder": 0,
+       "satisfactionScore": 8,
+       "utilityScore": 9,
+       "estimatedPrice": 150,
+       "scheduleSlots": [
+         { "dayOfWeek": "MONDAY",  "dayBlock": "RANO", "sortOrder": 0 },
+         { "dayOfWeek": "TUESDAY", "dayBlock": "RANO", "sortOrder": 0 },
+         { "dayOfWeek": "WEDNESDAY", "dayBlock": "RANO", "sortOrder": 0 },
+         { "dayOfWeek": "THURSDAY", "dayBlock": "RANO", "sortOrder": 0 },
+         { "dayOfWeek": "FRIDAY",  "dayBlock": "RANO", "sortOrder": 0 }
+       ]
+     }
+     ```
+   - `validTo` je volitelné (null = neomezený habit)
+   - `scheduleSlots` musí obsahovat alespoň 1 slot
+   - Kombinace dayOfWeek + dayBlock musí být unikátní v rámci requestu
+
+2) `habitFindAll` — GET, vrací Page<HabitResponseDto>
+   - Parametry: `?search=cvičení` (volitelný), `?active=true` (volitelný),
+     `page`, `size`, `sort`
+   - Pokud `active` je null, vrací všechny (aktivní i neaktivní, ne smazané)
+
+3) `habitFindById` — GET, vrací HabitResponseDto
+
+4) `habitUpdate` — PATCH, vrací HabitResponseDto
+   - Body je stejné jako create (HabitUpsertRequestDto)
+   - Schedule sloty se vždy nahradí kompletně (delete + insert)
+
+5) `habitActivate` — PATCH, vrací 204
+   - Endpoint: `/{trackerId}/{habitId}/activate`
+
+6) `habitDeactivate` — PATCH, vrací 204
+   - Endpoint: `/{trackerId}/{habitId}/deactivate`
+
+7) `habitDelete` — DELETE, vrací 204
+   - Soft delete — habit se označí jako smazaný, zmizí ze seznamů
+
+### Response shape (HabitResponseDto):
+```json
+{
+  "id": "uuid",
+  "name": "Ranní cvičení",
+  "description": "Protažení a posilování",
+  "habitType": "PHYSICAL",
+  "expectedMinutes": 30,
+  "validFrom": "2026-04-01",
+  "validTo": null,
+  "active": true,
+  "sortOrder": 0,
+  "satisfactionScore": 8,
+  "utilityScore": 9,
+  "estimatedPrice": 150,
+  "scheduleSlots": [
+    {
+      "id": "uuid",
+      "dayOfWeek": "MONDAY",
+      "dayBlock": "RANO",
+      "sortOrder": 0
+    },
+    {
+      "id": "uuid",
+      "dayOfWeek": "TUESDAY",
+      "dayBlock": "RANO",
+      "sortOrder": 0
+    }
+  ],
+  "createdDate": "2026-04-10T10:00:00Z",
+  "lastModifiedDate": "2026-04-10T10:00:00Z"
+}
+```
+
+### Co implementovat na FE:
+
+- Seznam habitů s filtrací (search, active/all/inactive toggle)
+- Formulář pro vytvoření/editaci habitu:
+  - Textový input pro název a popis
+  - Select/dropdown pro habitType (PHYSICAL, MENTAL, EDUCATIONAL, ...)
+  - Číselný input pro expectedMinutes
+  - Datepicker pro validFrom a validTo
+  - Checkbox/toggle pro active
+  - Slider nebo číselný input (0-10) pro satisfactionScore a utilityScore
+    (0 = nevyplněno, 1-10 = hodnocení)
+  - Číselný input pro estimatedPrice (nepovinný, null = nemá cenu)
+  - Rozvrh slotů: matice 7 dní × 5 denních bloků s checkboxy
+    (uživatel zaškrtne, kdy se má habit dělat)
+- Tlačítka activate/deactivate/delete na detailu habitu
+- Při editaci formulář předvyplnit ze stávajících dat
+
+
+================================================================================
+SEKCE 2: Denní agenda
+================================================================================
+
+Cíl: Uživatel vidí přehled habitů naplánovaných na konkrétní den,
+rozdělených do denních bloků, včetně stavu splnění.
+
+### Backend metoda:
+
+`habitFindAgendaForDate` — GET, vrací HabitDayOverviewDto
+- Parametry: `?date=2026-04-10` (volitelný — pokud chybí, použije se dnes)
+
+### Response shape (HabitDayOverviewDto):
+```json
+{
+  "date": "2026-04-10",
+  "dayOfWeek": "THURSDAY",
+  "blocks": [
+    {
+      "dayBlock": "RANO",
+      "items": [
+        {
+          "habitId": "uuid",
+          "name": "Ranní cvičení",
+          "description": "Protažení a posilování",
+          "habitType": "PHYSICAL",
+          "expectedMinutes": 30,
+          "sortOrder": 0,
+          "satisfactionScore": 8,
+          "utilityScore": 9,
+          "estimatedPrice": 150,
+          "dayBlocks": ["RANO"],
+          "completion": {
+            "completionId": "uuid",
+            "date": "2026-04-10",
+            "status": "DONE",
+            "note": "Super trénink",
+            "satisfactionScore": 7,
+            "executionScore": 9,
+            "actualPrice": 150,
+            "completedAt": "2026-04-10T06:45:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "dayBlock": "DOPOLEDNE",
+      "items": []
+    },
+    {
+      "dayBlock": "ODPOLEDNE",
+      "items": [
+        {
+          "habitId": "uuid",
+          "name": "Čtení",
+          "description": null,
+          "habitType": "EDUCATIONAL",
+          "expectedMinutes": 20,
+          "sortOrder": 1,
+          "satisfactionScore": 6,
+          "utilityScore": 10,
+          "estimatedPrice": null,
+          "dayBlocks": ["ODPOLEDNE", "VECER"],
+          "completion": null
+        }
+      ]
+    },
+    {
+      "dayBlock": "VECER",
+      "items": [...]
+    },
+    {
+      "dayBlock": "PRED_SPANIM",
+      "items": []
+    }
+  ]
+}
+```
+
+### Důležité detaily:
+- Pole `blocks` obsahuje VŽDY všech 5 bloků v pořadí:
+  RANO → DOPOLEDNE → ODPOLEDNE → VECER → PRED_SPANIM
+- Prázdné bloky mají `items: []`
+- `completion` je null pokud habit na daný den ještě nebyl splněn/přeskočen
+- `dayBlocks` na itemu říká, do kterých bloků je habit naplánovaný
+  (item se může opakovat ve více blocích)
+- Items v rámci bloku jsou řazeny podle `sortOrder`, pak `name`
+
+### Co implementovat na FE:
+
+- Hlavní obrazovka denní agendy s datepickerem (default = dnes)
+- Šipky ← → pro navigaci po dnech
+- 5 sekcí (denní bloků) pod sebou:
+  - Header sekce: název bloku (Ráno, Dopoledne, Odpoledne, Večer, Před spaním)
+  - V každé sekci seznam habitů jako karty/řádky
+  - Prázdné sekce buď skrýt, nebo zobrazit jako "Žádné návyky"
+- Na každém habitu zobrazit:
+  - Název, typ (ikona/badge), očekávaný čas (např. "30 min")
+  - Stav splnění: zelené ✓ (DONE), žluté ↷ (SKIPPED), šedé ○ (nesplněno)
+  - Pokud `completion != null`: zobrazit status + note + čas completedAt
+  - Pokud `completion == null`: zobrazit tlačítko/akci pro splnění
+
+
+================================================================================
+SEKCE 3: Týdenní přehled
+================================================================================
+
+Cíl: Uživatel vidí celý týden najednou — grid 7 dní × 5 denních bloků
+se všemi habity a jejich stavy splnění.
+
+### Backend metoda:
+
+`habitFindWeekOverview` — GET, vrací HabitWeekOverviewResponseDto
+- Parametry: `?weekStart=2026-04-07` (volitelný — pokud chybí, použije se
+  dnešek a backend ho normalizuje na pondělí daného týdne)
+- I když FE pošle středu, backend vždy vrátí celý týden Po-Ne
+
+### Response shape (HabitWeekOverviewResponseDto):
+```json
+{
+  "weekStart": "2026-04-06",
+  "weekEnd": "2026-04-12",
+  "days": [
+    {
+      "date": "2026-04-06",
+      "dayOfWeek": "MONDAY",
+      "blocks": [
+        {
+          "dayBlock": "RANO",
+          "items": [...]
+        },
+        ...5 bloků...
+      ]
+    },
+    ...7 dní (Po-Ne)...
+  ]
+}
+```
+
+- Každý den má identickou strukturu jako agenda (HabitDayOverviewDto)
+- `days` pole má vždy 7 prvků (pondělí až neděle)
+
+### Co implementovat na FE:
+
+- Týdenní pohled jako grid/tabulka:
+  - Sloupce = 7 dní (Po, Út, St, Čt, Pá, So, Ne) s datem
+  - Řádky = habity (seskupené dle denních bloků)
+  - V buňce: ikona stavu splnění (✓ / ↷ / ○ / –)
+    - ✓ zelená = DONE
+    - ↷ žlutá = SKIPPED
+    - ○ šedá = naplánováno, nesplněno
+    - – = v ten den není naplánováno (žádný slot)
+- Navigace: šipky ← → pro přechod na předchozí/další týden
+- Aktuální den zvýraznit (today highlight)
+- Kliknutí na buňku = otevřít dialog pro splnění/úpravu completion
+
+
+================================================================================
+SEKCE 4: Označení splnění (completion)
+================================================================================
+
+Cíl: Uživatel označí habit jako splněný, přeskočený nebo zmeškaný
+pro konkrétní den.
+
+### Backend metoda:
+
+`habitCompletionUpsert` — PUT, vrací HabitCompletionResponseDto
+- Endpoint: `/api/habit-completion/{trackerId}`
+- Idempotentní — pokud pro daný habit+datum už existuje záznam, přepíše ho
+- Body (HabitCompletionUpsertRequestDto):
+  ```json
+  {
+    "habitId": "uuid",
+    "date": "2026-04-10",
+    "status": "DONE",
+    "note": "Ranní trénink OK",
+    "satisfactionScore": 7,
+    "executionScore": 9,
+    "actualPrice": 150
+  }
+  ```
+- `status`: `DONE` | `SKIPPED` | `MISSED`
+- `note` je volitelný (null = bez poznámky)
+- `satisfactionScore`: 0-10 (0 = nevyplněno, null v requestu → 0)
+- `executionScore`: 0-10 (0 = nevyplněno, null v requestu → 0)
+- `actualPrice`: Integer, nepovinný (null = bez ceny)
+- Při `status = DONE` backend automaticky nastaví `completedAt` na aktuální čas
+- Při `status = SKIPPED` nebo `MISSED` je `completedAt = null`
+
+### Validace (backend vrací chyby):
+- habit musí existovat a patřit do daného trackeru
+- habit musí být aktivní
+- datum musí být v rozmezí `validFrom` – `validTo` habitu
+
+### Response shape (HabitCompletionResponseDto):
+```json
+{
+  "id": "uuid",
+  "habitId": "uuid",
+  "date": "2026-04-10",
+  "status": "DONE",
+  "note": "Ranní trénink OK",
+  "satisfactionScore": 7,
+  "executionScore": 9,
+  "actualPrice": 150,
+  "completedAt": "2026-04-10T06:45:00Z",
+  "createdDate": "2026-04-10T06:45:00Z",
+  "lastModifiedDate": "2026-04-10T06:45:00Z"
+}
+```
+
+### Co implementovat na FE:
+
+- Na kartě habitu v agendě/týdenním přehledu:
+  - Pokud `completion == null`: zobrazit akční tlačítko
+    - Primární akce: "Hotovo" (→ DONE)
+    - Sekundární: "Přeskočit" (→ SKIPPED)
+  - Pokud `completion != null`: zobrazit ikonu stavu
+    - Kliknutím otevřít dialog pro změnu stavu / přidání poznámky
+- Dialog/modal pro completion:
+  - 3 stavy jako radio/toggle: Hotovo / Přeskočeno / Zmeškaný
+  - Slider nebo stars (0-10) pro satisfactionScore — "Jak mě to bavilo?"
+  - Slider nebo stars (0-10) pro executionScore — "Jak jsem to provedl?"
+  - Číselný input pro actualPrice (nepovinný) — "Kolik to stálo?"
+    Pokud habit má `estimatedPrice`, zobrazit jako placeholder/hint
+  - Textarea pro note (volitelný)
+  - Uložit = PUT request
+- Po úspěšném uložení refreshnout agendu/týdenní přehled
+  (nebo optimisticky aktualizovat lokální stav)
+
+
+================================================================================
+SEKCE 5: UX — rozvrh habitů při vytváření/editaci
+================================================================================
+
+Cíl: Při vytváření a editaci habitu uživatel jednoduše vybere,
+kdy se má habit provádět.
+
+### Doporučená implementace rozvrhu:
+
+Matice checkboxů 7×5:
+
+         | RANO | DOPO | ODPO | VECER | PRED_SPANIM |
+---------|------|------|------|-------|-------------|
+PONDĚLÍ  |  ☑   |  ☐   |  ☐   |  ☐    |  ☐          |
+ÚTERÝ    |  ☑   |  ☐   |  ☐   |  ☐    |  ☐          |
+STŘEDA   |  ☑   |  ☐   |  ☐   |  ☐    |  ☐          |
+ČTVRTEK  |  ☑   |  ☐   |  ☐   |  ☐    |  ☐          |
+PÁTEK    |  ☑   |  ☐   |  ☐   |  ☐    |  ☐          |
+SOBOTA   |  ☐   |  ☐   |  ☐   |  ☐    |  ☐          |
+NEDĚLE   |  ☐   |  ☐   |  ☐   |  ☐    |  ☐          |
+
+- Zaškrtnuté buňky = schedule sloty v requestu
+- Pro usnadnění přidej quick-select:
+  - "Každý den" (všech 7 dní, zvolený blok)
+  - "Pracovní dny" (Po-Pá, zvolený blok)
+  - "Víkendy" (So-Ne, zvolený blok)
+- Při editaci předvyplnit matici ze stávajících scheduleSlots
+
+### Mapování na request:
+
+Zaškrtnuté buňky převeď na pole `scheduleSlots`:
+```json
+"scheduleSlots": [
+  { "dayOfWeek": "MONDAY",    "dayBlock": "RANO", "sortOrder": 0 },
+  { "dayOfWeek": "TUESDAY",   "dayBlock": "RANO", "sortOrder": 0 },
+  { "dayOfWeek": "WEDNESDAY", "dayBlock": "RANO", "sortOrder": 0 }
+]
+```
+
+### Skóre na habitu (request pole):
+
+"satisfactionScore": 8   → obecné uspokojení z návyku (0 = nevyplněno)
+"utilityScore": 9         → obecný užitek návyku (0 = nevyplněno)
+"estimatedPrice": 150     → odhadovaná cena (null = nemá cenu)
+
+Doporučený UX: slider 0-10, nebo 5 hvězdiček (1 hvězdička = 2 body),
+nebo jednoduché číslo.
+Při vytváření habitu nastavit default skóre na 0 (nevyplněno),
+estimatedPrice na null.
+Při editaci předvyplnit ze stávajících dat.
+
+Mapování DayBlock na CZ popisky:
+  RANO        → Ráno
+  DOPOLEDNE   → Dopoledne
+  ODPOLEDNE   → Odpoledne
+  VECER       → Večer
+  PRED_SPANIM → Před spaním
+
+Mapování HabitType na CZ popisky:
+  PHYSICAL    → Fyzické
+  MENTAL      → Mentální
+  EDUCATIONAL → Vzdělávání
+  SOCIAL      → Sociální
+  HEALTH      → Zdraví
+  SLEEP       → Spánek
+  DISCIPLINE  → Disciplína
+  HOUSEHOLD   → Domácnost
+  OTHER       → Ostatní
+
+
+================================================================================
+SEKCE 6: Navigace a propojení pohledů
+================================================================================
+
+### Doporučená struktura stránek:
+
+1. **Habits** — seznam všech habitů (CRUD, `habitFindAll`)
+   - Tlačítko "Nový habit" → formulář create
+   - Kliknutí na habit → detail/editace
+
+2. **Denní agenda** — hlavní denní pohled (`habitFindAgendaForDate`)
+   - Datepicker + šipky ← →
+   - Karty habitů s completion akcemi
+   - Toto by měla být default/hlavní stránka habit modulu
+
+3. **Týdenní přehled** — grid (`habitFindWeekOverview`)
+   - Šipky ← → pro týdny
+   - Kompaktní grid s ikonami stavu
+
+### Propojení:
+
+- Z denní agendy kliknutím na habit → detail habitu (editace)
+- Z týdenního přehledu kliknutím na buňku → completion dialog
+- Z týdenního přehledu kliknutím na jméno habitu → detail habitu
+- Navigace sidebar/tabs: Agenda | Týden | Habits
+
+
+================================================================================
+SHRNUTÍ BACKEND METOD
+================================================================================
+
+| Metoda                     | HTTP   | Controller               | Účel                                |
+|----------------------------|--------|--------------------------|-------------------------------------|
+| `habitCreate`              | POST   | HabitController          | Vytvoření habitu se schedule sloty  |
+| `habitFindAll`             | GET    | HabitController          | Paginated seznam s filtrací         |
+| `habitFindById`            | GET    | HabitController          | Detail jednoho habitu               |
+| `habitUpdate`              | PATCH  | HabitController          | Úprava habitu (celý replace slotů) |
+| `habitActivate`            | PATCH  | HabitController          | Aktivace habitu                     |
+| `habitDeactivate`          | PATCH  | HabitController          | Deaktivace habitu                   |
+| `habitDelete`              | DELETE | HabitController          | Soft delete habitu                  |
+| `habitFindAgendaForDate`   | GET    | HabitController          | Denní agenda (default: dnes)        |
+| `habitFindWeekOverview`    | GET    | HabitController          | Týdenní přehled (default: tento Pn) |
+| `habitCompletionUpsert`    | PUT    | HabitCompletionController| Upsert splnění habitu               |
+
+### Enum hodnoty pro FE:
+
+DayOfWeek (Java standard):
+  MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY
+
+DayBlock:
+  RANO, DOPOLEDNE, ODPOLEDNE, VECER, PRED_SPANIM
+
+HabitType:
+  PHYSICAL, MENTAL, EDUCATIONAL, SOCIAL, HEALTH, SLEEP, DISCIPLINE,
+  HOUSEHOLD, OTHER
+
+CompletionStatus:
+  DONE, SKIPPED, MISSED
