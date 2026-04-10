@@ -12,6 +12,7 @@ public record InstitutionSummaryResponseDto(
 		String iconUrl,
 		String iconColor,
 		List<AccountSummaryResponseDto> accounts,
-		long totalBalance
+		long totalBalance,
+		Long convertedTotalBalance
 ) {
 }

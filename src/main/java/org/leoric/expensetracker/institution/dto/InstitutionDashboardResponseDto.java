@@ -8,7 +8,10 @@ import java.util.List;
 public record InstitutionDashboardResponseDto(
 		Instant periodFrom,
 		Instant periodTo,
+		String displayAssetCode,
+		Integer displayAssetScale,
 		List<WidgetItemResponseDto> widgetOrder,
-		List<InstitutionSummaryResponseDto> institutions
+		List<InstitutionSummaryResponseDto> institutions,
+		Long grandTotalConverted
 ) {
 }
