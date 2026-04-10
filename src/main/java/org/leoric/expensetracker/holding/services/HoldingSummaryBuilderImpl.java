@@ -108,7 +108,8 @@ public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 				totalIncome, totalExpense,
 				totalTransferIn, totalTransferOut,
 				difference,
-				incomeByCategory, expenseByCategory
+				incomeByCategory, expenseByCategory,
+				null, null, null // converted fields — populated later in dashboard
 		);
 	}
 
