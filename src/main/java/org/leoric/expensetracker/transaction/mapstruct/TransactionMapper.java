@@ -22,6 +22,8 @@ public interface TransactionMapper {
 	@Mapping(source = "targetHolding.account.name", target = "targetHoldingName")
 	@Mapping(source = "category.id", target = "categoryId")
 	@Mapping(source = "category.name", target = "categoryName")
+	@Mapping(source = "currencyCode", target = "assetCode")
+	@Mapping(target = "assetScale", ignore = true)
 	@Mapping(target = "rootCategoryId", ignore = true)
 	@Mapping(target = "rootCategoryName", ignore = true)
 	TransactionResponseDto toResponse(Transaction entity);
