@@ -451,7 +451,7 @@ public class BudgetPlanServiceImpl implements BudgetPlanService {
 		}
 
 		if (normalizedMatches.size() == 1) {
-			return normalizedMatches.get(0);
+			return normalizedMatches.getFirst();
 		}
 
 		log.warn("Category lookup collision after normalization in tracker '{}': input='{}', normalized='{}', candidates={}",
@@ -463,8 +463,8 @@ public class BudgetPlanServiceImpl implements BudgetPlanService {
 		List<Category> rawMatches = categoriesByRawName.getOrDefault(requestedCategoryName.toLowerCase(Locale.ROOT), List.of());
 		if (rawMatches.size() == 1) {
 			log.info("Resolved category collision via exact-name lookup in tracker '{}': '{}' -> '{}'",
-					trackerId, requestedCategoryName, rawMatches.get(0).getName());
-			return rawMatches.get(0);
+					trackerId, requestedCategoryName, rawMatches.getFirst().getName());
+			return rawMatches.getFirst();
 		}
 
 		if (rawMatches.size() > 1) {
