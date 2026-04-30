@@ -69,37 +69,28 @@ public interface BudgetPlanRepository extends JpaRepository<BudgetPlan, UUID> {
 
 	boolean existsByExpenseTrackerIdAndNameIgnoreCase(UUID expenseTrackerId, String name);
 
+	List<BudgetPlan> findByRecurringBudgetTemplateIdAndActiveTrueOrderByValidFromAsc(UUID recurringBudgetTemplateId);
+
 	@Query("""
 			SELECT b FROM BudgetPlan b
-			WHERE b.recurringBudgetTemplate.id = :templateId
+			WHERE b.expenseTracker.id = :trackerId
+			AND b.category IS NOT NULL
 			AND b.active = true
 			AND b.validFrom <= :today
 			AND (b.validTo IS NULL OR b.validTo >= :today)
 			""")
-	List<BudgetPlan> findCurrentActiveByRecurringTemplateId(
-			@Param("templateId") UUID templateId,
-			@Param("today") LocalDate today);
-
-	@Query("""
-		SELECT b FROM BudgetPlan b
-		WHERE b.expenseTracker.id = :trackerId
-		AND b.category IS NOT NULL
-		AND b.active = true
-		AND b.validFrom <= :today
-		AND (b.validTo IS NULL OR b.validTo >= :today)
-		""")
 	List<BudgetPlan> findAllCurrentActiveByExpenseTrackerIdWithCategory(
 			@Param("trackerId") UUID trackerId,
 			@Param("today") LocalDate today);
 
 	@Query("""
-		SELECT b FROM BudgetPlan b
-		WHERE b.expenseTracker.id = :trackerId
-		AND b.category IS NOT NULL
-		AND b.active = true
-		AND b.validFrom <= :rangeTo
-		AND (b.validTo IS NULL OR b.validTo >= :rangeFrom)
-		""")
+			SELECT b FROM BudgetPlan b
+			WHERE b.expenseTracker.id = :trackerId
+			AND b.category IS NOT NULL
+			AND b.active = true
+			AND b.validFrom <= :rangeTo
+			AND (b.validTo IS NULL OR b.validTo >= :rangeFrom)
+			""")
 	List<BudgetPlan> findAllActiveByExpenseTrackerIdWithCategoryInRange(
 			@Param("trackerId") UUID trackerId,
 			@Param("rangeFrom") LocalDate rangeFrom,

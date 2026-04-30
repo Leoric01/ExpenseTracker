@@ -56,10 +56,21 @@ public interface RecurringBudgetMapper {
 	BudgetPlan toBudgetPlan(RecurringBudgetTemplate template, LocalDate validFrom, LocalDate validTo);
 
 	@BeanMapping(unmappedTargetPolicy = ReportingPolicy.IGNORE)
+	@Mapping(target = "id", ignore = true)
+	@Mapping(target = "expenseTracker", ignore = true)
+	@Mapping(target = "recurringBudgetTemplate", ignore = true)
+	@Mapping(target = "active", ignore = true)
+	@Mapping(target = "validFrom", ignore = true)
+	@Mapping(target = "validTo", ignore = true)
+	@Mapping(target = "createdDate", ignore = true)
+	@Mapping(target = "lastModifiedDate", ignore = true)
+	@Mapping(target = "createdBy", ignore = true)
+	@Mapping(target = "lastModifiedBy", ignore = true)
 	@Mapping(source = "name", target = "name")
 	@Mapping(source = "amount", target = "amount")
 	@Mapping(source = "currencyCode", target = "currencyCode")
 	@Mapping(source = "periodType", target = "periodType")
+	@Mapping(source = "category", target = "category")
 	void updateBudgetPlanFromTemplate(RecurringBudgetTemplate template, @MappingTarget BudgetPlan plan);
 
 	@BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE,
