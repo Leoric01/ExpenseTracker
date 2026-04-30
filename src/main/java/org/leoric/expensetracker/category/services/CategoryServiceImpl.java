@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.budget.dto.CategoryActiveBudgetPlanDto;
 import org.leoric.expensetracker.budget.mapstruct.BudgetPlanMapper;
+import org.leoric.expensetracker.category.dto.CategoryBulkExportResponseDto;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
@@ -32,6 +33,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -111,6 +114,32 @@ public class CategoryServiceImpl implements CategoryService {
 				.toList();
 	}
 
+	@Override
+	@Transactional(readOnly = true)
+	public List<CategoryBulkExportResponseDto> categoryExportBulk(User currentUser, UUID trackerId) {
+		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
+		List<Category> activeCategories = categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId);
+
+		Map<UUID, List<Category>> categoriesByParentId = new HashMap<>();
+		for (Category category : activeCategories) {
+			UUID parentId = category.getParent() != null ? category.getParent().getId() : null;
+			categoriesByParentId
+					.computeIfAbsent(parentId, ignored -> new ArrayList<>())
+					.add(category);
+		}
+
+		for (List<Category> siblings : categoriesByParentId.values()) {
+			siblings.sort(CATEGORY_EXPORT_COMPARATOR);
+		}
+
+		List<CategoryBulkExportResponseDto> exportPayload = toBulkExportTree(null, categoriesByParentId);
+
+		log.info("User {} exported {} active categories in tracker '{}' for bulk import",
+				currentUser.getEmail(), activeCategories.size(), tracker.getName());
+
+		return exportPayload;
+	}
+
 	private void flattenTree(CreateCategoryBulkRequestDto dto, Category parent, CategoryKind rootKind,
 			ExpenseTracker tracker, UUID trackerId, List<Category> collector, Set<String> duplicateCheck) {
 		if (dto.categoryKind() != rootKind) {
@@ -144,6 +173,21 @@ public class CategoryServiceImpl implements CategoryService {
 		for (CreateCategoryBulkRequestDto childDto : dto.children()) {
 			flattenTree(childDto, category, rootKind, tracker, trackerId, collector, duplicateCheck);
 		}
+	}
+
+	private static final Comparator<Category> CATEGORY_EXPORT_COMPARATOR = Comparator
+			.comparing(Category::getSortOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+			.thenComparing(Category::getName, String.CASE_INSENSITIVE_ORDER);
+
+	private List<CategoryBulkExportResponseDto> toBulkExportTree(UUID parentId, Map<UUID, List<Category>> categoriesByParentId) {
+		return categoriesByParentId.getOrDefault(parentId, List.of()).stream()
+				.map(category -> new CategoryBulkExportResponseDto(
+						category.getName(),
+						category.getCategoryKind(),
+						category.getSortOrder(),
+						toBulkExportTree(category.getId(), categoriesByParentId)
+				))
+				.toList();
 	}
 
 	@Override

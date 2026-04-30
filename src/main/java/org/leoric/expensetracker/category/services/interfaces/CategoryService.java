@@ -1,6 +1,7 @@
 package org.leoric.expensetracker.category.services.interfaces;
 
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.category.dto.CategoryBulkExportResponseDto;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryRequestDto;
@@ -20,6 +21,8 @@ public interface CategoryService {
 	CategoryResponseDto categoryCreate(User currentUser, UUID trackerId, CreateCategoryRequestDto request);
 
 	List<CategoryResponseDto> categoryCreateBulk(User currentUser, UUID trackerId, List<CreateCategoryBulkRequestDto> request);
+
+	List<CategoryBulkExportResponseDto> categoryExportBulk(User currentUser, UUID trackerId);
 
 	CategoryResponseDto categoryFindById(User currentUser, UUID trackerId, UUID categoryId);
 

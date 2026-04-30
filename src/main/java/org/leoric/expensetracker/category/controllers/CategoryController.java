@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.category.dto.CategoryBulkExportResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryRequestDto;
@@ -63,6 +64,14 @@ public class CategoryController {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(categoryService.categoryCreateBulk(currentUser, trackerId, request));
+	}
+
+	@GetMapping("/{trackerId}/export")
+	public ResponseEntity<List<CategoryBulkExportResponseDto>> categoryExportBulk(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(categoryService.categoryExportBulk(currentUser, trackerId));
 	}
 
 	@GetMapping("/{trackerId}")
