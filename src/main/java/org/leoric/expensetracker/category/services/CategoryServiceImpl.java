@@ -168,6 +168,10 @@ public class CategoryServiceImpl implements CategoryService {
 				.sortOrder(dto.sortOrder())
 				.build();
 
+		if (parent != null) {
+			parent.getChildren().add(category);
+		}
+
 		collector.add(category);
 
 		for (CreateCategoryBulkRequestDto childDto : dto.children()) {
