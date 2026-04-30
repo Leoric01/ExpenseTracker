@@ -5,7 +5,9 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import org.leoric.expensetracker.validation.ValidCurrencyCode;
 
-public record BulkBudgetImportItemDto(
+import java.util.UUID;
+
+public record BulkBudgetImportByCategoryIdItemDto(
 		@NotBlank(message = "Budget plan name is required")
 		String budgetPlanName,
 
@@ -20,8 +22,8 @@ public record BulkBudgetImportItemDto(
 		@ValidCurrencyCode
 		String currency,
 
-		@NotBlank(message = "Category name is required")
-		String categoryName,
+		@NotNull(message = "Category id is required")
+		UUID categoryId,
 
 		@Positive(message = "Interval value must be positive")
 		Integer intervalValue,

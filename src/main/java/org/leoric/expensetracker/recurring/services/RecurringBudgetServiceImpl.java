@@ -51,18 +51,9 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 			assertCategoryBelongsToTracker(category, trackerId);
 		}
 
-		RecurringBudgetTemplate template = RecurringBudgetTemplate.builder()
-				.expenseTracker(tracker)
-				.name(request.name())
-				.amount(request.amount())
-				.currencyCode(request.currencyCode().toUpperCase())
-				.periodType(request.periodType())
-				.intervalValue(request.intervalValue() != null ? request.intervalValue() : 1)
-				.startDate(request.startDate())
-				.endDate(request.endDate())
-				.nextRunDate(request.startDate())
-				.category(category)
-				.build();
+		RecurringBudgetTemplate template = mapper.toEntity(request);
+		template.setExpenseTracker(tracker);
+		template.setCategory(category);
 
 		template = templateRepository.save(template);
 		log.info("User {} created recurring budget template '{}' in tracker '{}'",
@@ -118,10 +109,6 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 		}
 
 		mapper.updateFromDto(request, template);
-
-		if (request.currencyCode() != null) {
-			template.setCurrencyCode(request.currencyCode().toUpperCase());
-		}
 
 		template = templateRepository.save(template);
 		log.info("User {} updated recurring budget template '{}' in tracker '{}'",
@@ -217,10 +204,7 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 		List<BudgetPlan> currentPlans = budgetPlanRepository.findCurrentActiveByRecurringTemplateId(template.getId(), today);
 
 		for (BudgetPlan plan : currentPlans) {
-			plan.setName(template.getName());
-			plan.setAmount(template.getAmount());
-			plan.setCurrencyCode(template.getCurrencyCode());
-			plan.setPeriodType(template.getPeriodType());
+			mapper.updateBudgetPlanFromTemplate(template, plan);
 			if (newCategory != null) {
 				plan.setCategory(newCategory);
 			}
@@ -247,17 +231,7 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 			LocalDate planValidFrom = template.getNextRunDate();
 			LocalDate planValidTo = computeNextRunDate(planValidFrom, template.getPeriodType(), template.getIntervalValue()).minusDays(1);
 
-			BudgetPlan plan = BudgetPlan.builder()
-					.expenseTracker(template.getExpenseTracker())
-					.recurringBudgetTemplate(template)
-					.category(template.getCategory())
-					.name(template.getName())
-					.amount(template.getAmount())
-					.currencyCode(template.getCurrencyCode())
-					.periodType(template.getPeriodType())
-					.validFrom(planValidFrom)
-					.validTo(planValidTo)
-					.build();
+			BudgetPlan plan = mapper.toBudgetPlan(template, planValidFrom, planValidTo);
 
 			budgetPlanRepository.save(plan);
 			count++;

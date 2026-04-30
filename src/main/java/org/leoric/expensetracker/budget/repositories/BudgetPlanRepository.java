@@ -19,6 +19,8 @@ public interface BudgetPlanRepository extends JpaRepository<BudgetPlan, UUID> {
 
 	Page<BudgetPlan> findByExpenseTrackerId(UUID expenseTrackerId, Pageable pageable);
 
+	List<BudgetPlan> findByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId);
+
 	@Query("""
 			SELECT b FROM BudgetPlan b
 			WHERE b.expenseTracker.id = :trackerId
