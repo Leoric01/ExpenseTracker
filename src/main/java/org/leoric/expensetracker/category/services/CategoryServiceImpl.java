@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.budget.dto.CategoryActiveBudgetPlanDto;
 import org.leoric.expensetracker.budget.mapstruct.BudgetPlanMapper;
+import org.leoric.expensetracker.category.dto.CategoryActiveTreeResponseDto;
 import org.leoric.expensetracker.category.dto.CategoryBulkExportResponseDto;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
@@ -47,6 +48,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @RequiredArgsConstructor
 public class CategoryServiceImpl implements CategoryService {
+	private static final int ACTIVE_TREE_MAX_ITEMS = 1000;
 
 	private final BudgetPlanSpentCalculator budgetPlanSpentCalculator;
 	private final CategoryRepository categoryRepository;
@@ -183,6 +185,10 @@ public class CategoryServiceImpl implements CategoryService {
 			.comparing(Category::getSortOrder, Comparator.nullsLast(Comparator.naturalOrder()))
 			.thenComparing(Category::getName, String.CASE_INSENSITIVE_ORDER);
 
+	private static final Comparator<CategoryActiveTreeResponseDto> CATEGORY_ACTIVE_TREE_COMPARATOR = Comparator
+			.comparing(CategoryActiveTreeResponseDto::sortOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+			.thenComparing(dto -> dto.name() == null ? "" : dto.name(), String.CASE_INSENSITIVE_ORDER);
+
 	private List<CategoryBulkExportResponseDto> toBulkExportTree(UUID parentId, Map<UUID, List<Category>> categoriesByParentId) {
 		return categoriesByParentId.getOrDefault(parentId, List.of()).stream()
 				.map(category -> new CategoryBulkExportResponseDto(
@@ -274,6 +280,59 @@ public class CategoryServiceImpl implements CategoryService {
 				.map(category -> toActiveResponse(category, activeBudgetPlansByCategoryId, budgetPlansInRangeByCategoryId));
 	}
 
+	@Override
+	@Transactional(readOnly = true)
+	public List<CategoryActiveTreeResponseDto> categoryFindAllActiveTree(User currentUser, UUID trackerId) {
+		LocalDate today = LocalDate.now();
+
+		List<Category> activeCategories = categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId);
+		if (activeCategories.size() > ACTIVE_TREE_MAX_ITEMS) {
+			log.warn("Active category tree exceeds limit for tracker {}: {} items (limit {}).", trackerId, activeCategories.size(), ACTIVE_TREE_MAX_ITEMS);
+			throw new OperationNotPermittedException("Active category tree is too large. Limit is %d items including subcategories".formatted(ACTIVE_TREE_MAX_ITEMS));
+		}
+
+		Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId = budgetPlanRepository
+				.findAllCurrentActiveByExpenseTrackerIdWithCategory(trackerId, today)
+				.stream()
+				.collect(Collectors.toMap(
+						plan -> plan.getCategory().getId(),
+						Function.identity(),
+						(existing, duplicate) -> {
+							log.warn(
+									"Multiple active budget plans found for category {} in tracker {}. Keeping first found budget plan {}, ignoring {}",
+									existing.getCategory().getId(),
+									trackerId,
+									existing.getId(),
+									duplicate.getId()
+							);
+							return existing;
+						}
+				));
+
+		Map<UUID, CategoryActiveTreeResponseDto> dtoById = new HashMap<>();
+		for (Category category : activeCategories) {
+			BudgetPlan activePlan = activeBudgetPlansByCategoryId.get(category.getId());
+			dtoById.put(category.getId(), toActiveTreeItem(category, activePlan));
+		}
+
+		Map<UUID, List<CategoryActiveTreeResponseDto>> childrenByParentId = new HashMap<>();
+		List<CategoryActiveTreeResponseDto> roots = new ArrayList<>();
+
+		for (Category category : activeCategories) {
+			CategoryActiveTreeResponseDto current = dtoById.get(category.getId());
+			UUID parentId = category.getParent() != null ? category.getParent().getId() : null;
+
+			if (parentId == null || !dtoById.containsKey(parentId)) {
+				roots.add(current);
+				continue;
+			}
+
+			childrenByParentId.computeIfAbsent(parentId, ignored -> new ArrayList<>()).add(current);
+		}
+
+		return toActiveTree(roots, childrenByParentId);
+	}
+
 	private BudgetPlan choosePreferredBudgetPlan(BudgetPlan left, BudgetPlan right) {
 		if (left.getValidFrom().isAfter(right.getValidFrom())) {
 			return left;
@@ -292,6 +351,42 @@ public class CategoryServiceImpl implements CategoryService {
 		}
 
 		return left;
+	}
+
+	private List<CategoryActiveTreeResponseDto> toActiveTree(
+			List<CategoryActiveTreeResponseDto> categories,
+			Map<UUID, List<CategoryActiveTreeResponseDto>> childrenByParentId
+	) {
+		return categories.stream()
+				.sorted(CATEGORY_ACTIVE_TREE_COMPARATOR)
+				.map(category -> new CategoryActiveTreeResponseDto(
+						category.id(),
+						category.name(),
+						category.categoryKind(),
+						category.parentId(),
+						category.parentName(),
+						category.sortOrder(),
+						category.budgetPlanId(),
+						category.budgetPlanName(),
+						category.assetCode(),
+						toActiveTree(childrenByParentId.getOrDefault(category.id(), List.of()), childrenByParentId)
+				))
+				.toList();
+	}
+
+	private CategoryActiveTreeResponseDto toActiveTreeItem(Category category, BudgetPlan activePlan) {
+		return new CategoryActiveTreeResponseDto(
+				category.getId(),
+				category.getName(),
+				category.getCategoryKind(),
+				category.getParent() != null ? category.getParent().getId() : null,
+				category.getParent() != null ? category.getParent().getName() : null,
+				category.getSortOrder(),
+				activePlan != null ? activePlan.getId() : null,
+				activePlan != null ? activePlan.getName() : null,
+				activePlan != null ? activePlan.getCurrencyCode() : null,
+				List.of()
+		);
 	}
 
 	@Override

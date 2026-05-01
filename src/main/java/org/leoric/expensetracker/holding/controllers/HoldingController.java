@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.holding.dto.CreateHoldingRequestDto;
+import org.leoric.expensetracker.holding.dto.HoldingLiteResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingSummaryResponseDto;
 import org.leoric.expensetracker.holding.services.interfaces.HoldingService;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 
 import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
@@ -58,6 +60,14 @@ public class HoldingController {
 			@ParameterObject Pageable pageable) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.ok(holdingService.holdingFindAll(currentUser, trackerId, search, pageable));
+	}
+
+	@GetMapping("/{trackerId}/lite")
+	public ResponseEntity<List<HoldingLiteResponseDto>> holdingFindAllLite(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(holdingService.holdingFindAllLite(currentUser, trackerId));
 	}
 
 	@GetMapping("/{trackerId}/{holdingId}")

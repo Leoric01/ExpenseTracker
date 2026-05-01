@@ -10,6 +10,7 @@ import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.holding.dto.CreateHoldingRequestDto;
+import org.leoric.expensetracker.holding.dto.HoldingLiteResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingSummaryResponseDto;
 import org.leoric.expensetracker.holding.mapstruct.HoldingMapper;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -83,6 +85,14 @@ public class HoldingServiceImpl implements HoldingService {
 		}
 		return holdingRepository.findByExpenseTrackerIdAndActiveTrue(trackerId, pageable)
 				.map(holdingMapper::toResponse);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public List<HoldingLiteResponseDto> holdingFindAllLite(User currentUser, UUID trackerId) {
+		return holdingRepository.findByExpenseTrackerIdAndActiveTrue(trackerId).stream()
+				.map(holdingMapper::toLiteResponse)
+				.toList();
 	}
 
 	@Override
