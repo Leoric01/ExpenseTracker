@@ -39,6 +39,7 @@ public record TransactionPageItemResponseDto(
 		OffsetDateTime createdDate,
 		OffsetDateTime lastModifiedDate,
 		Long convertedAmount,
-		String convertedInto
+		String convertedInto,
+		Integer convertedAssetScale
 ) {
 }

@@ -271,12 +271,23 @@ class TransactionServiceImplTest {
 		assertThat(result.content().get(0).id()).isEqualTo(btcTx.getId());
 		assertThat(result.content().get(0).convertedAmount()).isEqualTo(5_000L);
 		assertThat(result.content().get(0).convertedInto()).isEqualTo("CZK");
+		assertThat(result.content().get(0).convertedAssetScale()).isEqualTo(2);
 		assertThat(result.content().get(1).id()).isEqualTo(eurTx.getId());
 		assertThat(result.content().get(1).convertedAmount()).isEqualTo(1_000L);
 		assertThat(result.content().get(1).convertedInto()).isEqualTo("CZK");
+		assertThat(result.content().get(1).convertedAssetScale()).isEqualTo(2);
 		assertThat(result.content().get(2).id()).isEqualTo(czkTx.getId());
 		assertThat(result.content().get(2).convertedAmount()).isEqualTo(300L);
 		assertThat(result.content().get(2).convertedInto()).isEqualTo("CZK");
+		assertThat(result.content().get(2).convertedAssetScale()).isEqualTo(2);
+		assertThat(result.totals().byAsset()).hasSize(3);
+		assertThat(result.totals().byAsset().get(0).assetScale()).isEqualTo(8);
+		assertThat(result.totals().byAsset().get(1).assetScale()).isEqualTo(2);
+		assertThat(result.totals().byAsset().get(2).assetScale()).isEqualTo(2);
+		assertThat(result.totals().converted().expenseAmount()).isEqualTo(6_300L);
+		assertThat(result.totals().converted().incomeAmount()).isEqualTo(0L);
+		assertThat(result.totals().converted().netAmount()).isEqualTo(-6_300L);
+		assertThat(result.totals().converted().convertedInto()).isEqualTo("CZK");
 	}
 
 	@Test
@@ -294,9 +305,11 @@ class TransactionServiceImplTest {
 		Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Order.desc("transactionDate")));
 
 		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
 		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
 				.thenReturn(new PageImpl<>(List.of(tx), pageable, 1));
 		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(tx));
+		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK"))).thenReturn(Set.of());
 		when(transactionMapper.toResponse(tx)).thenReturn(minimalResponse(tx));
 
 		TransactionPageResponseDto result = service.transactionFindAllPageable(
@@ -309,6 +322,52 @@ class TransactionServiceImplTest {
 		assertThat(result.content()).hasSize(1);
 		assertThat(result.content().get(0).convertedAmount()).isNull();
 		assertThat(result.content().get(0).convertedInto()).isNull();
+		assertThat(result.content().get(0).convertedAssetScale()).isNull();
+		assertThat(result.totals().byAsset()).hasSize(1);
+		assertThat(result.totals().byAsset().get(0).assetCode()).isEqualTo("CZK");
+		assertThat(result.totals().byAsset().get(0).assetScale()).isNull();
+		assertThat(result.totals().byAsset().get(0).expenseAmount()).isEqualTo(100L);
+		assertThat(result.totals().converted().convertedInto()).isNull();
+		assertThat(result.totals().converted().incomeAmount()).isNull();
+		verifyNoInteractions(exchangeRateService);
+	}
+
+	@Test
+	void transactionFindAllPageable_shouldFillConvertedFieldsWhenDisplayAssetKnownEvenWithoutAmountSort() {
+		Asset czk = Asset.builder().code("CZK").scale(2).build();
+		tracker.setPreferredDisplayAsset(czk);
+
+		Transaction tx = Transaction.builder()
+				.id(UUID.randomUUID())
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.EXPENSE)
+				.status(TransactionStatus.COMPLETED)
+				.amount(100L)
+				.currencyCode("CZK")
+				.transactionDate(Instant.parse("2026-04-22T10:00:00Z"))
+				.build();
+
+		Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Order.desc("transactionDate")));
+
+		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+				.thenReturn(new PageImpl<>(List.of(tx), pageable, 1));
+		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(tx));
+		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK"))).thenReturn(Set.of(czk));
+		when(transactionMapper.toResponse(tx)).thenReturn(minimalResponse(tx));
+
+		TransactionPageResponseDto result = service.transactionFindAllPageable(
+				user,
+				trackerId,
+				new TransactionFilter(null, null, null, null, null, null, null, TransactionAmountRateMode.NOW),
+				pageable
+		);
+
+		assertThat(result.content()).hasSize(1);
+		assertThat(result.content().get(0).convertedAmount()).isEqualTo(100L);
+		assertThat(result.content().get(0).convertedInto()).isEqualTo("CZK");
+		assertThat(result.content().get(0).convertedAssetScale()).isEqualTo(2);
 		verifyNoInteractions(exchangeRateService);
 	}
 

@@ -1,8 +1,9 @@
 package org.leoric.expensetracker.transaction.dto;
 
+import java.util.List;
+
 public record TransactionTotalsDto(
-		long incomeAmount,
-		long expenseAmount,
-		long netAmount
+		List<TransactionTotalsByAssetDto> byAsset,
+		TransactionConvertedTotalsDto converted
 ) {
 }
