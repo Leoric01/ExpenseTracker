@@ -4,6 +4,8 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.asset.models.Asset;
+import org.leoric.expensetracker.exchangerate.services.interfaces.ExchangeRateService;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeAmountLessThanFeeException;
@@ -13,6 +15,8 @@ import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedExcepti
 import org.leoric.expensetracker.handler.exceptions.TransferAmountComputationException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountInputMissingException;
 import org.leoric.expensetracker.handler.exceptions.TransferExchangeRateInvalidException;
+import org.leoric.expensetracker.transaction.dto.AssetExchangeRateQuoteRequestDto;
+import org.leoric.expensetracker.transaction.dto.AssetExchangeRateQuoteResponseDto;
 import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2ResponseDto;
 import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.holding.repositories.HoldingRepository;
@@ -32,6 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Service
@@ -42,6 +48,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 	private final TransactionRepository transactionRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final HoldingRepository holdingRepository;
+	private final ExchangeRateService exchangeRateService;
 
 	@Override
 	@Transactional
@@ -53,6 +60,57 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 	@Transactional
 	public CreateAssetExchangeV2ResponseDto createAssetExchange(User currentUser, UUID trackerId, CreateAssetExchangeV2RequestDto request) {
 		return createAssetExchangeInternal(currentUser, trackerId, request);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public AssetExchangeRateQuoteResponseDto assetExchangeRateQuote(User currentUser, UUID trackerId, AssetExchangeRateQuoteRequestDto request) {
+		UUID sourceHoldingId = request.sourceHoldingId();
+		UUID targetHoldingId = request.targetHoldingId();
+
+		if (sourceHoldingId == null) {
+			throw new OperationNotPermittedException("Source holding is required");
+		}
+		if (sourceHoldingId.equals(targetHoldingId)) {
+			throw new OperationNotPermittedException("Source and target holdings must be different");
+		}
+
+		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
+		Holding source = getHoldingOrThrow(sourceHoldingId);
+
+		assertHoldingBelongsToTracker(source, trackerId);
+		assertHoldingActive(source);
+
+		Asset targetAsset;
+		UUID resolvedTargetHoldingId = null;
+		if (targetHoldingId != null) {
+			Holding target = getHoldingOrThrow(targetHoldingId);
+			assertHoldingBelongsToTracker(target, trackerId);
+			assertHoldingActive(target);
+			targetAsset = target.getAsset();
+			resolvedTargetHoldingId = target.getId();
+		} else {
+			targetAsset = tracker.getPreferredDisplayAsset();
+			if (targetAsset == null) {
+				throw new OperationNotPermittedException("Target holding is missing and tracker has no preferredDisplayAsset set");
+			}
+		}
+
+		LocalDate rateDate = LocalDate.now(ZoneOffset.UTC);
+		BigDecimal rate = exchangeRateService.getRate(source.getAsset(), targetAsset, rateDate);
+		if (rate == null) {
+			throw new OperationNotPermittedException("Exchange rate is unavailable for %s/%s on %s"
+					.formatted(source.getAsset().getCode(), targetAsset.getCode(), rateDate));
+		}
+
+		return new AssetExchangeRateQuoteResponseDto(
+				source.getId(),
+				source.getAsset().getCode(),
+				resolvedTargetHoldingId,
+				targetAsset.getCode(),
+				rateDate,
+				rate
+		);
 	}
 
 	private CreateWalletTransferV2ResponseDto createWalletTransferInternal(

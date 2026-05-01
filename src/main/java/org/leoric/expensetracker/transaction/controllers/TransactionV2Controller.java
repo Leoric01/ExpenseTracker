@@ -3,6 +3,8 @@ package org.leoric.expensetracker.transaction.controllers;
 import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
+import org.leoric.expensetracker.transaction.dto.AssetExchangeRateQuoteRequestDto;
+import org.leoric.expensetracker.transaction.dto.AssetExchangeRateQuoteResponseDto;
 import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2RequestDto;
 import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2ResponseDto;
 import org.leoric.expensetracker.transaction.dto.CreateWalletTransferV2RequestDto;
@@ -48,5 +50,14 @@ public class TransactionV2Controller {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(transactionV2Service.createAssetExchange(currentUser, trackerId, request));
+	}
+
+	@PostMapping("/{trackerId}/asset-exchange/rate")
+	public ResponseEntity<AssetExchangeRateQuoteResponseDto> assetExchangeRateQuote(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@RequestBody AssetExchangeRateQuoteRequestDto request) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(transactionV2Service.assetExchangeRateQuote(currentUser, trackerId, request));
 	}
 }

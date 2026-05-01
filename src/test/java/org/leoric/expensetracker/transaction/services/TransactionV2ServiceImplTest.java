@@ -6,15 +6,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.leoric.expensetracker.account.models.Account;
 import org.leoric.expensetracker.asset.models.Asset;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.exchangerate.services.interfaces.ExchangeRateService;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSameAssetException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeAmountLessThanFeeException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSettledAmountRequiredException;
+import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountInputMissingException;
 import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.institution.models.Institution;
+import org.leoric.expensetracker.transaction.dto.AssetExchangeRateQuoteRequestDto;
+import org.leoric.expensetracker.transaction.dto.AssetExchangeRateQuoteResponseDto;
 import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2RequestDto;
 import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2ResponseDto;
 import org.leoric.expensetracker.transaction.dto.CreateWalletTransferV2RequestDto;
@@ -44,6 +48,8 @@ class TransactionV2ServiceImplTest {
 	private ExpenseTrackerRepository expenseTrackerRepository;
 	@Mock
 	private HoldingRepository holdingRepository;
+	@Mock
+	private ExchangeRateService exchangeRateService;
 
 	@InjectMocks
 	private TransactionV2ServiceImpl service;
@@ -345,5 +351,72 @@ class TransactionV2ServiceImplTest {
 
 		assertThatThrownBy(() -> service.createAssetExchange(user, trackerId, request))
 				.isInstanceOf(AssetExchangeAmountLessThanFeeException.class);
+	}
+
+	@Test
+	void assetExchangeRateQuote_shouldReturnRateByHoldingAssets() {
+		source.setAsset(Asset.builder().code("BTC").scale(8).build());
+		target.setAsset(Asset.builder().code("CZK").scale(2).build());
+
+		AssetExchangeRateQuoteRequestDto request = new AssetExchangeRateQuoteRequestDto(
+				source.getId(),
+				target.getId()
+		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(source.getId())).thenReturn(Optional.of(source));
+		when(holdingRepository.findById(target.getId())).thenReturn(Optional.of(target));
+		when(exchangeRateService.getRate(any(Asset.class), any(Asset.class), any(java.time.LocalDate.class)))
+				.thenReturn(new java.math.BigDecimal("2234567.89"));
+
+		AssetExchangeRateQuoteResponseDto response = service.assetExchangeRateQuote(user, trackerId, request);
+
+		assertThat(response.sourceHoldingId()).isEqualTo(source.getId());
+		assertThat(response.targetHoldingId()).isEqualTo(target.getId());
+		assertThat(response.sourceAssetCode()).isEqualTo("BTC");
+		assertThat(response.targetAssetCode()).isEqualTo("CZK");
+		assertThat(response.exchangeRate()).isEqualByComparingTo("2234567.89");
+	}
+
+	@Test
+	void assetExchangeRateQuote_shouldUsePreferredDisplayAssetWhenTargetHoldingMissing() {
+		source.setAsset(Asset.builder().code("BTC").scale(8).build());
+		tracker.setPreferredDisplayAsset(Asset.builder().code("USD").scale(2).build());
+
+		AssetExchangeRateQuoteRequestDto request = new AssetExchangeRateQuoteRequestDto(
+				source.getId(),
+				null
+		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(source.getId())).thenReturn(Optional.of(source));
+		when(exchangeRateService.getRate(any(Asset.class), any(Asset.class), any(java.time.LocalDate.class)))
+				.thenReturn(new java.math.BigDecimal("93000.12"));
+
+		AssetExchangeRateQuoteResponseDto response = service.assetExchangeRateQuote(user, trackerId, request);
+
+		assertThat(response.sourceHoldingId()).isEqualTo(source.getId());
+		assertThat(response.targetHoldingId()).isNull();
+		assertThat(response.sourceAssetCode()).isEqualTo("BTC");
+		assertThat(response.targetAssetCode()).isEqualTo("USD");
+		assertThat(response.exchangeRate()).isEqualByComparingTo("93000.12");
+	}
+
+	@Test
+	void assetExchangeRateQuote_shouldFailWhenTargetHoldingMissingAndPreferredDisplayAssetNotSet() {
+		source.setAsset(Asset.builder().code("BTC").scale(8).build());
+		tracker.setPreferredDisplayAsset(null);
+
+		AssetExchangeRateQuoteRequestDto request = new AssetExchangeRateQuoteRequestDto(
+				source.getId(),
+				null
+		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(source.getId())).thenReturn(Optional.of(source));
+
+		assertThatThrownBy(() -> service.assetExchangeRateQuote(user, trackerId, request))
+				.isInstanceOf(OperationNotPermittedException.class)
+				.hasMessageContaining("preferredDisplayAsset");
 	}
 }
