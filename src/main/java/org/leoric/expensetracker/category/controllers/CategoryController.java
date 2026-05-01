@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.category.dto.CategoryBulkExportResponseDto;
 import org.leoric.expensetracker.category.dto.CategoryActiveTreeResponseDto;
+import org.leoric.expensetracker.category.dto.CategoryMovementSummaryResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryRequestDto;
@@ -107,6 +108,17 @@ public class CategoryController {
 			@PathVariable UUID trackerId) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.ok(categoryService.categoryFindAllActiveTree(currentUser, trackerId));
+	}
+
+	@GetMapping("/{trackerId}/summary")
+	public ResponseEntity<CategoryMovementSummaryResponseDto> categoryMovementSummary(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@RequestParam Instant dateFrom,
+			@RequestParam Instant dateTo,
+			@RequestParam(required = false) String displayAssetCode) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(categoryService.categoryMovementSummary(currentUser, trackerId, dateFrom, dateTo, displayAssetCode));
 	}
 
 	@GetMapping("/{trackerId}/{categoryId}")
