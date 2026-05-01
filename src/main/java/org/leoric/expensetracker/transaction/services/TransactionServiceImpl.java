@@ -358,15 +358,19 @@ public class TransactionServiceImpl implements TransactionService {
 		assertTransactionBelongsToTracker(transaction, trackerId);
 		assertNotCancelled(transaction);
 
-		if (transaction.getTransactionType() == TransactionType.TRANSFER
-				|| transaction.getTransactionType() == TransactionType.BALANCE_ADJUSTMENT) {
+		if (transaction.getTransactionType() == TransactionType.TRANSFER) {
+			patchTransferFinancialFields(transaction, trackerId, request);
+		} else if (transaction.getTransactionType() == TransactionType.BALANCE_ADJUSTMENT) {
 			if (request.holdingId() != null
+					|| request.sourceHoldingId() != null
+					|| request.targetHoldingId() != null
 					|| request.amount() != null
 					|| request.currencyCode() != null
 					|| request.exchangeRate() != null
-					|| request.feeAmount() != null) {
+					|| request.feeAmount() != null
+					|| request.settledAmount() != null) {
 				throw new OperationNotPermittedException(
-						"Financial fields (holding, amount, currency, exchange rate, fee) cannot be changed on a %s transaction"
+						"Financial fields (holding/source/target, amount, settled, currency, exchange rate, fee) cannot be changed on a %s transaction"
 								.formatted(transaction.getTransactionType()));
 			}
 		} else {
@@ -429,6 +433,9 @@ public class TransactionServiceImpl implements TransactionService {
 		String newCurrencyCode = request.currencyCode() != null
 				? request.currencyCode().toUpperCase()
 				: transaction.getCurrencyCode();
+		if (request.currencyCode() != null) {
+			assertAssetCodeExists(newCurrencyCode);
+		}
 
 		String holdingAssetCode = newHolding.getAsset().getCode();
 		boolean crossCurrency = !newCurrencyCode.equals(holdingAssetCode);
@@ -482,6 +489,106 @@ public class TransactionServiceImpl implements TransactionService {
 		transaction.setExchangeRate(newExchangeRate);
 		transaction.setFeeAmount(newFeeAmount);
 		transaction.setSettledAmount(newSettledAmount);
+	}
+
+	private void patchTransferFinancialFields(Transaction transaction, UUID trackerId, UpdateTransactionRequestDto request) {
+		boolean financialPatchRequested = request.sourceHoldingId() != null
+				|| request.targetHoldingId() != null
+				|| request.amount() != null
+				|| request.settledAmount() != null
+				|| request.feeAmount() != null
+				|| request.currencyCode() != null
+				|| request.exchangeRate() != null;
+		if (!financialPatchRequested) {
+			return;
+		}
+
+		Holding oldSource = transaction.getSourceHolding();
+		Holding oldTarget = transaction.getTargetHolding();
+
+		Holding newSource = oldSource;
+		if (request.sourceHoldingId() != null) {
+			newSource = getHoldingOrThrow(request.sourceHoldingId());
+			assertHoldingBelongsToTracker(newSource, trackerId);
+			assertHoldingActive(newSource);
+		}
+
+		Holding newTarget = oldTarget;
+		if (request.targetHoldingId() != null) {
+			newTarget = getHoldingOrThrow(request.targetHoldingId());
+			assertHoldingBelongsToTracker(newTarget, trackerId);
+			assertHoldingActive(newTarget);
+		}
+
+		if (newSource.getId().equals(newTarget.getId())) {
+			throw new OperationNotPermittedException("Source and target holdings must be different");
+		}
+
+		if (!newSource.getAsset().getCode().equalsIgnoreCase(newTarget.getAsset().getCode())) {
+			throw new OperationNotPermittedException("Transfer financial patch is supported only for same-asset source/target holdings");
+		}
+
+		if (request.exchangeRate() != null) {
+			throw new OperationNotPermittedException("Exchange rate cannot be patched on same-asset transfers");
+		}
+		if (request.currencyCode() != null
+				&& !request.currencyCode().equalsIgnoreCase(newSource.getAsset().getCode())) {
+			throw new OperationNotPermittedException("Currency code on same-asset transfer must match source holding asset code");
+		}
+		if (request.currencyCode() != null) {
+			assertAssetCodeExists(request.currencyCode().toUpperCase());
+		}
+
+		long oldSourceDeduction = isInternalSameAssetTransfer(transaction)
+				? transaction.getAmount()
+				: transaction.getAmount() + transaction.getFeeAmount();
+		long oldTargetAddition = isInternalSameAssetTransfer(transaction)
+				? resolveTransferSettledAmount(transaction)
+				: (transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount());
+
+		long newAmount = request.amount() != null ? request.amount() : transaction.getAmount();
+		Long requestedSettled = request.settledAmount();
+		Long requestedFee = request.feeAmount();
+
+		long newSettled;
+		long newFee;
+		if (requestedSettled != null) {
+			newSettled = requestedSettled;
+			newFee = Math.subtractExact(newAmount, newSettled);
+		} else if (requestedFee != null) {
+			newFee = requestedFee;
+			newSettled = Math.subtractExact(newAmount, newFee);
+		} else {
+			newSettled = newAmount;
+			newFee = 0L;
+		}
+
+		oldSource.setCurrentAmount(oldSource.getCurrentAmount() + oldSourceDeduction);
+		oldTarget.setCurrentAmount(oldTarget.getCurrentAmount() - oldTargetAddition);
+
+		newSource.setCurrentAmount(newSource.getCurrentAmount() - newAmount);
+		newTarget.setCurrentAmount(newTarget.getCurrentAmount() + newSettled);
+
+		holdingRepository.save(oldSource);
+		if (!oldTarget.getId().equals(oldSource.getId())) {
+			holdingRepository.save(oldTarget);
+		}
+		if (!newSource.getId().equals(oldSource.getId()) && !newSource.getId().equals(oldTarget.getId())) {
+			holdingRepository.save(newSource);
+		}
+		if (!newTarget.getId().equals(newSource.getId())
+				&& !newTarget.getId().equals(oldSource.getId())
+				&& !newTarget.getId().equals(oldTarget.getId())) {
+			holdingRepository.save(newTarget);
+		}
+
+		transaction.setSourceHolding(newSource);
+		transaction.setTargetHolding(newTarget);
+		transaction.setAmount(newAmount);
+		transaction.setSettledAmount(newSettled);
+		transaction.setFeeAmount(newFee);
+		transaction.setCurrencyCode(newSource.getAsset().getCode());
+		transaction.setExchangeRate(null);
 	}
 
 	@Override
@@ -669,7 +776,7 @@ public class TransactionServiceImpl implements TransactionService {
 							if (feeEffect > 0) {
 								expenseDelta += feeEffect;
 							} else if (feeEffect < 0) {
-								incomeDelta += -feeEffect;
+								incomeDelta -= feeEffect;
 							}
 							break;
 						}
@@ -766,7 +873,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		String sourceCode = transaction.getSourceHolding().getAsset().getCode();
 		String targetCode = transaction.getTargetHolding().getAsset().getCode();
-		if (sourceCode == null || targetCode == null || !sourceCode.equalsIgnoreCase(targetCode)) {
+		if (!sourceCode.equalsIgnoreCase(targetCode)) {
 			return false;
 		}
 
@@ -1231,6 +1338,12 @@ public class TransactionServiceImpl implements TransactionService {
 	private Category getCategoryOrThrow(UUID categoryId) {
 		return categoryRepository.findById(categoryId)
 				.orElseThrow(() -> new EntityNotFoundException("Category not found"));
+	}
+
+	private void assertAssetCodeExists(String assetCode) {
+		if (!assetRepository.existsByCodeIgnoreCase(assetCode)) {
+			throw new OperationNotPermittedException("Asset code '%s' does not exist".formatted(assetCode));
+		}
 	}
 
 	private void assertTransactionBelongsToTracker(Transaction transaction, UUID trackerId) {

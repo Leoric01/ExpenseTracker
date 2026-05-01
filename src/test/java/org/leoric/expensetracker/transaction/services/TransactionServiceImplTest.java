@@ -117,10 +117,13 @@ class TransactionServiceImplTest {
 
 		UpdateTransactionRequestDto request = new UpdateTransactionRequestDto(
 				holdingB.getId(),
+				null,
+				null,
 				150L,
 				"CZK",
 				null,
 				0L,
+				null,
 				null,
 				null,
 				null,
@@ -130,6 +133,7 @@ class TransactionServiceImplTest {
 
 		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
 		when(holdingRepository.findById(holdingB.getId())).thenReturn(Optional.of(holdingB));
+		when(assetRepository.existsByCodeIgnoreCase("CZK")).thenReturn(true);
 		when(assetRepository.findByCodeIgnoreCase("CZK"))
 				.thenReturn(Optional.of(Asset.builder().code("CZK").scale(2).build()));
 		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -179,15 +183,15 @@ class TransactionServiceImplTest {
 	}
 
 	@Test
-	void transactionUpdate_shouldRejectFinancialPatchForTransfer() {
+	void transactionUpdate_shouldRejectFinancialPatchForBalanceAdjustment() {
 		UUID transactionId = UUID.randomUUID();
 		Transaction transaction = Transaction.builder()
 				.id(transactionId)
 				.expenseTracker(tracker)
-				.transactionType(TransactionType.TRANSFER)
+				.transactionType(TransactionType.BALANCE_ADJUSTMENT)
 				.status(TransactionStatus.COMPLETED)
-				.sourceHolding(holdingA)
-				.targetHolding(holdingB)
+				.holding(holdingA)
+				.balanceAdjustmentDirection(org.leoric.expensetracker.transaction.models.constants.BalanceAdjustmentDirection.ADDITION)
 				.amount(100)
 				.currencyCode("CZK")
 				.transactionDate(Instant.now())
@@ -195,10 +199,13 @@ class TransactionServiceImplTest {
 
 		UpdateTransactionRequestDto request = new UpdateTransactionRequestDto(
 				holdingA.getId(),
+				null,
+				null,
 				200L,
 				"CZK",
 				null,
 				0L,
+				null,
 				null,
 				null,
 				null,
@@ -213,6 +220,103 @@ class TransactionServiceImplTest {
 				.hasMessageContaining("Financial fields");
 
 		verify(transactionRepository, never()).save(any(Transaction.class));
+	}
+
+	@Test
+	void transactionUpdate_shouldAllowSameAssetTransferPatchWithAmountAndSettled() {
+		UUID transactionId = UUID.randomUUID();
+		Transaction transaction = Transaction.builder()
+				.id(transactionId)
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.TRANSFER)
+				.status(TransactionStatus.COMPLETED)
+				.sourceHolding(holdingA)
+				.targetHolding(holdingB)
+				.amount(100L)
+				.settledAmount(98L)
+				.feeAmount(2L)
+				.currencyCode("CZK")
+				.exchangeRate(null)
+				.transactionDate(Instant.now())
+				.build();
+
+		UpdateTransactionRequestDto request = new UpdateTransactionRequestDto(
+				null,
+				holdingA.getId(),
+				holdingB.getId(),
+				120L,
+				null,
+				null,
+				null,
+				117L,
+				null,
+				null,
+				null,
+				null,
+				null
+		);
+
+		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+		when(holdingRepository.findById(holdingA.getId())).thenReturn(Optional.of(holdingA));
+		when(holdingRepository.findById(holdingB.getId())).thenReturn(Optional.of(holdingB));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+		when(transactionMapper.toResponse(any(Transaction.class))).thenReturn(minimalResponse(transaction));
+
+		service.transactionUpdate(user, trackerId, transactionId, request);
+
+		assertThat(transaction.getAmount()).isEqualTo(120L);
+		assertThat(transaction.getSettledAmount()).isEqualTo(117L);
+		assertThat(transaction.getFeeAmount()).isEqualTo(3L);
+		assertThat(transaction.getExchangeRate()).isNull();
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(9_980L);
+		assertThat(holdingB.getCurrentAmount()).isEqualTo(20_019L);
+	}
+
+	@Test
+	void transactionUpdate_shouldComputeSettledFromAmountAndFeeWhenSettledMissingOnTransfer() {
+		UUID transactionId = UUID.randomUUID();
+		Transaction transaction = Transaction.builder()
+				.id(transactionId)
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.TRANSFER)
+				.status(TransactionStatus.COMPLETED)
+				.sourceHolding(holdingA)
+				.targetHolding(holdingB)
+				.amount(100L)
+				.settledAmount(100L)
+				.feeAmount(0L)
+				.currencyCode("CZK")
+				.exchangeRate(null)
+				.transactionDate(Instant.now())
+				.build();
+
+		UpdateTransactionRequestDto request = new UpdateTransactionRequestDto(
+				null,
+				null,
+				null,
+				130L,
+				null,
+				null,
+				5L,
+				null,
+				null,
+				null,
+				null,
+				null,
+				null
+		);
+
+		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+		when(transactionMapper.toResponse(any(Transaction.class))).thenReturn(minimalResponse(transaction));
+
+		service.transactionUpdate(user, trackerId, transactionId, request);
+
+		assertThat(transaction.getAmount()).isEqualTo(130L);
+		assertThat(transaction.getSettledAmount()).isEqualTo(125L);
+		assertThat(transaction.getFeeAmount()).isEqualTo(5L);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(9_970L);
+		assertThat(holdingB.getCurrentAmount()).isEqualTo(20_025L);
 	}
 
 	@Test
