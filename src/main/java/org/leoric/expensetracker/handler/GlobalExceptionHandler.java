@@ -18,7 +18,9 @@ import org.leoric.expensetracker.handler.exceptions.InvalidHabitCompletionExcept
 import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchException;
 import org.leoric.expensetracker.handler.exceptions.NotAuthorizedForThisExpenseTrackerException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.handler.exceptions.AssetExchangeAmountLessThanFeeException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSameAssetException;
+import org.leoric.expensetracker.handler.exceptions.AssetExchangeSettledAmountRequiredException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountComputationException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountInputMissingException;
 import org.leoric.expensetracker.handler.exceptions.TransferExchangeRateInvalidException;
@@ -264,6 +266,18 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionResponse> handleAssetExchangeSameAssetException(AssetExchangeSameAssetException ex) {
 		log.warn("[{}] {}", ASSET_EXCHANGE_SAME_ASSET.getCode(), ex.getMessage(), ex);
 		return build(ASSET_EXCHANGE_SAME_ASSET, ex.getMessage());
+	}
+
+	@ExceptionHandler(AssetExchangeAmountLessThanFeeException.class)
+	public ResponseEntity<ExceptionResponse> handleAssetExchangeAmountLessThanFeeException(AssetExchangeAmountLessThanFeeException ex) {
+		log.warn("[{}] {}", ASSET_EXCHANGE_AMOUNT_LESS_THAN_FEE.getCode(), ex.getMessage(), ex);
+		return build(ASSET_EXCHANGE_AMOUNT_LESS_THAN_FEE, ex.getMessage());
+	}
+
+	@ExceptionHandler(AssetExchangeSettledAmountRequiredException.class)
+	public ResponseEntity<ExceptionResponse> handleAssetExchangeSettledAmountRequiredException(AssetExchangeSettledAmountRequiredException ex) {
+		log.warn("[{}] {}", ASSET_EXCHANGE_SETTLED_AMOUNT_REQUIRED.getCode(), ex.getMessage(), ex);
+		return build(ASSET_EXCHANGE_SETTLED_AMOUNT_REQUIRED, ex.getMessage());
 	}
 
 	@ExceptionHandler(TransferExchangeRateInvalidException.class)

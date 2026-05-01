@@ -6,12 +6,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
+import org.leoric.expensetracker.handler.exceptions.AssetExchangeAmountLessThanFeeException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSameAssetException;
+import org.leoric.expensetracker.handler.exceptions.AssetExchangeSettledAmountRequiredException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountComputationException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountInputMissingException;
 import org.leoric.expensetracker.handler.exceptions.TransferExchangeRateInvalidException;
-import org.leoric.expensetracker.handler.exceptions.TransferFeeOnlyInputException;
+import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2ResponseDto;
 import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2RequestDto;
@@ -19,7 +21,6 @@ import org.leoric.expensetracker.transaction.dto.CreateWalletTransferV2RequestDt
 import org.leoric.expensetracker.transaction.dto.CreateWalletTransferV2ResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransferAmountCalculationMode;
 import org.leoric.expensetracker.transaction.dto.TransactionV2OperationType;
-import org.leoric.expensetracker.transaction.dto.TransactionV2ResponseDto;
 import org.leoric.expensetracker.transaction.models.Transaction;
 import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
@@ -29,6 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -49,7 +51,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 
 	@Override
 	@Transactional
-	public TransactionV2ResponseDto createAssetExchange(User currentUser, UUID trackerId, CreateAssetExchangeV2RequestDto request) {
+	public CreateAssetExchangeV2ResponseDto createAssetExchange(User currentUser, UUID trackerId, CreateAssetExchangeV2RequestDto request) {
 		return createAssetExchangeInternal(currentUser, trackerId, request);
 	}
 
@@ -161,7 +163,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		);
 	}
 
-	private TransactionV2ResponseDto createAssetExchangeInternal(
+	private CreateAssetExchangeV2ResponseDto createAssetExchangeInternal(
 			User currentUser,
 			UUID trackerId,
 			CreateAssetExchangeV2RequestDto request
@@ -169,9 +171,8 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		UUID sourceHoldingId = request.sourceHoldingId();
 		UUID targetHoldingId = request.targetHoldingId();
 		Long amountInput = request.amount();
-		Long settledInput = request.settledAmount();
 		Long feeInput = request.feeAmount();
-		String currencyCodeInput = request.currencyCode();
+		Long settledInput = request.settledAmount();
 		BigDecimal exchangeRate = request.exchangeRate();
 		Instant transactionDateInput = request.transactionDate();
 		String description = request.description();
@@ -184,11 +185,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		if (sourceHoldingId.equals(targetHoldingId)) {
 			throw new OperationNotPermittedException("Source and target holdings must be different");
 		}
-		if (exchangeRate != null && exchangeRate.compareTo(BigDecimal.ZERO) <= 0) {
-			throw new TransferExchangeRateInvalidException("Exchange rate must be positive when provided");
-		}
-
-		ResolvedTransferAmounts resolved = resolveTransferAmounts(amountInput, settledInput, feeInput);
+		ResolvedAssetExchangeAmounts resolved = resolveAssetExchangeAmounts(amountInput, feeInput, settledInput, exchangeRate);
 
 		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
 		Holding source = getHoldingOrThrow(sourceHoldingId);
@@ -203,7 +200,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 			throw new AssetExchangeSameAssetException("Asset exchange requires different source and target assets");
 		}
 
-		long sourceDeduction = safeAdd(resolved.amount(), resolved.feeAmount(), "source deduction");
+		long sourceDeduction = resolved.amount();
 		long targetAddition = resolved.settledAmount();
 
 		source.setCurrentAmount(source.getCurrentAmount() - sourceDeduction);
@@ -211,7 +208,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		holdingRepository.save(source);
 		holdingRepository.save(target);
 
-		String currencyCode = normalizeCurrencyCode(currencyCodeInput, source.getAsset().getCode());
+		String currencyCode = source.getAsset().getCode();
 		Instant transactionDate = transactionDateInput != null ? transactionDateInput : Instant.now();
 
 		Transaction transaction = Transaction.builder()
@@ -222,7 +219,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				.targetHolding(target)
 				.amount(resolved.amount())
 				.currencyCode(currencyCode)
-				.exchangeRate(exchangeRate)
+				.exchangeRate(resolved.exchangeRate())
 				.feeAmount(resolved.feeAmount())
 				.settledAmount(resolved.settledAmount())
 				.transactionDate(transactionDate)
@@ -234,7 +231,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created {} V2 transfer '{}' in tracker '{}'", currentUser.getEmail(), TransactionV2OperationType.ASSET_EXCHANGE, transaction.getId(), tracker.getName());
 
-		return new TransactionV2ResponseDto(
+		return new CreateAssetExchangeV2ResponseDto(
 				transaction.getId(),
 				TransactionV2OperationType.ASSET_EXCHANGE,
 				resolved.calculationMode(),
@@ -245,70 +242,88 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				targetAddition,
 				resolved.feeOverridden(),
 				source.getId(),
+				source.getAccount().getName(),
 				target.getId(),
+				target.getAccount().getName(),
 				source.getAsset().getCode(),
+				source.getAsset().getScale(),
 				target.getAsset().getCode(),
+				target.getAsset().getScale(),
 				currencyCode,
-				exchangeRate,
+				resolved.exchangeRate(),
 				transactionDate
 		);
 	}
 
-	private ResolvedTransferAmounts resolveTransferAmounts(Long amountInput, Long settledInput, Long feeInput) {
-		boolean hasAmount = amountInput != null;
+	private ResolvedAssetExchangeAmounts resolveAssetExchangeAmounts(
+			Long amountInput,
+			Long feeInput,
+			Long settledInput,
+			BigDecimal exchangeRateInput
+	) {
+		if (amountInput == null || amountInput <= 0) {
+			throw new TransferAmountInputMissingException("Asset exchange requires a positive amount input");
+		}
+
+		long amount = amountInput;
+		long fee = feeInput != null ? feeInput : 0L;
+
+		if (amount < fee) {
+			throw new AssetExchangeAmountLessThanFeeException(
+					"Asset exchange amount (%d) must be greater than or equal to feeAmount (%d)"
+							.formatted(amount, fee));
+		}
+
+		long principal = safeSubtract(amount, fee, "principal amount");
 		boolean hasSettled = settledInput != null;
-		boolean hasFee = feeInput != null;
+		boolean hasRate = exchangeRateInput != null;
 
-		if (!hasAmount && !hasSettled && !hasFee) {
-			throw new TransferAmountInputMissingException("At least one of amount, settledAmount or feeAmount must be provided");
-		}
-		if (!hasAmount && !hasSettled) {
-			throw new TransferFeeOnlyInputException("Fee-only input is not supported. Provide amount or settledAmount");
+		if (!hasSettled && !hasRate) {
+			throw new AssetExchangeSettledAmountRequiredException(
+					"Asset exchange requires settledAmount when exchangeRate is missing");
 		}
 
-		if (hasAmount && hasSettled) {
-			long amount = amountInput;
-			long settled = settledInput;
-			long computedFee = safeSubtract(amount, settled, "fee amount");
-			boolean feeOverridden = hasFee && feeInput != computedFee;
-			return new ResolvedTransferAmounts(
-					amount,
-					settled,
-					computedFee,
-					hasFee ? TransferAmountCalculationMode.ALL_FIELDS_RECONCILED : TransferAmountCalculationMode.AMOUNT_AND_SETTLED,
-					feeOverridden
-			);
+		if (hasRate && exchangeRateInput.compareTo(BigDecimal.ZERO) <= 0) {
+			throw new TransferExchangeRateInvalidException("Exchange rate must be positive when provided");
 		}
 
-		if (hasAmount && hasFee) {
-			long amount = amountInput;
-			long fee = feeInput;
-			long settled = safeSubtract(amount, fee, "settled amount");
-			return new ResolvedTransferAmounts(amount, settled, fee, TransferAmountCalculationMode.AMOUNT_AND_FEE, false);
+		long settled;
+		if (hasSettled) {
+			settled = settledInput;
+		} else {
+			settled = BigDecimal.valueOf(principal)
+					.multiply(exchangeRateInput)
+					.setScale(0, RoundingMode.HALF_UP)
+					.longValueExact();
 		}
 
-		if (hasSettled && hasFee) {
-			long settled = settledInput;
-			long fee = feeInput;
-			long amount = safeAdd(settled, fee, "amount");
-			return new ResolvedTransferAmounts(amount, settled, fee, TransferAmountCalculationMode.SETTLED_AND_FEE, false);
+		BigDecimal effectiveExchangeRate = exchangeRateInput;
+		if (effectiveExchangeRate == null) {
+			if (principal == 0L) {
+				throw new AssetExchangeSettledAmountRequiredException(
+						"Asset exchange cannot derive exchangeRate when principal amount is zero");
+			}
+			effectiveExchangeRate = BigDecimal.valueOf(settled)
+					.divide(BigDecimal.valueOf(principal), 8, RoundingMode.HALF_UP);
 		}
 
-		if (hasAmount) {
-			long amount = amountInput;
-			return new ResolvedTransferAmounts(amount, amount, 0L, TransferAmountCalculationMode.AMOUNT_ONLY_DEFAULTED, false);
+		TransferAmountCalculationMode mode;
+		if (hasSettled && hasRate) {
+			mode = TransferAmountCalculationMode.ALL_FIELDS_RECONCILED;
+		} else if (hasSettled) {
+			mode = TransferAmountCalculationMode.AMOUNT_AND_SETTLED;
+		} else {
+			mode = TransferAmountCalculationMode.AMOUNT_AND_FEE;
 		}
 
-		long settled = settledInput;
-		return new ResolvedTransferAmounts(settled, settled, 0L, TransferAmountCalculationMode.SETTLED_ONLY_DEFAULTED, false);
-	}
-
-	private long safeAdd(long left, long right, String targetField) {
-		try {
-			return Math.addExact(left, right);
-		} catch (ArithmeticException ex) {
-			throw new TransferAmountComputationException("Overflow while computing " + targetField);
-		}
+		return new ResolvedAssetExchangeAmounts(
+				amount,
+				settled,
+				fee,
+				mode,
+				false,
+				effectiveExchangeRate
+		);
 	}
 
 	private long safeSubtract(long left, long right, String targetField) {
@@ -317,13 +332,6 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		} catch (ArithmeticException ex) {
 			throw new TransferAmountComputationException("Overflow while computing " + targetField);
 		}
-	}
-
-	private String normalizeCurrencyCode(String currencyCodeInput, String fallbackCode) {
-		if (currencyCodeInput == null || currencyCodeInput.isBlank()) {
-			return fallbackCode;
-		}
-		return currencyCodeInput.toUpperCase();
 	}
 
 	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {
@@ -355,6 +363,16 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 			long feeAmount,
 			TransferAmountCalculationMode calculationMode,
 			boolean feeOverridden
+	) {
+	}
+
+	private record ResolvedAssetExchangeAmounts(
+			long amount,
+			long settledAmount,
+			long feeAmount,
+			TransferAmountCalculationMode calculationMode,
+			boolean feeOverridden,
+			BigDecimal exchangeRate
 	) {
 	}
 }

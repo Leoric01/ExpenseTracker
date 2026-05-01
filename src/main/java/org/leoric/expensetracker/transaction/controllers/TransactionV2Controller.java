@@ -4,9 +4,9 @@ import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2RequestDto;
+import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2ResponseDto;
 import org.leoric.expensetracker.transaction.dto.CreateWalletTransferV2RequestDto;
 import org.leoric.expensetracker.transaction.dto.CreateWalletTransferV2ResponseDto;
-import org.leoric.expensetracker.transaction.dto.TransactionV2ResponseDto;
 import org.leoric.expensetracker.transaction.services.interfaces.TransactionV2Service;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -41,7 +41,7 @@ public class TransactionV2Controller {
 	}
 
 	@PostMapping("/{trackerId}/asset-exchange")
-	public ResponseEntity<TransactionV2ResponseDto> createAssetExchange(
+	public ResponseEntity<CreateAssetExchangeV2ResponseDto> createAssetExchange(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
 			@RequestBody CreateAssetExchangeV2RequestDto request) {

@@ -50,6 +50,8 @@ public enum BusinessErrorCodes {
 	TRANSFER_AMOUNT_COMPUTATION_ERROR("B-7003", BAD_REQUEST, "Transfer V2 amount computation failed"),
 	ASSET_EXCHANGE_SAME_ASSET("B-7004", BAD_REQUEST, "Asset exchange requires different source and target assets"),
 	TRANSFER_EXCHANGE_RATE_INVALID("B-7005", BAD_REQUEST, "Provided exchange rate is invalid"),
+	ASSET_EXCHANGE_AMOUNT_LESS_THAN_FEE("B-7006", BAD_REQUEST, "Asset exchange requires amount greater than or equal to fee amount"),
+	ASSET_EXCHANGE_SETTLED_AMOUNT_REQUIRED("B-7007", BAD_REQUEST, "Asset exchange requires settled amount or computable amount+fee+exchangeRate input"),
 	INTERNAL_ERROR("B-9999", INTERNAL_SERVER_ERROR, "Internal error, please contact the admin");
 
 	private final String code;

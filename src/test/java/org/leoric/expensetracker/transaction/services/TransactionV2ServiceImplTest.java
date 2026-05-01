@@ -9,11 +9,14 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSameAssetException;
+import org.leoric.expensetracker.handler.exceptions.AssetExchangeAmountLessThanFeeException;
+import org.leoric.expensetracker.handler.exceptions.AssetExchangeSettledAmountRequiredException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountInputMissingException;
 import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.institution.models.Institution;
 import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2RequestDto;
+import org.leoric.expensetracker.transaction.dto.CreateAssetExchangeV2ResponseDto;
 import org.leoric.expensetracker.transaction.dto.CreateWalletTransferV2RequestDto;
 import org.leoric.expensetracker.transaction.dto.CreateWalletTransferV2ResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransferAmountCalculationMode;
@@ -198,10 +201,9 @@ class TransactionV2ServiceImplTest {
 				source.getId(),
 				target.getId(),
 				100L,
-				null,
-				null,
-				null,
-				null,
+				2L,
+				98L,
+				new java.math.BigDecimal("1.25"),
 				Instant.now(),
 				null,
 				null,
@@ -214,5 +216,124 @@ class TransactionV2ServiceImplTest {
 
 		assertThatThrownBy(() -> service.createAssetExchange(user, trackerId, request))
 				.isInstanceOf(AssetExchangeSameAssetException.class);
+	}
+
+	@Test
+	void createAssetExchange_shouldComputeSettledFromAmountFeeAndExchangeRate() {
+		target.setAsset(Asset.builder().code("EUR").scale(2).build());
+
+		CreateAssetExchangeV2RequestDto request = new CreateAssetExchangeV2RequestDto(
+				source.getId(),
+				target.getId(),
+				100L,
+				5L,
+				null,
+				new java.math.BigDecimal("2.00"),
+				Instant.parse("2026-05-01T10:00:00Z"),
+				"exchange",
+				null,
+				null
+		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(source.getId())).thenReturn(Optional.of(source));
+		when(holdingRepository.findById(target.getId())).thenReturn(Optional.of(target));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> {
+			Transaction tx = invocation.getArgument(0);
+			tx.setId(UUID.randomUUID());
+			return tx;
+		});
+
+		CreateAssetExchangeV2ResponseDto response = service.createAssetExchange(user, trackerId, request);
+
+		assertThat(response.amount()).isEqualTo(100L);
+		assertThat(response.feeAmount()).isEqualTo(5L);
+		assertThat(response.settledAmount()).isEqualTo(190L);
+		assertThat(response.sourceDeduction()).isEqualTo(100L);
+		assertThat(response.targetAddition()).isEqualTo(190L);
+		assertThat(response.sourceHoldingName()).isEqualTo("Source");
+		assertThat(response.targetHoldingName()).isEqualTo("Target");
+		assertThat(response.currencyCode()).isEqualTo("CZK");
+		assertThat(response.sourceAssetScale()).isEqualTo(0);
+		assertThat(response.targetAssetScale()).isEqualTo(2);
+		assertThat(source.getCurrentAmount()).isEqualTo(900L);
+		assertThat(target.getCurrentAmount()).isEqualTo(390L);
+	}
+
+	@Test
+	void createAssetExchange_shouldDeriveExchangeRateWhenSettledProvidedWithoutRate() {
+		target.setAsset(Asset.builder().code("BTC").scale(8).build());
+
+		CreateAssetExchangeV2RequestDto request = new CreateAssetExchangeV2RequestDto(
+				source.getId(),
+				target.getId(),
+				1_000_000L,
+				1_000L,
+				1_000L,
+				null,
+				Instant.parse("2026-05-01T10:58:00Z"),
+				"t1",
+				null,
+				null
+		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(source.getId())).thenReturn(Optional.of(source));
+		when(holdingRepository.findById(target.getId())).thenReturn(Optional.of(target));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> {
+			Transaction tx = invocation.getArgument(0);
+			tx.setId(UUID.randomUUID());
+			return tx;
+		});
+
+		CreateAssetExchangeV2ResponseDto response = service.createAssetExchange(user, trackerId, request);
+
+		assertThat(response.exchangeRate()).isNotNull();
+		assertThat(response.exchangeRate()).isEqualByComparingTo("0.00100100");
+		assertThat(response.amount()).isEqualTo(1_000_000L);
+		assertThat(response.feeAmount()).isEqualTo(1_000L);
+		assertThat(response.settledAmount()).isEqualTo(1_000L);
+	}
+
+	@Test
+	void createAssetExchange_shouldFailWhenSettledAndExchangeRateMissing() {
+		target.setAsset(Asset.builder().code("EUR").build());
+
+		CreateAssetExchangeV2RequestDto request = new CreateAssetExchangeV2RequestDto(
+				source.getId(),
+				target.getId(),
+				100L,
+				2L,
+				null,
+				null,
+				Instant.now(),
+				null,
+				null,
+				null
+		);
+
+		assertThatThrownBy(() -> service.createAssetExchange(user, trackerId, request))
+				.isInstanceOf(AssetExchangeSettledAmountRequiredException.class);
+	}
+
+	@Test
+	void createAssetExchange_shouldFailWhenAmountLessThanFee() {
+		target.setAsset(Asset.builder().code("EUR").build());
+
+		CreateAssetExchangeV2RequestDto request = new CreateAssetExchangeV2RequestDto(
+				source.getId(),
+				target.getId(),
+				99L,
+				100L,
+				null,
+				new java.math.BigDecimal("1.10"),
+				Instant.now(),
+				null,
+				null,
+				null
+		);
+
+		assertThatThrownBy(() -> service.createAssetExchange(user, trackerId, request))
+				.isInstanceOf(AssetExchangeAmountLessThanFeeException.class);
 	}
 }
