@@ -62,7 +62,6 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		UUID targetHoldingId = request.targetHoldingId();
 		Long amountInput = request.amount();
 		Long settledInput = request.settledAmount();
-		Long feeInput = request.feeAmount();
 		Instant transactionDateInput = request.transactionDate();
 		String description = request.description();
 		String note = request.note();
@@ -75,7 +74,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 			throw new OperationNotPermittedException("Source and target holdings must be different");
 		}
 
-		ResolvedTransferAmounts resolved = resolveTransferAmounts(amountInput, settledInput, feeInput);
+		ResolvedTransferAmounts resolved = resolveWalletTransferAmounts(amountInput, settledInput);
 
 		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
 		Holding source = getHoldingOrThrow(sourceHoldingId);
@@ -89,7 +88,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 			throw new OperationNotPermittedException("Wallet transfer requires source and target holding with the same asset");
 		}
 
-		long sourceDeduction = safeAdd(resolved.amount(), resolved.feeAmount(), "source deduction");
+		long sourceDeduction = resolved.amount();
 		long targetAddition = resolved.settledAmount();
 
 		source.setCurrentAmount(source.getCurrentAmount() - sourceDeduction);
@@ -137,6 +136,28 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				target.getAsset().getCode(),
 				target.getAsset().getScale(),
 				transactionDate
+		);
+	}
+
+	private ResolvedTransferAmounts resolveWalletTransferAmounts(Long amountInput, Long settledInput) {
+		if (amountInput == null && settledInput == null) {
+			throw new TransferAmountInputMissingException("Amount or settledAmount must be provided for wallet transfer");
+		}
+
+		long amount = amountInput != null ? amountInput : settledInput;
+		long settled = settledInput != null ? settledInput : amount;
+		long computedFee = safeSubtract(amount, settled, "fee amount");
+
+		return new ResolvedTransferAmounts(
+				amount,
+				settled,
+				computedFee,
+				amountInput != null && settledInput != null
+						? TransferAmountCalculationMode.AMOUNT_AND_SETTLED
+						: amountInput != null
+						? TransferAmountCalculationMode.AMOUNT_ONLY_DEFAULTED
+						: TransferAmountCalculationMode.SETTLED_ONLY_DEFAULTED,
+				false
 		);
 	}
 

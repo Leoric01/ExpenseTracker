@@ -8,7 +8,6 @@ public record CreateWalletTransferV2RequestDto(
 		UUID targetHoldingId,
 		Long amount,
 		Long settledAmount,
-		Long feeAmount,
 		Instant transactionDate,
 		String description,
 		String note,

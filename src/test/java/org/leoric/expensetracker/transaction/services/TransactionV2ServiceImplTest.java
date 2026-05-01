@@ -9,7 +9,7 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSameAssetException;
-import org.leoric.expensetracker.handler.exceptions.TransferFeeOnlyInputException;
+import org.leoric.expensetracker.handler.exceptions.TransferAmountInputMissingException;
 import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.institution.models.Institution;
@@ -85,7 +85,6 @@ class TransactionV2ServiceImplTest {
 				target.getId(),
 				100L,
 				null,
-				null,
 				Instant.parse("2026-05-01T10:00:00Z"),
 				"Transfer",
 				null,
@@ -112,13 +111,12 @@ class TransactionV2ServiceImplTest {
 	}
 
 	@Test
-	void createWalletTransfer_shouldFailOnFeeOnlyInput() {
+	void createWalletTransfer_shouldFailWhenAmountAndSettledMissing() {
 		CreateWalletTransferV2RequestDto request = new CreateWalletTransferV2RequestDto(
 				source.getId(),
 				target.getId(),
 				null,
 				null,
-				5L,
 				null,
 				null,
 				null,
@@ -126,7 +124,72 @@ class TransactionV2ServiceImplTest {
 		);
 
 		assertThatThrownBy(() -> service.createWalletTransfer(user, trackerId, request))
-				.isInstanceOf(TransferFeeOnlyInputException.class);
+				.isInstanceOf(TransferAmountInputMissingException.class);
+	}
+
+	@Test
+	void createWalletTransfer_shouldDefaultAmountAndFeeWhenOnlySettledProvided() {
+		CreateWalletTransferV2RequestDto request = new CreateWalletTransferV2RequestDto(
+				source.getId(),
+				target.getId(),
+				null,
+				95L,
+				Instant.parse("2026-05-01T10:00:00Z"),
+				"Settled only transfer",
+				null,
+				null
+		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(source.getId())).thenReturn(Optional.of(source));
+		when(holdingRepository.findById(target.getId())).thenReturn(Optional.of(target));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> {
+			Transaction tx = invocation.getArgument(0);
+			tx.setId(UUID.randomUUID());
+			return tx;
+		});
+
+		CreateWalletTransferV2ResponseDto response = service.createWalletTransfer(user, trackerId, request);
+
+		assertThat(response.amount()).isEqualTo(95L);
+		assertThat(response.settledAmount()).isEqualTo(95L);
+		assertThat(response.feeAmount()).isEqualTo(0L);
+		assertThat(response.calculationMode()).isEqualTo(TransferAmountCalculationMode.SETTLED_ONLY_DEFAULTED);
+		assertThat(source.getCurrentAmount()).isEqualTo(905L);
+		assertThat(target.getCurrentAmount()).isEqualTo(295L);
+	}
+
+	@Test
+	void createWalletTransfer_shouldDeductOnlyAmountAndComputeFeeFromAmountAndSettled() {
+		CreateWalletTransferV2RequestDto request = new CreateWalletTransferV2RequestDto(
+				source.getId(),
+				target.getId(),
+				100L,
+				98L,
+				Instant.parse("2026-05-01T10:00:00Z"),
+				"Transfer with fee",
+				null,
+				null
+		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(source.getId())).thenReturn(Optional.of(source));
+		when(holdingRepository.findById(target.getId())).thenReturn(Optional.of(target));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> {
+			Transaction tx = invocation.getArgument(0);
+			tx.setId(UUID.randomUUID());
+			return tx;
+		});
+
+		CreateWalletTransferV2ResponseDto response = service.createWalletTransfer(user, trackerId, request);
+
+		assertThat(response.amount()).isEqualTo(100L);
+		assertThat(response.settledAmount()).isEqualTo(98L);
+		assertThat(response.feeAmount()).isEqualTo(2L);
+		assertThat(response.sourceDeduction()).isEqualTo(100L);
+		assertThat(response.targetAddition()).isEqualTo(98L);
+		assertThat(source.getCurrentAmount()).isEqualTo(900L);
+		assertThat(target.getCurrentAmount()).isEqualTo(298L);
 	}
 
 	@Test
