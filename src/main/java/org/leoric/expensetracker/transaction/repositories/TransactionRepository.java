@@ -45,4 +45,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 			@Param("categoryIds") Set<UUID> categoryIds,
 			@Param("from") Instant from,
 			@Param("to") Instant to);
+
+	@Query("""
+			SELECT t FROM Transaction t
+			WHERE t.status = org.leoric.expensetracker.transaction.models.constants.TransactionStatus.COMPLETED
+			AND t.expenseTracker.id = :trackerId
+			AND t.transactionType = :transactionType
+			AND t.category.id IN :categoryIds
+			AND t.transactionDate >= :from
+			AND t.transactionDate < :to
+			""")
+	List<Transaction> findCompletedByCategoryIdsAndDateRange(
+			@Param("trackerId") UUID trackerId,
+			@Param("transactionType") TransactionType transactionType,
+			@Param("categoryIds") Set<UUID> categoryIds,
+			@Param("from") Instant from,
+			@Param("to") Instant to);
 }
