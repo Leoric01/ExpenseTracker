@@ -375,6 +375,93 @@ class TransactionServiceImplTest {
 		verifyNoInteractions(exchangeRateService);
 	}
 
+	@Test
+
+	void transactionFindAllPageable_shouldCountOnlyFeeEffectForInternalSameAssetTransferOnTrackerTotals() {
+		Asset czk = Asset.builder().code("CZK").scale(2).build();
+
+		Transaction transfer = Transaction.builder()
+				.id(UUID.randomUUID())
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.TRANSFER)
+				.status(TransactionStatus.COMPLETED)
+				.sourceHolding(holdingA)
+				.targetHolding(holdingB)
+				.amount(100L)
+				.settledAmount(98L)
+				.feeAmount(40L)
+				.currencyCode("CZK")
+				.exchangeRate(java.math.BigDecimal.ONE)
+				.transactionDate(Instant.parse("2026-04-22T10:00:00Z"))
+				.build();
+
+		Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Order.desc("transactionDate")));
+
+		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+				.thenReturn(new PageImpl<>(List.of(transfer), pageable, 1));
+		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(transfer));
+		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK"))).thenReturn(Set.of(czk));
+		when(transactionMapper.toResponse(transfer)).thenReturn(minimalResponse(transfer));
+
+		TransactionPageResponseDto result = service.transactionFindAllPageable(
+				user,
+				trackerId,
+				new TransactionFilter(null, null, null, null, null, null, null, TransactionAmountRateMode.NOW),
+				pageable
+		);
+
+		assertThat(result.totals().byAsset()).hasSize(1);
+		assertThat(result.totals().byAsset().get(0).assetCode()).isEqualTo("CZK");
+		assertThat(result.totals().byAsset().get(0).incomeAmount()).isEqualTo(0L);
+		assertThat(result.totals().byAsset().get(0).expenseAmount()).isEqualTo(2L);
+		assertThat(result.totals().byAsset().get(0).netAmount()).isEqualTo(-2L);
+	}
+
+	@Test
+	void transactionFindAllPageable_shouldUseSettledAmountForIncomingHoldingOnInternalSameAssetTransfer() {
+		Asset czk = Asset.builder().code("CZK").scale(2).build();
+
+		Transaction transfer = Transaction.builder()
+				.id(UUID.randomUUID())
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.TRANSFER)
+				.status(TransactionStatus.COMPLETED)
+				.sourceHolding(holdingA)
+				.targetHolding(holdingB)
+				.amount(100L)
+				.settledAmount(98L)
+				.feeAmount(40L)
+				.currencyCode("CZK")
+				.exchangeRate(java.math.BigDecimal.ONE)
+				.transactionDate(Instant.parse("2026-04-22T10:00:00Z"))
+				.build();
+
+		Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Order.desc("transactionDate")));
+
+		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+				.thenReturn(new PageImpl<>(List.of(transfer), pageable, 1));
+		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(transfer));
+		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK"))).thenReturn(Set.of(czk));
+		when(transactionMapper.toResponse(transfer)).thenReturn(minimalResponse(transfer));
+
+		TransactionPageResponseDto result = service.transactionFindAllPageable(
+				user,
+				trackerId,
+				new TransactionFilter(null, null, holdingB.getId(), null, null, null, null, TransactionAmountRateMode.NOW),
+				pageable
+		);
+
+		assertThat(result.totals().byAsset()).hasSize(1);
+		assertThat(result.totals().byAsset().get(0).assetCode()).isEqualTo("CZK");
+		assertThat(result.totals().byAsset().get(0).incomeAmount()).isEqualTo(98L);
+		assertThat(result.totals().byAsset().get(0).expenseAmount()).isEqualTo(0L);
+		assertThat(result.totals().byAsset().get(0).netAmount()).isEqualTo(98L);
+	}
+
 	private TransactionResponseDto minimalResponse(Transaction transaction) {
 		return new TransactionResponseDto(
 				transaction.getId(),

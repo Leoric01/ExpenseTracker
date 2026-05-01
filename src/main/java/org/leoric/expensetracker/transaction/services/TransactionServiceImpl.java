@@ -413,9 +413,6 @@ public class TransactionServiceImpl implements TransactionService {
 			return;
 		}
 
-		if (request.feeAmount() != null && request.feeAmount() < 0) {
-			throw new OperationNotPermittedException("Fee amount must be zero or positive");
-		}
 
 		Holding oldHolding = transaction.getHolding();
 		Holding newHolding = oldHolding;
@@ -661,19 +658,33 @@ public class TransactionServiceImpl implements TransactionService {
 					}
 				}
 				case TRANSFER -> {
-					if (holdingId == null) {
-						continue;
-					}
+						boolean internalSameAssetTransfer = isInternalSameAssetTransfer(transaction);
 
-					boolean outgoing = transaction.getSourceHolding() != null && holdingId.equals(transaction.getSourceHolding().getId());
-					boolean incoming = transaction.getTargetHolding() != null && holdingId.equals(transaction.getTargetHolding().getId());
+						if (holdingId == null) {
+							if (!internalSameAssetTransfer) {
+								continue;
+							}
 
-					if (outgoing) {
-						expenseDelta += transaction.getAmount();
-					}
-					if (incoming) {
-						incomeDelta += transaction.getAmount();
-					}
+							long feeEffect = resolveTransferEffectiveFee(transaction);
+							if (feeEffect > 0) {
+								expenseDelta += feeEffect;
+							} else if (feeEffect < 0) {
+								incomeDelta += -feeEffect;
+							}
+							break;
+						}
+
+						boolean outgoing = transaction.getSourceHolding() != null && holdingId.equals(transaction.getSourceHolding().getId());
+						boolean incoming = transaction.getTargetHolding() != null && holdingId.equals(transaction.getTargetHolding().getId());
+
+						if (outgoing) {
+							expenseDelta += transaction.getAmount();
+						}
+						if (incoming) {
+							incomeDelta += internalSameAssetTransfer
+									? resolveTransferSettledAmount(transaction)
+									: transaction.getAmount();
+						}
 				}
 			}
 
@@ -737,6 +748,55 @@ public class TransactionServiceImpl implements TransactionService {
 		);
 
 		return new TransactionTotalsDto(byAsset, converted);
+	}
+
+	private boolean isInternalSameAssetTransfer(Transaction transaction) {
+		if (transaction.getTransactionType() != TransactionType.TRANSFER) {
+			return false;
+		}
+		if (transaction.getHolding() != null) {
+			return false;
+		}
+		if (transaction.getSourceHolding() == null || transaction.getTargetHolding() == null) {
+			return false;
+		}
+		if (transaction.getSourceHolding().getAsset() == null || transaction.getTargetHolding().getAsset() == null) {
+			return false;
+		}
+
+		String sourceCode = transaction.getSourceHolding().getAsset().getCode();
+		String targetCode = transaction.getTargetHolding().getAsset().getCode();
+		if (sourceCode == null || targetCode == null || !sourceCode.equalsIgnoreCase(targetCode)) {
+			return false;
+		}
+
+		return transaction.getExchangeRate() == null || BigDecimal.ONE.compareTo(transaction.getExchangeRate()) == 0;
+	}
+
+	private long resolveTransferSettledAmount(Transaction transaction) {
+		if (transaction.getSettledAmount() != null) {
+			return transaction.getSettledAmount();
+		}
+
+		if (isInternalSameAssetTransfer(transaction) && transaction.getFeeAmount() != 0) {
+			try {
+				return Math.subtractExact(transaction.getAmount(), transaction.getFeeAmount());
+			} catch (ArithmeticException ex) {
+				log.warn("Overflow while deriving settledAmount for transfer '{}'", transaction.getId());
+			}
+		}
+
+		return transaction.getAmount();
+	}
+
+	private long resolveTransferEffectiveFee(Transaction transaction) {
+		long settledAmount = resolveTransferSettledAmount(transaction);
+		try {
+			return Math.subtractExact(transaction.getAmount(), settledAmount);
+		} catch (ArithmeticException ex) {
+			log.warn("Overflow while deriving fee effect for transfer '{}'", transaction.getId());
+			return transaction.getFeeAmount();
+		}
 	}
 
 	private Long convertToDisplayAmount(
@@ -1038,8 +1098,17 @@ public class TransactionServiceImpl implements TransactionService {
 			case TRANSFER -> {
 				Holding source = transaction.getSourceHolding();
 				Holding target = transaction.getTargetHolding();
-				long sourceReversal = transaction.getAmount() + transaction.getFeeAmount();
-				long targetReversal = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+				long sourceReversal;
+				long targetReversal;
+
+				if (isInternalSameAssetTransfer(transaction)) {
+					sourceReversal = transaction.getAmount();
+					targetReversal = resolveTransferSettledAmount(transaction);
+				} else {
+					sourceReversal = transaction.getAmount() + transaction.getFeeAmount();
+					targetReversal = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+				}
+
 				source.setCurrentAmount(source.getCurrentAmount() + sourceReversal);
 				target.setCurrentAmount(target.getCurrentAmount() - targetReversal);
 				holdingRepository.save(source);

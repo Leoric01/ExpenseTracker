@@ -107,7 +107,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				.targetHolding(target)
 				.amount(resolved.amount())
 				.currencyCode(currencyCode)
-				.exchangeRate(BigDecimal.ONE)
+				.exchangeRate(null)
 				.feeAmount(resolved.feeAmount())
 				.settledAmount(resolved.settledAmount())
 				.transactionDate(transactionDate)
