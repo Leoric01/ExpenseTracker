@@ -229,7 +229,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				.build();
 
 		transaction = transactionRepository.save(transaction);
-		log.info("User {} created {} V2 transfer '{}' in tracker '{}'", currentUser.getEmail(), TransactionV2OperationType.ASSET_EXCHANGE, transaction.getId(), tracker.getName());
+		log.info("User {} created {} V2 transfer '{}' with holding assets exchange in tracker '{}'", currentUser.getEmail(), TransactionV2OperationType.ASSET_EXCHANGE, transaction.getId(), tracker.getName());
 
 		return new CreateAssetExchangeV2ResponseDto(
 				transaction.getId(),
