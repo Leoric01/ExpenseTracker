@@ -474,9 +474,72 @@ class TransactionServiceImplTest {
 
 		assertThat(result.content()).hasSize(1);
 		assertThat(result.content().get(0).convertedAmount()).isEqualTo(100L);
+		assertThat(result.content().get(0).convertedSourceAmount()).isNull();
+		assertThat(result.content().get(0).convertedTargetAmount()).isNull();
 		assertThat(result.content().get(0).convertedInto()).isEqualTo("CZK");
 		assertThat(result.content().get(0).convertedAssetScale()).isEqualTo(2);
 		verifyNoInteractions(exchangeRateService);
+	}
+
+	@Test
+	void transactionFindAllPageable_shouldSplitCrossAssetTransferIntoSourceExpenseAndTargetIncomeOnTrackerTotals() {
+		Asset czk = Asset.builder().code("CZK").scale(2).build();
+		Asset eur = Asset.builder().code("EUR").scale(2).build();
+		tracker.setPreferredDisplayAsset(czk);
+
+		Holding eurHolding = Holding.builder()
+				.id(UUID.randomUUID())
+				.account(holdingB.getAccount())
+				.asset(Asset.builder().code("EUR").build())
+				.currentAmount(20_000)
+				.active(true)
+				.build();
+
+		Transaction transfer = Transaction.builder()
+				.id(UUID.randomUUID())
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.TRANSFER)
+				.status(TransactionStatus.COMPLETED)
+				.sourceHolding(holdingA)
+				.targetHolding(eurHolding)
+				.amount(100L)
+				.settledAmount(4L)
+				.feeAmount(0L)
+				.currencyCode("CZK")
+				.transactionDate(Instant.parse("2026-04-22T10:00:00Z"))
+				.build();
+
+		Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Order.desc("transactionDate")));
+
+		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+				.thenReturn(new PageImpl<>(List.of(transfer), pageable, 1));
+		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(transfer));
+		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK", "EUR"))).thenReturn(Set.of(czk, eur));
+		when(exchangeRateService.convertAmount(eq(4L), eq(eur), eq(czk), any(Instant.class))).thenReturn(120L);
+		when(transactionMapper.toResponse(transfer)).thenReturn(minimalResponse(transfer));
+
+		TransactionPageResponseDto result = service.transactionFindAllPageable(
+				user,
+				trackerId,
+				new TransactionFilter(null, null, null, null, null, null, null, TransactionAmountRateMode.NOW),
+				pageable
+		);
+
+		assertThat(result.totals().byAsset()).hasSize(2);
+		assertThat(result.totals().byAsset().get(0).assetCode()).isEqualTo("CZK");
+		assertThat(result.totals().byAsset().get(0).incomeAmount()).isEqualTo(0L);
+		assertThat(result.totals().byAsset().get(0).expenseAmount()).isEqualTo(100L);
+		assertThat(result.totals().byAsset().get(1).assetCode()).isEqualTo("EUR");
+		assertThat(result.totals().byAsset().get(1).incomeAmount()).isEqualTo(4L);
+		assertThat(result.totals().converted().incomeAmount()).isEqualTo(120L);
+		assertThat(result.totals().converted().expenseAmount()).isEqualTo(100L);
+
+		assertThat(result.content()).hasSize(1);
+		assertThat(result.content().get(0).convertedAmount()).isEqualTo(100L);
+		assertThat(result.content().get(0).convertedSourceAmount()).isEqualTo(100L);
+		assertThat(result.content().get(0).convertedTargetAmount()).isEqualTo(120L);
 	}
 
 	@Test

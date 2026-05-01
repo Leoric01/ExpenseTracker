@@ -185,7 +185,6 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		if (sourceHoldingId.equals(targetHoldingId)) {
 			throw new OperationNotPermittedException("Source and target holdings must be different");
 		}
-		ResolvedAssetExchangeAmounts resolved = resolveAssetExchangeAmounts(amountInput, feeInput, settledInput, exchangeRate);
 
 		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
 		Holding source = getHoldingOrThrow(sourceHoldingId);
@@ -199,6 +198,15 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		if (source.getAsset().getCode().equalsIgnoreCase(target.getAsset().getCode())) {
 			throw new AssetExchangeSameAssetException("Asset exchange requires different source and target assets");
 		}
+
+		ResolvedAssetExchangeAmounts resolved = resolveAssetExchangeAmounts(
+				amountInput,
+				feeInput,
+				settledInput,
+				exchangeRate,
+				source.getAsset().getScale(),
+				target.getAsset().getScale()
+		);
 
 		long sourceDeduction = resolved.amount();
 		long targetAddition = resolved.settledAmount();
@@ -259,7 +267,9 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 			Long amountInput,
 			Long feeInput,
 			Long settledInput,
-			BigDecimal exchangeRateInput
+			BigDecimal exchangeRateInput,
+			int sourceAssetScale,
+			int targetAssetScale
 	) {
 		if (amountInput == null || amountInput <= 0) {
 			throw new TransferAmountInputMissingException("Asset exchange requires a positive amount input");
@@ -291,8 +301,10 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		if (hasSettled) {
 			settled = settledInput;
 		} else {
+			BigDecimal targetMinorPerSourceMinor = minorUnitScaleFactor(targetAssetScale - sourceAssetScale);
 			settled = BigDecimal.valueOf(principal)
 					.multiply(exchangeRateInput)
+					.multiply(targetMinorPerSourceMinor)
 					.setScale(0, RoundingMode.HALF_UP)
 					.longValueExact();
 		}
@@ -303,9 +315,14 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				throw new AssetExchangeSettledAmountRequiredException(
 						"Asset exchange cannot derive exchangeRate when principal amount is zero");
 			}
+			BigDecimal sourceMajorPerTargetMajor = minorUnitScaleFactor(sourceAssetScale - targetAssetScale);
 			effectiveExchangeRate = BigDecimal.valueOf(settled)
-					.divide(BigDecimal.valueOf(principal), 8, RoundingMode.HALF_UP);
+					.divide(BigDecimal.valueOf(principal), 16, RoundingMode.HALF_UP)
+					.multiply(sourceMajorPerTargetMajor)
+					.setScale(targetAssetScale, RoundingMode.HALF_UP);
 		}
+
+		effectiveExchangeRate = effectiveExchangeRate.setScale(targetAssetScale, RoundingMode.HALF_UP);
 
 		TransferAmountCalculationMode mode;
 		if (hasSettled && hasRate) {
@@ -324,6 +341,16 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				false,
 				effectiveExchangeRate
 		);
+	}
+
+	private BigDecimal minorUnitScaleFactor(int exponent) {
+		if (exponent == 0) {
+			return BigDecimal.ONE;
+		}
+		if (exponent > 0) {
+			return BigDecimal.TEN.pow(exponent);
+		}
+		return BigDecimal.ONE.divide(BigDecimal.TEN.pow(-exponent), 16, RoundingMode.HALF_UP);
 	}
 
 	private long safeSubtract(long left, long right, String targetField) {

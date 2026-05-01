@@ -220,6 +220,7 @@ class TransactionV2ServiceImplTest {
 
 	@Test
 	void createAssetExchange_shouldComputeSettledFromAmountFeeAndExchangeRate() {
+		source.setAsset(Asset.builder().code("CZK").scale(2).build());
 		target.setAsset(Asset.builder().code("EUR").scale(2).build());
 
 		CreateAssetExchangeV2RequestDto request = new CreateAssetExchangeV2RequestDto(
@@ -254,7 +255,7 @@ class TransactionV2ServiceImplTest {
 		assertThat(response.sourceHoldingName()).isEqualTo("Source");
 		assertThat(response.targetHoldingName()).isEqualTo("Target");
 		assertThat(response.currencyCode()).isEqualTo("CZK");
-		assertThat(response.sourceAssetScale()).isEqualTo(0);
+		assertThat(response.sourceAssetScale()).isEqualTo(2);
 		assertThat(response.targetAssetScale()).isEqualTo(2);
 		assertThat(source.getCurrentAmount()).isEqualTo(900L);
 		assertThat(target.getCurrentAmount()).isEqualTo(390L);
@@ -262,7 +263,8 @@ class TransactionV2ServiceImplTest {
 
 	@Test
 	void createAssetExchange_shouldDeriveExchangeRateWhenSettledProvidedWithoutRate() {
-		target.setAsset(Asset.builder().code("BTC").scale(8).build());
+		source.setAsset(Asset.builder().code("BTC").scale(8).build());
+		target.setAsset(Asset.builder().code("CZK").scale(2).build());
 
 		CreateAssetExchangeV2RequestDto request = new CreateAssetExchangeV2RequestDto(
 				source.getId(),
@@ -289,7 +291,7 @@ class TransactionV2ServiceImplTest {
 		CreateAssetExchangeV2ResponseDto response = service.createAssetExchange(user, trackerId, request);
 
 		assertThat(response.exchangeRate()).isNotNull();
-		assertThat(response.exchangeRate()).isEqualByComparingTo("0.00100100");
+		assertThat(response.exchangeRate()).isEqualByComparingTo("1001.00");
 		assertThat(response.amount()).isEqualTo(1_000_000L);
 		assertThat(response.feeAmount()).isEqualTo(1_000L);
 		assertThat(response.settledAmount()).isEqualTo(1_000L);
@@ -312,6 +314,10 @@ class TransactionV2ServiceImplTest {
 				null
 		);
 
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(source.getId())).thenReturn(Optional.of(source));
+		when(holdingRepository.findById(target.getId())).thenReturn(Optional.of(target));
+
 		assertThatThrownBy(() -> service.createAssetExchange(user, trackerId, request))
 				.isInstanceOf(AssetExchangeSettledAmountRequiredException.class);
 	}
@@ -332,6 +338,10 @@ class TransactionV2ServiceImplTest {
 				null,
 				null
 		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(source.getId())).thenReturn(Optional.of(source));
+		when(holdingRepository.findById(target.getId())).thenReturn(Optional.of(target));
 
 		assertThatThrownBy(() -> service.createAssetExchange(user, trackerId, request))
 				.isInstanceOf(AssetExchangeAmountLessThanFeeException.class);

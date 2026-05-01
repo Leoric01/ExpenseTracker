@@ -165,18 +165,18 @@ public class TransactionServiceImpl implements TransactionService {
 
 		Map<String, Asset> pageAssetByCodeUpper = buildAssetByCodeUpper(transactionPage.getContent());
 		Instant nowInstant = Instant.now();
-		Map<UUID, Long> convertedAmountById = new HashMap<>();
+		Map<UUID, ConvertedAmounts> convertedById = new HashMap<>();
 		for (Transaction transaction : transactionPage.getContent()) {
-			convertedAmountById.put(
+			convertedById.put(
 					transaction.getId(),
-					resolveConvertedAmount(transaction, displayAsset, pageAssetByCodeUpper, rateMode, nowInstant)
+					resolveConvertedAmounts(transaction, filter.holdingId(), displayAsset, pageAssetByCodeUpper, rateMode, nowInstant)
 			);
 		}
 
 		List<TransactionPageItemResponseDto> responseContent = content.stream()
 				.map(dto -> toPageItemResponse(
 						dto,
-						convertedAmountById.get(dto.id()),
+						convertedById.get(dto.id()),
 						displayAsset != null ? displayAsset.getCode() : null,
 						displayAsset != null ? displayAsset.getScale() : null
 				))
@@ -206,11 +206,14 @@ public class TransactionServiceImpl implements TransactionService {
 		Map<String, Asset> assetByCodeUpper = buildAssetByCodeUpper(matchingTransactions);
 		Instant nowInstant = Instant.now();
 
+		UUID holdingId = filter.holdingId();
+		TransactionAmountRateMode rateMode = filter.rateMode() != null ? filter.rateMode() : TransactionAmountRateMode.NOW;
+
 		List<AmountSortableTransaction> sortableItems = matchingTransactions.stream()
 				.map(transaction -> new AmountSortableTransaction(
 						transaction,
 						toTransactionResponse(transaction, rootCategoryByCategoryId),
-						resolveConvertedAmount(transaction, displayAsset, assetByCodeUpper, filter.rateMode(), nowInstant)
+						resolveConvertedAmounts(transaction, holdingId, displayAsset, assetByCodeUpper, rateMode, nowInstant)
 				))
 				.sorted(amountSortComparator(amountSortOrder))
 				.toList();
@@ -219,15 +222,15 @@ public class TransactionServiceImpl implements TransactionService {
 				sortableItems.stream().map(AmountSortableTransaction::dto).toList()
 		);
 
-		Map<UUID, Long> convertedAmountById = new HashMap<>();
+		Map<UUID, ConvertedAmounts> convertedById = new HashMap<>();
 		for (AmountSortableTransaction item : sortableItems) {
-			convertedAmountById.putIfAbsent(item.transaction().getId(), item.convertedAmount());
+			convertedById.putIfAbsent(item.transaction().getId(), item.convertedAmounts());
 		}
 
 		List<TransactionPageItemResponseDto> orderedItems = orderedDtosWithScale.stream()
 				.map(dto -> toPageItemResponse(
 						dto,
-						convertedAmountById.get(dto.id()),
+						convertedById.get(dto.id()),
 						displayAsset != null ? displayAsset.getCode() : null,
 						displayAsset != null ? displayAsset.getScale() : null
 				))
@@ -252,43 +255,105 @@ public class TransactionServiceImpl implements TransactionService {
 				: Comparator.nullsLast(Comparator.reverseOrder());
 
 		return Comparator
-				.comparing(AmountSortableTransaction::convertedAmount, convertedComparator)
+				.comparing((AmountSortableTransaction item) -> item.convertedAmounts().effectiveAmount(), convertedComparator)
 				.thenComparing((left, right) -> right.transaction().getTransactionDate().compareTo(left.transaction().getTransactionDate()))
 				.thenComparing((left, right) -> right.transaction().getId().compareTo(left.transaction().getId()));
 	}
 
-	private Long resolveConvertedAmount(
+	private ConvertedAmounts resolveConvertedAmounts(
 			Transaction transaction,
+			UUID holdingId,
 			Asset displayAsset,
 			Map<String, Asset> assetByCodeUpper,
 			TransactionAmountRateMode rateMode,
 			Instant nowInstant
 	) {
-		if (displayAsset == null || transaction.getCurrencyCode() == null) {
-			return null;
+		if (displayAsset == null) {
+			return new ConvertedAmounts(null, null, null);
 		}
 
-		TransactionAmountRateMode effectiveRateMode = rateMode != null ? rateMode : TransactionAmountRateMode.NOW;
-		Instant rateInstant = effectiveRateMode == TransactionAmountRateMode.TRANSACTION_DATE
-				? transaction.getTransactionDate()
-				: nowInstant;
+		Instant rateInstant = resolveRateInstant(transaction, rateMode, nowInstant);
 
-		if (rateInstant == null) {
-			rateInstant = nowInstant;
+		if (transaction.getTransactionType() != TransactionType.TRANSFER
+				|| transaction.getSourceHolding() == null
+				|| transaction.getTargetHolding() == null
+				|| transaction.getSourceHolding().getAsset() == null
+				|| transaction.getTargetHolding().getAsset() == null) {
+			if (transaction.getCurrencyCode() == null) {
+				return new ConvertedAmounts(null, null, null);
+			}
+
+			Long effective = convertToDisplayAmount(
+					transaction.getAmount(),
+					transaction.getCurrencyCode().toUpperCase(),
+					displayAsset,
+					assetByCodeUpper,
+					rateInstant
+			);
+			return new ConvertedAmounts(effective, null, null);
 		}
 
-		return convertToDisplayAmount(
+		String sourceAssetCode = transaction.getSourceHolding().getAsset().getCode().toUpperCase();
+		String targetAssetCode = transaction.getTargetHolding().getAsset().getCode().toUpperCase();
+
+		Long convertedSource = convertToDisplayAmount(
 				transaction.getAmount(),
-				transaction.getCurrencyCode().toUpperCase(),
+				sourceAssetCode,
 				displayAsset,
 				assetByCodeUpper,
 				rateInstant
 		);
+
+		Long convertedTarget = convertToDisplayAmount(
+				resolveTransferSettledAmount(transaction),
+				targetAssetCode,
+				displayAsset,
+				assetByCodeUpper,
+				rateInstant
+		);
+
+		Long effective = resolveEffectiveAmountForSorting(transaction, holdingId, convertedSource, convertedTarget);
+		return new ConvertedAmounts(effective, convertedSource, convertedTarget);
+	}
+
+	private Long resolveEffectiveAmountForSorting(
+			Transaction transaction,
+			UUID holdingId,
+			Long convertedSource,
+			Long convertedTarget
+	) {
+		if (transaction.getTransactionType() != TransactionType.TRANSFER || holdingId == null) {
+			return convertedSource;
+		}
+
+		if (transaction.getSourceHolding() != null && holdingId.equals(transaction.getSourceHolding().getId())) {
+			return convertedSource;
+		}
+		if (transaction.getTargetHolding() != null && holdingId.equals(transaction.getTargetHolding().getId())) {
+			return convertedTarget;
+		}
+		return convertedSource;
+	}
+
+	private Instant resolveRateInstant(Transaction transaction, TransactionAmountRateMode rateMode, Instant nowInstant) {
+		TransactionAmountRateMode effectiveRateMode = rateMode != null ? rateMode : TransactionAmountRateMode.NOW;
+		Instant rateInstant = effectiveRateMode == TransactionAmountRateMode.TRANSACTION_DATE
+				? transaction.getTransactionDate()
+				: nowInstant;
+		return rateInstant != null ? rateInstant : nowInstant;
 	}
 
 	private Map<String, Asset> buildAssetByCodeUpper(List<Transaction> transactions) {
 		Set<String> codesUpper = transactions.stream()
-				.map(Transaction::getCurrencyCode)
+				.flatMap(transaction -> java.util.stream.Stream.of(
+						transaction.getCurrencyCode(),
+						transaction.getSourceHolding() != null && transaction.getSourceHolding().getAsset() != null
+								? transaction.getSourceHolding().getAsset().getCode()
+								: null,
+						transaction.getTargetHolding() != null && transaction.getTargetHolding().getAsset() != null
+								? transaction.getTargetHolding().getAsset().getCode()
+								: null
+				))
 				.filter(Objects::nonNull)
 				.map(String::toUpperCase)
 				.collect(Collectors.toSet());
@@ -309,10 +374,14 @@ public class TransactionServiceImpl implements TransactionService {
 
 	private TransactionPageItemResponseDto toPageItemResponse(
 			TransactionResponseDto dto,
-			Long convertedAmount,
+			ConvertedAmounts converted,
 			String convertedInto,
 			Integer convertedAssetScale
 	) {
+		Long convertedAmount = converted != null ? converted.effectiveAmount() : null;
+		Long convertedSourceAmount = converted != null ? converted.sourceAmount() : null;
+		Long convertedTargetAmount = converted != null ? converted.targetAmount() : null;
+
 		return new TransactionPageItemResponseDto(
 				dto.id(),
 				dto.transactionType(),
@@ -346,6 +415,8 @@ public class TransactionServiceImpl implements TransactionService {
 				dto.createdDate(),
 				dto.lastModifiedDate(),
 				convertedAmount,
+				convertedSourceAmount,
+				convertedTargetAmount,
 				convertedInto,
 				convertedAssetScale
 		);
@@ -731,7 +802,15 @@ public class TransactionServiceImpl implements TransactionService {
 
 		Set<String> codesUpper = transactions.stream()
 				.filter(transaction -> transaction.getStatus() == TransactionStatus.COMPLETED)
-				.map(Transaction::getCurrencyCode)
+				.flatMap(transaction -> java.util.stream.Stream.of(
+						transaction.getCurrencyCode(),
+						transaction.getSourceHolding() != null && transaction.getSourceHolding().getAsset() != null
+								? transaction.getSourceHolding().getAsset().getCode()
+								: null,
+						transaction.getTargetHolding() != null && transaction.getTargetHolding().getAsset() != null
+								? transaction.getTargetHolding().getAsset().getCode()
+								: null
+				))
 				.filter(Objects::nonNull)
 				.map(String::toUpperCase)
 				.collect(Collectors.toSet());
@@ -741,9 +820,8 @@ public class TransactionServiceImpl implements TransactionService {
 				: assetRepository.findAllByCodeUpperIn(codesUpper).stream()
 						.collect(Collectors.toMap(asset -> asset.getCode().toUpperCase(), Function.identity()));
 
-		long convertedIncome = 0;
-		long convertedExpense = 0;
-		boolean convertedComplete = displayAsset != null;
+		MutableConvertedTotals convertedTotals = new MutableConvertedTotals();
+		convertedTotals.complete = displayAsset != null;
 		Instant nowInstant = Instant.now();
 
 		for (Transaction transaction : transactions) {
@@ -751,87 +829,87 @@ public class TransactionServiceImpl implements TransactionService {
 				continue;
 			}
 
-			long incomeDelta = 0;
-			long expenseDelta = 0;
+			Instant rateInstant = resolveRateInstant(transaction, rateMode, nowInstant);
 
 			switch (transaction.getTransactionType()) {
-				case INCOME -> incomeDelta += transaction.getAmount();
-				case EXPENSE -> expenseDelta += transaction.getAmount();
+				case INCOME -> applyTotalsDelta(
+						totalsByAsset,
+						convertedTotals,
+						transaction.getCurrencyCode(),
+						transaction.getAmount(),
+						0,
+						displayAsset,
+						assetByCodeUpper,
+						rateInstant
+				);
+				case EXPENSE -> applyTotalsDelta(
+						totalsByAsset,
+						convertedTotals,
+						transaction.getCurrencyCode(),
+						0,
+						transaction.getAmount(),
+						displayAsset,
+						assetByCodeUpper,
+						rateInstant
+				);
 				case BALANCE_ADJUSTMENT -> {
 					if (transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION) {
-						incomeDelta += transaction.getAmount();
+						applyTotalsDelta(
+								totalsByAsset,
+								convertedTotals,
+								transaction.getCurrencyCode(),
+								transaction.getAmount(),
+								0,
+								displayAsset,
+								assetByCodeUpper,
+								rateInstant
+						);
 					} else if (transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.DEDUCTION) {
-						expenseDelta += transaction.getAmount();
+						applyTotalsDelta(
+								totalsByAsset,
+								convertedTotals,
+								transaction.getCurrencyCode(),
+								0,
+								transaction.getAmount(),
+								displayAsset,
+								assetByCodeUpper,
+								rateInstant
+						);
 					}
 				}
 				case TRANSFER -> {
-						boolean internalSameAssetTransfer = isInternalSameAssetTransfer(transaction);
+					String sourceAssetCode = transaction.getSourceHolding() != null && transaction.getSourceHolding().getAsset() != null
+							? transaction.getSourceHolding().getAsset().getCode()
+							: transaction.getCurrencyCode();
+					String targetAssetCode = transaction.getTargetHolding() != null && transaction.getTargetHolding().getAsset() != null
+							? transaction.getTargetHolding().getAsset().getCode()
+							: sourceAssetCode;
+					boolean sameAssetTransfer = isSameAssetTransferByAssetCode(sourceAssetCode, targetAssetCode);
 
-						if (holdingId == null) {
-							if (!internalSameAssetTransfer) {
-								continue;
-							}
-
+					if (holdingId == null) {
+						if (sameAssetTransfer) {
 							long feeEffect = resolveTransferEffectiveFee(transaction);
 							if (feeEffect > 0) {
-								expenseDelta += feeEffect;
+								applyTotalsDelta(totalsByAsset, convertedTotals, sourceAssetCode, 0, feeEffect, displayAsset, assetByCodeUpper, rateInstant);
 							} else if (feeEffect < 0) {
-								incomeDelta -= feeEffect;
+								applyTotalsDelta(totalsByAsset, convertedTotals, sourceAssetCode, -feeEffect, 0, displayAsset, assetByCodeUpper, rateInstant);
 							}
-							break;
+						} else {
+							applyTotalsDelta(totalsByAsset, convertedTotals, sourceAssetCode, 0, transaction.getAmount(), displayAsset, assetByCodeUpper, rateInstant);
+							applyTotalsDelta(totalsByAsset, convertedTotals, targetAssetCode, resolveTransferSettledAmount(transaction), 0, displayAsset, assetByCodeUpper, rateInstant);
 						}
+						break;
+					}
 
-						boolean outgoing = transaction.getSourceHolding() != null && holdingId.equals(transaction.getSourceHolding().getId());
-						boolean incoming = transaction.getTargetHolding() != null && holdingId.equals(transaction.getTargetHolding().getId());
+					boolean outgoing = transaction.getSourceHolding() != null && holdingId.equals(transaction.getSourceHolding().getId());
+					boolean incoming = transaction.getTargetHolding() != null && holdingId.equals(transaction.getTargetHolding().getId());
 
-						if (outgoing) {
-							expenseDelta += transaction.getAmount();
-						}
-						if (incoming) {
-							incomeDelta += internalSameAssetTransfer
-									? resolveTransferSettledAmount(transaction)
-									: transaction.getAmount();
-						}
-				}
-			}
-
-			if (incomeDelta == 0 && expenseDelta == 0) {
-				continue;
-			}
-
-			String assetCode = transaction.getCurrencyCode() == null ? null : transaction.getCurrencyCode().toUpperCase();
-			if (assetCode != null) {
-				MutableAssetTotals totals = totalsByAsset.computeIfAbsent(assetCode, ignored -> new MutableAssetTotals());
-				totals.income += incomeDelta;
-				totals.expense += expenseDelta;
-			}
-
-			if (!convertedComplete) {
-				continue;
-			}
-
-			Instant rateInstant = rateMode == TransactionAmountRateMode.TRANSACTION_DATE
-					? transaction.getTransactionDate()
-					: nowInstant;
-			if (rateInstant == null) {
-				rateInstant = nowInstant;
-			}
-
-			if (incomeDelta > 0) {
-				Long converted = convertToDisplayAmount(incomeDelta, assetCode, displayAsset, assetByCodeUpper, rateInstant);
-				if (converted == null) {
-					convertedComplete = false;
-				} else {
-					convertedIncome += converted;
-				}
-			}
-
-			if (convertedComplete && expenseDelta > 0) {
-				Long converted = convertToDisplayAmount(expenseDelta, assetCode, displayAsset, assetByCodeUpper, rateInstant);
-				if (converted == null) {
-					convertedComplete = false;
-				} else {
-					convertedExpense += converted;
+					if (outgoing) {
+						applyTotalsDelta(totalsByAsset, convertedTotals, sourceAssetCode, 0, transaction.getAmount(), displayAsset, assetByCodeUpper, rateInstant);
+					}
+					if (incoming) {
+						applyTotalsDelta(totalsByAsset, convertedTotals, targetAssetCode, resolveTransferSettledAmount(transaction), 0, displayAsset, assetByCodeUpper, rateInstant);
+					}
 				}
 			}
 		}
@@ -848,13 +926,62 @@ public class TransactionServiceImpl implements TransactionService {
 				.toList();
 
 		TransactionConvertedTotalsDto converted = new TransactionConvertedTotalsDto(
-				convertedComplete ? convertedIncome : null,
-				convertedComplete ? convertedExpense : null,
-				convertedComplete ? convertedIncome - convertedExpense : null,
+				convertedTotals.complete ? convertedTotals.income : null,
+				convertedTotals.complete ? convertedTotals.expense : null,
+				convertedTotals.complete ? convertedTotals.income - convertedTotals.expense : null,
 				displayAsset != null ? displayAsset.getCode() : null
 		);
 
 		return new TransactionTotalsDto(byAsset, converted);
+	}
+
+	private void applyTotalsDelta(
+			Map<String, MutableAssetTotals> totalsByAsset,
+			MutableConvertedTotals convertedTotals,
+			String assetCode,
+			long incomeDelta,
+			long expenseDelta,
+			Asset displayAsset,
+			Map<String, Asset> assetByCodeUpper,
+			Instant rateInstant
+	) {
+		if (incomeDelta == 0 && expenseDelta == 0) {
+			return;
+		}
+
+		String assetCodeUpper = assetCode != null ? assetCode.toUpperCase() : null;
+		if (assetCodeUpper != null) {
+			MutableAssetTotals totals = totalsByAsset.computeIfAbsent(assetCodeUpper, ignored -> new MutableAssetTotals());
+			totals.income += incomeDelta;
+			totals.expense += expenseDelta;
+		}
+
+		if (!convertedTotals.complete) {
+			return;
+		}
+
+		if (incomeDelta > 0) {
+			Long converted = convertToDisplayAmount(incomeDelta, assetCodeUpper, displayAsset, assetByCodeUpper, rateInstant);
+			if (converted == null) {
+				convertedTotals.complete = false;
+				return;
+			}
+			convertedTotals.income += converted;
+		}
+
+		if (expenseDelta > 0) {
+			Long converted = convertToDisplayAmount(expenseDelta, assetCodeUpper, displayAsset, assetByCodeUpper, rateInstant);
+			if (converted == null) {
+				convertedTotals.complete = false;
+				return;
+			}
+			convertedTotals.expense += converted;
+		}
+	}
+
+	private boolean isSameAssetTransferByAssetCode(String sourceAssetCode, String targetAssetCode) {
+		return sourceAssetCode != null
+				&& sourceAssetCode.equalsIgnoreCase(targetAssetCode);
 	}
 
 	private boolean isInternalSameAssetTransfer(Transaction transaction) {
@@ -1391,6 +1518,12 @@ public class TransactionServiceImpl implements TransactionService {
 		private long expense;
 	}
 
+	private static final class MutableConvertedTotals {
+		private long income;
+		private long expense;
+		private boolean complete;
+	}
+
 	private record RootCategoryInfo(
 			UUID id,
 			String name
@@ -1400,7 +1533,14 @@ public class TransactionServiceImpl implements TransactionService {
 	private record AmountSortableTransaction(
 			Transaction transaction,
 			TransactionResponseDto dto,
-			Long convertedAmount
+			ConvertedAmounts convertedAmounts
+	) {
+	}
+
+	private record ConvertedAmounts(
+			Long effectiveAmount,
+			Long sourceAmount,
+			Long targetAmount
 	) {
 	}
 }
