@@ -11,13 +11,16 @@ import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.category.repositories.CategoryRepository;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
+import org.leoric.expensetracker.exchangerate.services.interfaces.ExchangeRateService;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.transaction.TransactionSpecification;
+import org.leoric.expensetracker.transaction.dto.TransactionAmountRateMode;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.dto.PageMetaDto;
 import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionFilter;
+import org.leoric.expensetracker.transaction.dto.TransactionPageItemResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionPageResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionTotalsDto;
@@ -44,11 +47,14 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -67,6 +73,7 @@ public class TransactionServiceImpl implements TransactionService {
 	private final AssetRepository assetRepository;
 	private final TransactionMapper transactionMapper;
 	private final ImageService imageService;
+	private final ExchangeRateService exchangeRateService;
 
 	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
 			"application/pdf",
@@ -111,7 +118,7 @@ public class TransactionServiceImpl implements TransactionService {
 		Set<UUID> explicitCategoryIds = resolveDescendantCategoryIds(filter.categoryId(), childrenByParentId);
 		Set<UUID> searchCategoryIds = resolveSearchMatchedCategoryIds(filter.search(), categories, childrenByParentId);
 
-		Pageable normalizedPageable = normalizeTransactionPageable(pageable);
+		Optional<Sort.Order> amountSortOrder = getAmountSortOrder(pageable);
 
 		Specification<Transaction> specification = TransactionSpecification.filter(
 				trackerId,
@@ -120,20 +127,37 @@ public class TransactionServiceImpl implements TransactionService {
 				searchCategoryIds
 		);
 
+		if (amountSortOrder.isPresent()) {
+			List<Transaction> matchingTransactions = transactionRepository.findAll(specification);
+			TransactionTotalsDto totals = calculateTotals(matchingTransactions, filter.holdingId());
+			return buildAmountSortedPageResponse(
+					trackerId,
+					filter,
+					pageable,
+					amountSortOrder.get(),
+					matchingTransactions,
+					rootCategoryByCategoryId,
+					totals
+			);
+		}
+
+		Pageable normalizedPageable = normalizeTransactionPageable(pageable);
 		Page<Transaction> transactionPage = transactionRepository.findAll(specification, normalizedPageable);
 
-		TransactionTotalsDto totals = calculateTotals(
-				transactionRepository.findAll(specification),
-				filter.holdingId()
+		TransactionTotalsDto totals = calculateTotals(transactionRepository.findAll(specification), filter.holdingId());
+
+		List<TransactionResponseDto> content = enrichWithAssetScale(
+				transactionPage.getContent().stream()
+						.map(transaction -> toTransactionResponse(transaction, rootCategoryByCategoryId))
+						.toList()
 		);
 
-		List<TransactionResponseDto> content = transactionPage.getContent().stream()
-				.map(transaction -> toTransactionResponse(transaction, rootCategoryByCategoryId))
+		List<TransactionPageItemResponseDto> responseContent = content.stream()
+				.map(dto -> toPageItemResponse(dto, null, null))
 				.toList();
-		content = enrichWithAssetScale(content);
 
 		return new TransactionPageResponseDto(
-				content,
+				responseContent,
 				new PageMetaDto(
 						transactionPage.getSize(),
 						transactionPage.getNumber(),
@@ -141,6 +165,155 @@ public class TransactionServiceImpl implements TransactionService {
 						transactionPage.getTotalPages()
 				),
 				totals
+		);
+	}
+
+	private TransactionPageResponseDto buildAmountSortedPageResponse(
+			UUID trackerId,
+			TransactionFilter filter,
+			Pageable pageable,
+			Sort.Order amountSortOrder,
+			List<Transaction> matchingTransactions,
+			Map<UUID, RootCategoryInfo> rootCategoryByCategoryId,
+			TransactionTotalsDto totals
+	) {
+		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
+		Asset displayAsset = tracker.getPreferredDisplayAsset();
+
+		Set<String> codesUpper = matchingTransactions.stream()
+				.map(Transaction::getCurrencyCode)
+				.filter(Objects::nonNull)
+				.map(String::toUpperCase)
+				.collect(Collectors.toSet());
+
+		Map<String, Asset> assetByCodeUpper = codesUpper.isEmpty()
+				? Map.of()
+				: assetRepository.findAllByCodeUpperIn(codesUpper).stream()
+						.collect(Collectors.toMap(asset -> asset.getCode().toUpperCase(), Function.identity()));
+
+		List<AmountSortableTransaction> sortableItems = matchingTransactions.stream()
+				.map(transaction -> new AmountSortableTransaction(
+						transaction,
+						toTransactionResponse(transaction, rootCategoryByCategoryId),
+						resolveConvertedAmount(transaction, displayAsset, assetByCodeUpper, filter.rateMode())
+				))
+				.sorted(amountSortComparator(amountSortOrder))
+				.toList();
+
+		List<TransactionResponseDto> orderedDtosWithScale = enrichWithAssetScale(
+				sortableItems.stream().map(AmountSortableTransaction::dto).toList()
+		);
+
+		Map<UUID, Long> convertedAmountById = sortableItems.stream()
+				.collect(Collectors.toMap(
+						item -> item.transaction().getId(),
+						AmountSortableTransaction::convertedAmount,
+						(existing, replacement) -> existing
+				));
+
+		List<TransactionPageItemResponseDto> orderedItems = orderedDtosWithScale.stream()
+				.map(dto -> toPageItemResponse(
+						dto,
+						convertedAmountById.get(dto.id()),
+						displayAsset != null ? displayAsset.getCode() : null
+				))
+				.toList();
+
+		long totalElements = orderedItems.size();
+		int fromIndex = (int) Math.min(pageable.getOffset(), totalElements);
+		int toIndex = (int) Math.min((long) fromIndex + pageable.getPageSize(), totalElements);
+		List<TransactionPageItemResponseDto> pageContent = orderedItems.subList(fromIndex, toIndex);
+		int totalPages = pageable.getPageSize() == 0 ? 0 : (int) Math.ceil((double) totalElements / pageable.getPageSize());
+
+		return new TransactionPageResponseDto(
+				pageContent,
+				new PageMetaDto(pageable.getPageSize(), pageable.getPageNumber(), totalElements, totalPages),
+				totals
+		);
+	}
+
+	private Comparator<AmountSortableTransaction> amountSortComparator(Sort.Order order) {
+		Comparator<Long> convertedComparator = order.isAscending()
+				? Comparator.nullsFirst(Long::compareTo)
+				: Comparator.nullsLast(Comparator.reverseOrder());
+
+		return Comparator
+				.comparing(AmountSortableTransaction::convertedAmount, convertedComparator)
+				.thenComparing((left, right) -> right.transaction().getTransactionDate().compareTo(left.transaction().getTransactionDate()))
+				.thenComparing((left, right) -> right.transaction().getId().compareTo(left.transaction().getId()));
+	}
+
+	private Long resolveConvertedAmount(
+			Transaction transaction,
+			Asset displayAsset,
+			Map<String, Asset> assetByCodeUpper,
+			TransactionAmountRateMode rateMode
+	) {
+		if (displayAsset == null || transaction.getCurrencyCode() == null) {
+			return null;
+		}
+
+		if (displayAsset.getCode().equalsIgnoreCase(transaction.getCurrencyCode())) {
+			return transaction.getAmount();
+		}
+
+		Asset transactionAsset = assetByCodeUpper.get(transaction.getCurrencyCode().toUpperCase());
+		if (transactionAsset == null) {
+			return null;
+		}
+
+		Instant rateInstant = rateMode == TransactionAmountRateMode.TRANSACTION_DATE
+				? transaction.getTransactionDate()
+				: Instant.now();
+
+		if (rateInstant == null) {
+			rateInstant = Instant.now();
+		}
+
+		return exchangeRateService.convertAmount(transaction.getAmount(), transactionAsset, displayAsset, rateInstant);
+	}
+
+	private Optional<Sort.Order> getAmountSortOrder(Pageable pageable) {
+		return pageable.getSort().stream()
+				.filter(order -> "amount".equals(order.getProperty()))
+				.findFirst();
+	}
+
+	private TransactionPageItemResponseDto toPageItemResponse(
+			TransactionResponseDto dto,
+			Long convertedAmount,
+			String convertedInto
+	) {
+		return new TransactionPageItemResponseDto(
+				dto.id(),
+				dto.transactionType(),
+				dto.status(),
+				dto.holdingId(),
+				dto.holdingName(),
+				dto.sourceHoldingId(),
+				dto.sourceHoldingName(),
+				dto.targetHoldingId(),
+				dto.targetHoldingName(),
+				dto.categoryId(),
+				dto.categoryName(),
+				dto.rootCategoryId(),
+				dto.rootCategoryName(),
+				dto.amount(),
+				dto.assetCode(),
+				dto.assetScale(),
+				dto.exchangeRate(),
+				dto.feeAmount(),
+				dto.settledAmount(),
+				dto.balanceAdjustmentDirection(),
+				dto.transactionDate(),
+				dto.description(),
+				dto.note(),
+				dto.externalRef(),
+				dto.attachments(),
+				dto.createdDate(),
+				dto.lastModifiedDate(),
+				convertedAmount,
+				convertedInto
 		);
 	}
 
@@ -891,6 +1064,13 @@ public class TransactionServiceImpl implements TransactionService {
 	private record RootCategoryInfo(
 			UUID id,
 			String name
+	) {
+	}
+
+	private record AmountSortableTransaction(
+			Transaction transaction,
+			TransactionResponseDto dto,
+			Long convertedAmount
 	) {
 	}
 }

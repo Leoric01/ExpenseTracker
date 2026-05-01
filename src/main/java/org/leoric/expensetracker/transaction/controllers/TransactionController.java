@@ -6,6 +6,7 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
+import org.leoric.expensetracker.transaction.dto.TransactionAmountRateMode;
 import org.leoric.expensetracker.transaction.dto.TransactionFilter;
 import org.leoric.expensetracker.transaction.dto.TransactionPageResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
@@ -65,6 +66,7 @@ public class TransactionController {
 			@RequestParam(required = false) TransactionStatus status,
 			@RequestParam(required = false) Instant dateFrom,
 			@RequestParam(required = false) Instant dateTo,
+			@RequestParam(defaultValue = "NOW") TransactionAmountRateMode rateMode,
 			@ParameterObject Pageable pageable) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 
@@ -75,7 +77,8 @@ public class TransactionController {
 				transactionType,
 				status,
 				dateFrom,
-				dateTo
+				dateTo,
+				rateMode
 		);
 
 		return ResponseEntity.ok(transactionService.transactionFindAllPageable(currentUser, trackerId, filter, pageable));
