@@ -16,9 +16,9 @@ public interface AccountService {
 
 	AccountResponseDto accountCreate(User currentUser, UUID trackerId, CreateAccountRequestDto request);
 
-	AccountResponseDto accountFindById(User currentUser, UUID trackerId, UUID accountId);
+	AccountResponseDto accountFindById(UUID trackerId, UUID accountId);
 
-	Page<AccountResponseDto> accountFindAll(User currentUser, UUID trackerId, String search, Pageable pageable);
+	Page<AccountResponseDto> accountFindAll(UUID trackerId, String search, Pageable pageable);
 
 	AccountResponseDto accountUpdate(User currentUser, UUID trackerId, UUID accountId, UpdateAccountRequestDto request);
 

@@ -61,6 +61,10 @@ public class HabitServiceImpl implements HabitService {
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final HabitMapper habitMapper;
 
+	private static Habit apply(Habit a, Habit b) {
+		return a;
+	}
+
 	@Override
 	@Transactional
 	public HabitResponseDto habitCreate(User currentUser, UUID trackerId, HabitUpsertRequestDto request) {
@@ -81,9 +85,9 @@ public class HabitServiceImpl implements HabitService {
 				.validFrom(request.validFrom())
 				.validTo(request.validTo())
 				.active(request.active())
-				.sortOrder(defaultIfNull(request.sortOrder(), 0))
-				.satisfactionScore(defaultIfNull(request.satisfactionScore(), 0))
-				.utilityScore(defaultIfNull(request.utilityScore(), 0))
+				.sortOrder(defaultIfNull(request.sortOrder()))
+				.satisfactionScore(defaultIfNull(request.satisfactionScore()))
+				.utilityScore(defaultIfNull(request.utilityScore()))
 				.estimatedPrice(request.estimatedPrice())
 				.build();
 
@@ -153,9 +157,9 @@ public class HabitServiceImpl implements HabitService {
 		habit.setValidFrom(request.validFrom());
 		habit.setValidTo(request.validTo());
 		habit.setActive(request.active());
-		habit.setSortOrder(defaultIfNull(request.sortOrder(), 0));
-		habit.setSatisfactionScore(defaultIfNull(request.satisfactionScore(), 0));
-		habit.setUtilityScore(defaultIfNull(request.utilityScore(), 0));
+		habit.setSortOrder(defaultIfNull(request.sortOrder()));
+		habit.setSatisfactionScore(defaultIfNull(request.satisfactionScore()));
+		habit.setUtilityScore(defaultIfNull(request.utilityScore()));
 		habit.setEstimatedPrice(request.estimatedPrice());
 
 		habit = habitRepository.save(habit);
@@ -243,7 +247,7 @@ public class HabitServiceImpl implements HabitService {
 
 		Map<UUID, Habit> habitsById = slots.stream()
 				.map(HabitScheduleSlot::getHabit)
-				.collect(Collectors.toMap(Habit::getId, Function.identity(), (a, b) -> a));
+				.collect(Collectors.toMap(Habit::getId, Function.identity(), HabitServiceImpl::apply));
 
 		List<HabitCompletion> completions = habitCompletionRepository.findAllByHabitIdsAndDateRange(
 				habitsById.keySet(),
@@ -286,7 +290,7 @@ public class HabitServiceImpl implements HabitService {
 						.habit(habit)
 						.dayOfWeek(slot.dayOfWeek())
 						.dayBlock(slot.dayBlock())
-						.sortOrder(defaultIfNull(slot.sortOrder(), 0))
+						.sortOrder(defaultIfNull(slot.sortOrder()))
 						.build())
 				.toList();
 
@@ -308,7 +312,7 @@ public class HabitServiceImpl implements HabitService {
 		for (HabitAgendaProjection row : rows) {
 			HabitAgendaAccumulator acc = itemsByHabitId.computeIfAbsent(
 					row.getHabitId(),
-					id -> new HabitAgendaAccumulator(
+					_ -> new HabitAgendaAccumulator(
 							row.getHabitId(),
 							row.getHabitName(),
 							row.getHabitDescription(),
@@ -326,8 +330,8 @@ public class HabitServiceImpl implements HabitService {
 									row.getCompletionDate(),
 									row.getCompletionStatus(),
 									row.getCompletionNote(),
-									defaultIfNull(row.getCompletionSatisfactionScore(), 0),
-									defaultIfNull(row.getCompletionExecutionScore(), 0),
+									defaultIfNull(row.getCompletionSatisfactionScore()),
+									defaultIfNull(row.getCompletionExecutionScore()),
 									row.getCompletionActualPrice(),
 									toOffsetDateTime(row.getCompletedAt())
 							)
@@ -540,8 +544,8 @@ public class HabitServiceImpl implements HabitService {
 		return date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 	}
 
-	private Integer defaultIfNull(Integer value, Integer defaultValue) {
-		return value == null ? defaultValue : value;
+	private Integer defaultIfNull(Integer value) {
+		return value == null ? (Integer) 0 : value;
 	}
 
 	private OffsetDateTime toOffsetDateTime(Instant instant) {

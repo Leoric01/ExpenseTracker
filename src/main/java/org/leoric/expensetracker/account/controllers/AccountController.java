@@ -55,7 +55,7 @@ public class AccountController {
 			@RequestParam(required = false) String search,
 			@ParameterObject Pageable pageable) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
-		return ResponseEntity.ok(accountService.accountFindAll(currentUser, trackerId, search, pageable));
+		return ResponseEntity.ok(accountService.accountFindAll(trackerId, search, pageable));
 	}
 
 	@GetMapping("/{trackerId}/{accountId}")
@@ -64,7 +64,7 @@ public class AccountController {
 			@PathVariable UUID trackerId,
 			@PathVariable UUID accountId) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
-		return ResponseEntity.ok(accountService.accountFindById(currentUser, trackerId, accountId));
+		return ResponseEntity.ok(accountService.accountFindById(trackerId, accountId));
 	}
 
 	@PatchMapping("/{trackerId}/{accountId}")

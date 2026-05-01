@@ -20,8 +20,6 @@ public interface DailyNutritionLogRepository extends JpaRepository<DailyNutritio
 
 	Optional<DailyNutritionLog> findByExpenseTrackerIdAndLogDate(UUID expenseTrackerId, LocalDate logDate);
 
-	boolean existsByExpenseTrackerIdAndLogDate(UUID expenseTrackerId, LocalDate logDate);
-
 	@Query("""
 			SELECT d FROM DailyNutritionLog d
 			WHERE d.expenseTracker.id = :trackerId

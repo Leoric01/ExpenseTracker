@@ -3,6 +3,7 @@ package org.leoric.expensetracker.transaction;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
+import org.leoric.expensetracker.account.models.Account;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.transaction.dto.TransactionFilter;
@@ -15,7 +16,6 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class TransactionSpecification {
-
 	private TransactionSpecification() {
 	}
 
@@ -25,12 +25,15 @@ public final class TransactionSpecification {
 			Set<UUID> explicitCategoryIds,
 			Set<UUID> searchCategoryIds
 	) {
-		return (root, query, cb) -> {
+		return (root, _, cb) -> {
 			List<Predicate> predicates = new ArrayList<>();
 
 			Join<Transaction, Holding> holdingJoin = root.join("holding", JoinType.LEFT);
 			Join<Transaction, Holding> sourceHoldingJoin = root.join("sourceHolding", JoinType.LEFT);
 			Join<Transaction, Holding> targetHoldingJoin = root.join("targetHolding", JoinType.LEFT);
+			Join<Holding, Account> holdingAccountJoin = holdingJoin.join("account", JoinType.LEFT);
+			Join<Holding, Account> sourceHoldingAccountJoin = sourceHoldingJoin.join("account", JoinType.LEFT);
+			Join<Holding, Account> targetHoldingAccountJoin = targetHoldingJoin.join("account", JoinType.LEFT);
 			Join<Transaction, Category> categoryJoin = root.join("category", JoinType.LEFT);
 
 			predicates.add(cb.equal(root.get("expenseTracker").get("id"), trackerId));
@@ -67,15 +70,15 @@ public final class TransactionSpecification {
 				String like = "%" + filter.search().toLowerCase() + "%";
 
 				List<Predicate> searchPredicates = new ArrayList<>();
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(root.get("description"), "")), like));
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(root.get("note"), "")), like));
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(root.get("currencyCode"), "")), like));
+				searchPredicates.add(likeNullable(cb, root.get("description"), like));
+				searchPredicates.add(likeNullable(cb, root.get("note"), like));
+				searchPredicates.add(likeNullable(cb, root.get("currencyCode"), like));
 				searchPredicates.add(cb.like(cb.lower(root.get("transactionType").as(String.class)), like));
 				searchPredicates.add(cb.like(cb.lower(root.get("status").as(String.class)), like));
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(holdingJoin.get("account").get("name"), "")), like));
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(sourceHoldingJoin.get("account").get("name"), "")), like));
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(targetHoldingJoin.get("account").get("name"), "")), like));
-				searchPredicates.add(cb.like(cb.lower(cb.coalesce(categoryJoin.get("name"), "")), like));
+				searchPredicates.add(likeNullable(cb, holdingAccountJoin.get("name"), like));
+				searchPredicates.add(likeNullable(cb, sourceHoldingAccountJoin.get("name"), like));
+				searchPredicates.add(likeNullable(cb, targetHoldingAccountJoin.get("name"), like));
+				searchPredicates.add(likeNullable(cb, categoryJoin.get("name"), like));
 
 				if (!searchCategoryIds.isEmpty()) {
 					searchPredicates.add(categoryJoin.get("id").in(searchCategoryIds));
@@ -86,5 +89,11 @@ public final class TransactionSpecification {
 
 			return cb.and(predicates.toArray(new Predicate[0]));
 		};
+	}
+
+	private static Predicate likeNullable(jakarta.persistence.criteria.CriteriaBuilder cb,
+	                                      jakarta.persistence.criteria.Expression<String> expression,
+	                                      String like) {
+		return cb.and(cb.isNotNull(expression), cb.like(cb.lower(expression), like));
 	}
 }

@@ -11,8 +11,6 @@ import java.math.RoundingMode;
 @Service
 public class BodyFatCalculationServiceImpl implements BodyFatCalculationService {
 
-	private static final int SCALE = 2;
-
 	@Override
 	public BigDecimal calculate(BodyFatCalculationCommand command) {
 		validate(command);

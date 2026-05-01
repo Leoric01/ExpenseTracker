@@ -9,18 +9,20 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.category.repositories.CategoryRepository;
+import org.leoric.expensetracker.exchangerate.services.interfaces.ExchangeRateService;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
-import org.leoric.expensetracker.exchangerate.services.interfaces.ExchangeRateService;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.holding.models.Holding;
+import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.transaction.TransactionSpecification;
-import org.leoric.expensetracker.transaction.dto.TransactionAmountRateMode;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.dto.PageMetaDto;
+import org.leoric.expensetracker.transaction.dto.TransactionAmountRateMode;
 import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
-import org.leoric.expensetracker.transaction.dto.TransactionFilter;
 import org.leoric.expensetracker.transaction.dto.TransactionConvertedTotalsDto;
+import org.leoric.expensetracker.transaction.dto.TransactionFilter;
 import org.leoric.expensetracker.transaction.dto.TransactionPageItemResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionPageResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
@@ -36,8 +38,6 @@ import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.repositories.TransactionAttachmentRepository;
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.leoric.expensetracker.transaction.services.interfaces.TransactionService;
-import org.leoric.expensetracker.holding.models.Holding;
-import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -106,12 +106,16 @@ public class TransactionServiceImpl implements TransactionService {
 		assertTransactionBelongsToTracker(transaction, trackerId);
 		return enrichWithAssetScale(normalizeDisplayedExchangeRate(transactionMapper.toResponse(transaction)));
 	}
+
 	@Override
 	@Transactional(readOnly = true)
 	public TransactionPageResponseDto transactionFindAllPageable(User currentUser, UUID trackerId, TransactionFilter filter, Pageable pageable) {
 		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
 		Asset displayAsset = tracker.getPreferredDisplayAsset();
 		TransactionAmountRateMode rateMode = filter.rateMode() != null ? filter.rateMode() : TransactionAmountRateMode.NOW;
+		log.debug("transactionFindAllPageable called: trackerId={}, search='{}', categoryId={}, holdingId={}, type={}, status={}, dateFrom={}, dateTo={}, rateMode={}, pageable={}",
+		          trackerId, filter.search(), filter.categoryId(), filter.holdingId(), filter.transactionType(), filter.status(),
+		          filter.dateFrom(), filter.dateTo(), rateMode, pageable);
 
 		List<Category> categories = categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId);
 
@@ -123,6 +127,11 @@ public class TransactionServiceImpl implements TransactionService {
 
 		Set<UUID> explicitCategoryIds = resolveDescendantCategoryIds(filter.categoryId(), childrenByParentId);
 		Set<UUID> searchCategoryIds = resolveSearchMatchedCategoryIds(filter.search(), categories, childrenByParentId);
+		boolean b = filter.search() != null && !filter.search().isBlank();
+		if (b) {
+			log.debug("transaction search context: trackerId={}, explicitCategoryIdsCount={}, searchCategoryIdsCount={}",
+			          trackerId, explicitCategoryIds.size(), searchCategoryIds.size());
+		}
 
 		Optional<Sort.Order> amountSortOrder = getAmountSortOrder(pageable);
 
@@ -149,6 +158,17 @@ public class TransactionServiceImpl implements TransactionService {
 
 		Pageable normalizedPageable = normalizeTransactionPageable(pageable);
 		Page<Transaction> transactionPage = transactionRepository.findAll(specification, normalizedPageable);
+		if (b) {
+			log.debug("transaction search result page: trackerId={}, search='{}', returnedElements={}, totalElements={}, pageNumber={}, pageSize={}",
+			          trackerId, filter.search(), transactionPage.getNumberOfElements(), transactionPage.getTotalElements(),
+			          transactionPage.getNumber(), transactionPage.getSize());
+			if (transactionPage.getTotalElements() == 0) {
+				long trackerTransactionCount = transactionRepository.count((root, _, cb) ->
+						                                                           cb.equal(root.get("expenseTracker").get("id"), trackerId));
+				log.warn("transaction search returned 0 rows: trackerId={}, search='{}', trackerTransactionCount={}",
+				         trackerId, filter.search(), trackerTransactionCount);
+			}
+		}
 
 		TransactionTotalsDto totals = calculateTotals(
 				transactionRepository.findAll(specification),
@@ -488,7 +508,6 @@ public class TransactionServiceImpl implements TransactionService {
 			return;
 		}
 
-
 		Holding oldHolding = transaction.getHolding();
 		Holding newHolding = oldHolding;
 		if (request.holdingId() != null) {
@@ -699,6 +718,7 @@ public class TransactionServiceImpl implements TransactionService {
 		         currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
 		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
 	}
+
 	private TransactionResponseDto toTransactionResponse(Transaction transaction, Map<UUID, RootCategoryInfo> rootCategoryByCategoryId) {
 		TransactionResponseDto dto = normalizeDisplayedExchangeRate(transactionMapper.toResponse(transaction));
 
@@ -774,7 +794,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		return dtos.stream()
 				.map(dto -> withAssetScale(dto,
-						dto.assetCode() == null ? null : scaleByCodeUpper.get(dto.assetCode().toUpperCase())))
+				                           dto.assetCode() == null ? null : scaleByCodeUpper.get(dto.assetCode().toUpperCase())))
 				.toList();
 	}
 
@@ -840,7 +860,7 @@ public class TransactionServiceImpl implements TransactionService {
 		Map<String, Asset> assetByCodeUpper = codesUpper.isEmpty()
 				? Map.of()
 				: assetRepository.findAllByCodeUpperIn(codesUpper).stream()
-						.collect(Collectors.toMap(asset -> asset.getCode().toUpperCase(), Function.identity()));
+				.collect(Collectors.toMap(asset -> asset.getCode().toUpperCase(), Function.identity()));
 
 		MutableConvertedTotals convertedTotals = new MutableConvertedTotals();
 		convertedTotals.complete = displayAsset != null;
@@ -1469,6 +1489,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		return current;
 	}
+
 	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {
 		return expenseTrackerRepository.findById(trackerId)
 				.orElseThrow(() -> new EntityNotFoundException("Expense tracker not found"));

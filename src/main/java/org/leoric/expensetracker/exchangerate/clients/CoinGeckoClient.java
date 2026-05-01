@@ -12,7 +12,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 /**
- * Client for CoinGecko API (crypto currency prices).
+ * Client for CoinGecko API (cryptocurrency prices).
  * <p>
  * API docs: <a href="https://docs.coingecko.com/v3.0.1/reference/introduction">CoinGecko</a>
  * <p>

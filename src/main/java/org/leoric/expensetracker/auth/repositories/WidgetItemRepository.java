@@ -13,8 +13,6 @@ public interface WidgetItemRepository extends JpaRepository<WidgetItem, UUID> {
 
 	List<WidgetItem> findByUserIdAndWidgetTypeOrderBySortOrder(UUID userId, WidgetType widgetType);
 
-	void deleteByUserIdAndWidgetType(UUID userId, WidgetType widgetType);
-
 	void deleteByUserIdAndWidgetTypeAndEntityId(UUID userId, WidgetType widgetType, UUID entityId);
 
 	boolean existsByUserIdAndWidgetTypeAndEntityId(UUID userId, WidgetType widgetType, UUID entityId);

@@ -19,27 +19,6 @@ public interface HabitCompletionRepository extends JpaRepository<HabitCompletion
 
 	@Query("""
 			SELECT c FROM HabitCompletion c
-			WHERE c.habit.expenseTracker.id = :trackerId
-			AND c.date = :date
-			ORDER BY c.habit.sortOrder ASC, c.habit.name ASC
-			""")
-	List<HabitCompletion> findAllByExpenseTrackerIdAndDate(
-			@Param("trackerId") UUID trackerId,
-			@Param("date") LocalDate date);
-
-	@Query("""
-			SELECT c FROM HabitCompletion c
-			WHERE c.habit.expenseTracker.id = :trackerId
-			AND c.date BETWEEN :startDate AND :endDate
-			ORDER BY c.date ASC, c.habit.sortOrder ASC, c.habit.name ASC
-			""")
-	List<HabitCompletion> findAllByExpenseTrackerIdAndDateRange(
-			@Param("trackerId") UUID trackerId,
-			@Param("startDate") LocalDate startDate,
-			@Param("endDate") LocalDate endDate);
-
-	@Query("""
-			SELECT c FROM HabitCompletion c
 			WHERE c.habit.id IN :habitIds
 			AND c.date BETWEEN :startDate AND :endDate
 			ORDER BY c.date ASC
@@ -48,6 +27,4 @@ public interface HabitCompletionRepository extends JpaRepository<HabitCompletion
 			@Param("habitIds") Collection<UUID> habitIds,
 			@Param("startDate") LocalDate startDate,
 			@Param("endDate") LocalDate endDate);
-
-	boolean existsByHabitIdAndDate(UUID habitId, LocalDate date);
 }

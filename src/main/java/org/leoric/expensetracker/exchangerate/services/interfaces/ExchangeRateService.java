@@ -27,10 +27,6 @@ public interface ExchangeRateService {
 	 */
 	BigDecimal getRate(Asset fromAsset, Asset toAsset, LocalDate date);
 
-	default BigDecimal getRate(Asset fromAsset, Asset toAsset, Instant at) {
-		return getRate(fromAsset, toAsset, at.atZone(ZoneOffset.UTC).toLocalDate());
-	}
-
 	/**
 	 * Convert a minor-unit amount from one asset to another.
 	 * <p>

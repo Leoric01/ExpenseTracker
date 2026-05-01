@@ -20,8 +20,6 @@ public interface DailyBodyMeasurementLogRepository extends JpaRepository<DailyBo
 
 	Optional<DailyBodyMeasurementLog> findByExpenseTrackerIdAndLogDate(UUID expenseTrackerId, LocalDate logDate);
 
-	boolean existsByExpenseTrackerIdAndLogDate(UUID expenseTrackerId, LocalDate logDate);
-
 	@Query("""
 			SELECT d FROM DailyBodyMeasurementLog d
 			WHERE d.expenseTracker.id = :trackerId

@@ -3,18 +3,13 @@ package org.leoric.expensetracker.category.services;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.leoric.expensetracker.auth.models.User;
-import org.leoric.expensetracker.budget.mapstruct.BudgetPlanMapper;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
 import org.leoric.expensetracker.category.dto.CategoryActiveTreeResponseDto;
-import org.leoric.expensetracker.category.mapstruct.CategoryMapper;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.category.repositories.CategoryRepository;
-import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
-import org.leoric.expensetracker.image.services.interfaces.ImageService;
-import org.leoric.expensetracker.utils.BudgetPlanSpentCalculator;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -32,20 +27,9 @@ import static org.mockito.Mockito.when;
 class CategoryServiceImplTest {
 
 	@Mock
-	private BudgetPlanSpentCalculator budgetPlanSpentCalculator;
-	@Mock
 	private CategoryRepository categoryRepository;
 	@Mock
-	private ExpenseTrackerRepository expenseTrackerRepository;
-	@Mock
 	private BudgetPlanRepository budgetPlanRepository;
-	@Mock
-	private CategoryMapper categoryMapper;
-	@Mock
-	private BudgetPlanMapper budgetPlanMapper;
-	@Mock
-	private ImageService imageService;
-
 	@InjectMocks
 	private CategoryServiceImpl categoryService;
 
@@ -121,16 +105,16 @@ class CategoryServiceImplTest {
 		List<CategoryActiveTreeResponseDto> result = categoryService.categoryFindAllActiveTree(user, trackerId);
 
 		assertThat(result).hasSize(2);
-		assertThat(result.get(0).name()).isEqualTo("Food");
-		assertThat(result.get(0).budgetPlanId()).isEqualTo(olderFoodPlan.getId());
-		assertThat(result.get(0).budgetPlanName()).isEqualTo("Food plan old");
-		assertThat(result.get(0).assetCode()).isEqualTo("CZK");
+		assertThat(result.getFirst().name()).isEqualTo("Food");
+		assertThat(result.getFirst().budgetPlanId()).isEqualTo(olderFoodPlan.getId());
+		assertThat(result.getFirst().budgetPlanName()).isEqualTo("Food plan old");
+		assertThat(result.getFirst().assetCode()).isEqualTo("CZK");
 
-		assertThat(result.get(0).children()).hasSize(2);
-		assertThat(result.get(0).children().get(0).name()).isEqualTo("Groceries");
-		assertThat(result.get(0).children().get(0).parentId()).isEqualTo(food.getId());
-		assertThat(result.get(0).children().get(0).parentName()).isEqualTo("Food");
-		assertThat(result.get(0).children().get(0).budgetPlanName()).isEqualTo("Groceries plan");
+		assertThat(result.getFirst().children()).hasSize(2);
+		assertThat(result.getFirst().children().getFirst().name()).isEqualTo("Groceries");
+		assertThat(result.getFirst().children().getFirst().parentId()).isEqualTo(food.getId());
+		assertThat(result.getFirst().children().getFirst().parentName()).isEqualTo("Food");
+		assertThat(result.getFirst().children().getFirst().budgetPlanName()).isEqualTo("Groceries plan");
 		assertThat(result.get(0).children().get(1).name()).isEqualTo("Restaurants");
 		assertThat(result.get(0).children().get(1).budgetPlanId()).isNull();
 

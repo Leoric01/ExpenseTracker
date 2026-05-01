@@ -47,8 +47,6 @@ public interface HoldingRepository extends JpaRepository<Holding, UUID> {
 
 	List<Holding> findByAccountIdAndActiveTrue(UUID accountId);
 
-	Page<Holding> findByAccountIdAndActiveTrue(UUID accountId, Pageable pageable);
-
 	boolean existsByAccountIdAndAssetId(UUID accountId, UUID assetId);
 
 	@Modifying

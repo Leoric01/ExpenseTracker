@@ -2,6 +2,7 @@ package org.leoric.expensetracker.asset.seed;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.leoric.expensetracker.asset.models.Asset;
 import org.leoric.expensetracker.asset.models.constants.AssetType;
 import org.leoric.expensetracker.asset.models.constants.MarketDataSource;
@@ -23,7 +24,7 @@ public class AssetSeeder implements CommandLineRunner {
 
 	@Override
 	@Transactional
-	public void run(String... args) {
+	public void run(String @NonNull ... args) {
 		List<SeedEntry> seeds = List.of(
 				// Fiat currencies
 				new SeedEntry("CZK", "Czech Koruna", AssetType.FIAT, 2, MarketDataSource.FRANKFURTER, "CZK"),

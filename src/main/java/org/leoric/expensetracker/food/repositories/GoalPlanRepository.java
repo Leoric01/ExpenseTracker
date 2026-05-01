@@ -8,7 +8,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,7 +16,6 @@ public interface GoalPlanRepository extends JpaRepository<GoalPlan, UUID> {
 
 	Page<GoalPlan> findByExpenseTrackerId(UUID expenseTrackerId, Pageable pageable);
 
-	List<GoalPlan> findAllByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId);
 	Optional<GoalPlan> findByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId);
 
 	Optional<GoalPlan> findByIdAndExpenseTrackerId(UUID goalPlanId, UUID expenseTrackerId);

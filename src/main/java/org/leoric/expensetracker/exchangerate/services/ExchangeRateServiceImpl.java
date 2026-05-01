@@ -152,8 +152,8 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 
 	private BigDecimal fetchCryptoToCrypto(Asset from, Asset to, LocalDate date, boolean isToday) {
 		// Use USD as intermediary: fromCrypto→USD / toCrypto→USD
-		BigDecimal fromToUsd = fetchCryptoToFiatByCode(from, "usd", date, isToday);
-		BigDecimal toToUsd = fetchCryptoToFiatByCode(to, "usd", date, isToday);
+		BigDecimal fromToUsd = fetchCryptoToFiatByCode(from, date, isToday);
+		BigDecimal toToUsd = fetchCryptoToFiatByCode(to, date, isToday);
 
 		if (fromToUsd != null && toToUsd != null && toToUsd.compareTo(BigDecimal.ZERO) != 0) {
 			return fromToUsd.divide(toToUsd, 12, RoundingMode.HALF_UP);
@@ -161,13 +161,13 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 		return null;
 	}
 
-	private BigDecimal fetchCryptoToFiatByCode(Asset crypto, String fiatCode, LocalDate date, boolean isToday) {
+	private BigDecimal fetchCryptoToFiatByCode(Asset crypto, LocalDate date, boolean isToday) {
 		String coinId = crypto.getMarketDataKey();
 		if (coinId == null) return null;
 
 		return isToday
-				? coinGeckoClient.getCurrentPrice(coinId, fiatCode)
-				: coinGeckoClient.getHistoricalPrice(coinId, fiatCode, date);
+				? coinGeckoClient.getCurrentPrice(coinId, "usd")
+				: coinGeckoClient.getHistoricalPrice(coinId, "usd", date);
 	}
 
 	private boolean isCacheValid(ExchangeRateCache cached, LocalDate date) {
@@ -189,13 +189,13 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 			Optional<ExchangeRateCache> existing = cacheRepository
 					.findByBaseAssetCodeAndQuoteAssetCodeAndRateDate(baseCode, quoteCode, date);
 
+			ExchangeRateCache entry;
 			if (existing.isPresent()) {
-				ExchangeRateCache entry = existing.get();
+				entry = existing.get();
 				entry.setRate(rate);
 				entry.setFetchedAt(Instant.now());
-				cacheRepository.save(entry);
 			} else {
-				ExchangeRateCache entry = ExchangeRateCache.builder()
+				entry = ExchangeRateCache.builder()
 						.baseAssetCode(baseCode)
 						.quoteAssetCode(quoteCode)
 						.rateDate(date)
@@ -203,8 +203,8 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 						.source(source)
 						.fetchedAt(Instant.now())
 						.build();
-				cacheRepository.save(entry);
 			}
+			cacheRepository.save(entry);
 			log.debug("Cached rate {}/{} on {} = {}", baseCode, quoteCode, date, rate);
 		} catch (Exception e) {
 			log.warn("Failed to cache exchange rate {}/{} on {}: {}", baseCode, quoteCode, date, e.getMessage());
