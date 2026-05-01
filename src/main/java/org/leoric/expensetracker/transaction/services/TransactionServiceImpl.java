@@ -104,7 +104,7 @@ public class TransactionServiceImpl implements TransactionService {
 	public TransactionResponseDto transactionFindById(User currentUser, UUID trackerId, UUID transactionId) {
 		Transaction transaction = getTransactionOrThrow(transactionId);
 		assertTransactionBelongsToTracker(transaction, trackerId);
-		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
+		return enrichWithAssetScale(normalizeDisplayedExchangeRate(transactionMapper.toResponse(transaction)));
 	}
 	@Override
 	@Transactional(readOnly = true)
@@ -475,7 +475,7 @@ public class TransactionServiceImpl implements TransactionService {
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} updated transaction '{}' in tracker '{}'",
 		         currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
-		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
+		return enrichWithAssetScale(normalizeDisplayedExchangeRate(transactionMapper.toResponse(transaction)));
 	}
 
 	private void patchIncomeOrExpenseFinancialFields(Transaction transaction, UUID trackerId, UpdateTransactionRequestDto request) {
@@ -595,19 +595,17 @@ public class TransactionServiceImpl implements TransactionService {
 			throw new OperationNotPermittedException("Source and target holdings must be different");
 		}
 
-		if (!newSource.getAsset().getCode().equalsIgnoreCase(newTarget.getAsset().getCode())) {
-			throw new OperationNotPermittedException("Transfer financial patch is supported only for same-asset source/target holdings");
-		}
+		boolean sameAssetTransfer = newSource.getAsset().getCode().equalsIgnoreCase(newTarget.getAsset().getCode());
 
-		if (request.exchangeRate() != null) {
-			throw new OperationNotPermittedException("Exchange rate cannot be patched on same-asset transfers");
-		}
-		if (request.currencyCode() != null
-				&& !request.currencyCode().equalsIgnoreCase(newSource.getAsset().getCode())) {
-			throw new OperationNotPermittedException("Currency code on same-asset transfer must match source holding asset code");
-		}
 		if (request.currencyCode() != null) {
 			assertAssetCodeExists(request.currencyCode().toUpperCase());
+			if (!request.currencyCode().equalsIgnoreCase(newSource.getAsset().getCode())) {
+				throw new OperationNotPermittedException("Currency code on transfer must match source holding asset code");
+			}
+		}
+
+		if (sameAssetTransfer && request.exchangeRate() != null) {
+			throw new OperationNotPermittedException("Exchange rate cannot be patched on same-asset transfers");
 		}
 
 		long oldSourceDeduction = isInternalSameAssetTransfer(transaction)
@@ -618,27 +616,51 @@ public class TransactionServiceImpl implements TransactionService {
 				: (transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount());
 
 		long newAmount = request.amount() != null ? request.amount() : transaction.getAmount();
+		long newFee = request.feeAmount() != null ? request.feeAmount() : transaction.getFeeAmount();
 		Long requestedSettled = request.settledAmount();
-		Long requestedFee = request.feeAmount();
 
 		long newSettled;
-		long newFee;
-		if (requestedSettled != null) {
-			newSettled = requestedSettled;
-			newFee = Math.subtractExact(newAmount, newSettled);
-		} else if (requestedFee != null) {
-			newFee = requestedFee;
-			newSettled = Math.subtractExact(newAmount, newFee);
+		BigDecimal effectiveNewExchangeRate;
+
+		if (sameAssetTransfer) {
+			if (requestedSettled != null) {
+				newSettled = requestedSettled;
+				newFee = Math.subtractExact(newAmount, newSettled);
+			} else if (request.feeAmount() != null || request.amount() != null) {
+				newSettled = Math.subtractExact(newAmount, newFee);
+			} else {
+				newSettled = resolveTransferSettledAmount(transaction);
+			}
+			effectiveNewExchangeRate = null;
 		} else {
-			newSettled = newAmount;
-			newFee = 0L;
+			BigDecimal effectiveRate = request.exchangeRate() != null ? request.exchangeRate() : transaction.getExchangeRate();
+			if (effectiveRate == null || effectiveRate.compareTo(BigDecimal.ZERO) <= 0) {
+				throw new OperationNotPermittedException(
+						"Exchange rate is required for cross-asset transfer patch (%s -> %s)"
+								.formatted(newSource.getAsset().getCode(), newTarget.getAsset().getCode()));
+			}
+
+			if (requestedSettled != null) {
+				newSettled = requestedSettled;
+			} else if (request.amount() != null || request.exchangeRate() != null) {
+				newSettled = BigDecimal.valueOf(newAmount)
+						.multiply(effectiveRate)
+						.setScale(0, RoundingMode.HALF_UP)
+						.longValueExact();
+			} else {
+				newSettled = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+			}
+			effectiveNewExchangeRate = effectiveRate;
 		}
 
 		oldSource.setCurrentAmount(oldSource.getCurrentAmount() + oldSourceDeduction);
 		oldTarget.setCurrentAmount(oldTarget.getCurrentAmount() - oldTargetAddition);
 
-		newSource.setCurrentAmount(newSource.getCurrentAmount() - newAmount);
-		newTarget.setCurrentAmount(newTarget.getCurrentAmount() + newSettled);
+		long newSourceDeduction = sameAssetTransfer ? newAmount : Math.addExact(newAmount, newFee);
+		long newTargetAddition = newSettled;
+
+		newSource.setCurrentAmount(newSource.getCurrentAmount() - newSourceDeduction);
+		newTarget.setCurrentAmount(newTarget.getCurrentAmount() + newTargetAddition);
 
 		holdingRepository.save(oldSource);
 		if (!oldTarget.getId().equals(oldSource.getId())) {
@@ -659,7 +681,7 @@ public class TransactionServiceImpl implements TransactionService {
 		transaction.setSettledAmount(newSettled);
 		transaction.setFeeAmount(newFee);
 		transaction.setCurrencyCode(newSource.getAsset().getCode());
-		transaction.setExchangeRate(null);
+		transaction.setExchangeRate(effectiveNewExchangeRate);
 	}
 
 	@Override
@@ -678,7 +700,7 @@ public class TransactionServiceImpl implements TransactionService {
 		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
 	}
 	private TransactionResponseDto toTransactionResponse(Transaction transaction, Map<UUID, RootCategoryInfo> rootCategoryByCategoryId) {
-		TransactionResponseDto dto = transactionMapper.toResponse(transaction);
+		TransactionResponseDto dto = normalizeDisplayedExchangeRate(transactionMapper.toResponse(transaction));
 
 		if (dto.categoryId() == null) {
 			return dto;
@@ -1542,5 +1564,50 @@ public class TransactionServiceImpl implements TransactionService {
 			Long sourceAmount,
 			Long targetAmount
 	) {
+	}
+
+	private TransactionResponseDto normalizeDisplayedExchangeRate(TransactionResponseDto dto) {
+		if (dto.exchangeRate() == null
+				|| dto.transactionType() != TransactionType.TRANSFER
+				|| dto.targetHoldingAssetScale() == null
+				|| dto.exchangeRate().scale() == dto.targetHoldingAssetScale()) {
+			return dto;
+		}
+
+		BigDecimal normalizedExchangeRate = dto.exchangeRate().setScale(dto.targetHoldingAssetScale(), RoundingMode.HALF_UP);
+
+		return new TransactionResponseDto(
+				dto.id(),
+				dto.transactionType(),
+				dto.status(),
+				dto.holdingId(),
+				dto.holdingName(),
+				dto.sourceHoldingId(),
+				dto.sourceHoldingName(),
+				dto.sourceHoldingAssetCode(),
+				dto.sourceHoldingAssetScale(),
+				dto.targetHoldingId(),
+				dto.targetHoldingName(),
+				dto.targetHoldingAssetCode(),
+				dto.targetHoldingAssetScale(),
+				dto.categoryId(),
+				dto.categoryName(),
+				dto.rootCategoryId(),
+				dto.rootCategoryName(),
+				dto.amount(),
+				dto.assetCode(),
+				dto.assetScale(),
+				normalizedExchangeRate,
+				dto.feeAmount(),
+				dto.settledAmount(),
+				dto.balanceAdjustmentDirection(),
+				dto.transactionDate(),
+				dto.description(),
+				dto.note(),
+				dto.externalRef(),
+				dto.attachments(),
+				dto.createdDate(),
+				dto.lastModifiedDate()
+		);
 	}
 }

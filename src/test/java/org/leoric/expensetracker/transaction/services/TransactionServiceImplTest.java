@@ -320,6 +320,62 @@ class TransactionServiceImplTest {
 	}
 
 	@Test
+	void transactionUpdate_shouldAllowCrossAssetTransferPatchAndReapplyBalances() {
+		Holding eurHolding = Holding.builder()
+				.id(UUID.randomUUID())
+				.account(holdingB.getAccount())
+				.asset(org.leoric.expensetracker.asset.models.Asset.builder().code("EUR").build())
+				.currentAmount(5_000L)
+				.active(true)
+				.build();
+
+		UUID transactionId = UUID.randomUUID();
+		Transaction transaction = Transaction.builder()
+				.id(transactionId)
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.TRANSFER)
+				.status(TransactionStatus.COMPLETED)
+				.sourceHolding(holdingA)
+				.targetHolding(eurHolding)
+				.amount(100L)
+				.settledAmount(50L)
+				.feeAmount(2L)
+				.currencyCode("CZK")
+				.exchangeRate(new java.math.BigDecimal("0.50000000"))
+				.transactionDate(Instant.now())
+				.build();
+
+		UpdateTransactionRequestDto request = new UpdateTransactionRequestDto(
+				null,
+				null,
+				null,
+				120L,
+				null,
+				new java.math.BigDecimal("0.58000000"),
+				3L,
+				70L,
+				null,
+				null,
+				null,
+				null,
+				null
+		);
+
+		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+		when(transactionMapper.toResponse(any(Transaction.class))).thenReturn(minimalResponse(transaction));
+
+		service.transactionUpdate(user, trackerId, transactionId, request);
+
+		assertThat(transaction.getAmount()).isEqualTo(120L);
+		assertThat(transaction.getFeeAmount()).isEqualTo(3L);
+		assertThat(transaction.getSettledAmount()).isEqualTo(70L);
+		assertThat(transaction.getExchangeRate()).isEqualByComparingTo("0.58000000");
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(9_979L);
+		assertThat(eurHolding.getCurrentAmount()).isEqualTo(5_020L);
+	}
+
+	@Test
 	void transactionFindAllPageable_shouldSortByConvertedAmountWhenAmountSortRequested() {
 		Asset czk = Asset.builder().code("CZK").scale(2).build();
 		Asset btc = Asset.builder().code("BTC").scale(8).build();
@@ -479,6 +535,89 @@ class TransactionServiceImplTest {
 		assertThat(result.content().get(0).convertedInto()).isEqualTo("CZK");
 		assertThat(result.content().get(0).convertedAssetScale()).isEqualTo(2);
 		verifyNoInteractions(exchangeRateService);
+	}
+
+	@Test
+	void transactionFindAllPageable_shouldNormalizeTransferExchangeRateToTargetAssetScale() {
+		Asset czk = Asset.builder().code("CZK").scale(2).build();
+		tracker.setPreferredDisplayAsset(czk);
+
+		Holding btcHolding = Holding.builder()
+				.id(UUID.randomUUID())
+				.account(holdingA.getAccount())
+				.asset(Asset.builder().code("BTC").build())
+				.currentAmount(10_000L)
+				.active(true)
+				.build();
+
+		Transaction transfer = Transaction.builder()
+				.id(UUID.randomUUID())
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.TRANSFER)
+				.status(TransactionStatus.COMPLETED)
+				.sourceHolding(btcHolding)
+				.targetHolding(holdingB)
+				.amount(10_000_000L)
+				.settledAmount(160_000_600L)
+				.feeAmount(1_000L)
+				.currencyCode("BTC")
+				.exchangeRate(new java.math.BigDecimal("1600160.02000000"))
+				.transactionDate(Instant.parse("2026-05-01T12:36:00Z"))
+				.build();
+
+		Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Order.desc("transactionDate")));
+
+		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+				.thenReturn(new PageImpl<>(List.of(transfer), pageable, 1));
+		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(transfer));
+		when(assetRepository.findAllByCodeUpperIn(Set.of("BTC", "CZK"))).thenReturn(Set.of(czk));
+
+		when(transactionMapper.toResponse(transfer)).thenReturn(new TransactionResponseDto(
+				transfer.getId(),
+				transfer.getTransactionType(),
+				transfer.getStatus(),
+				null,
+				null,
+				btcHolding.getId(),
+				"A",
+				"BTC",
+				8,
+				holdingB.getId(),
+				"B",
+				"CZK",
+				2,
+				null,
+				null,
+				null,
+				null,
+				transfer.getAmount(),
+				"BTC",
+				8,
+				new java.math.BigDecimal("1600160.02000000"),
+				transfer.getFeeAmount(),
+				transfer.getSettledAmount(),
+				null,
+				transfer.getTransactionDate(),
+				null,
+				null,
+				null,
+				List.of(),
+				null,
+				null
+		));
+
+		TransactionPageResponseDto result = service.transactionFindAllPageable(
+				user,
+				trackerId,
+				new TransactionFilter(null, null, null, null, null, null, null, TransactionAmountRateMode.NOW),
+				pageable
+		);
+
+		assertThat(result.content()).hasSize(1);
+		assertThat(result.content().get(0).exchangeRate()).isEqualByComparingTo("1600160.02");
+		assertThat(result.content().get(0).exchangeRate().scale()).isEqualTo(2);
 	}
 
 	@Test
