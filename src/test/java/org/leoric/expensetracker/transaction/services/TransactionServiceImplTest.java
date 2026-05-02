@@ -25,14 +25,14 @@ import org.leoric.expensetracker.transaction.models.Transaction;
 import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
@@ -183,7 +183,7 @@ class TransactionServiceImplTest {
 	}
 
 	@Test
-	void transactionUpdate_shouldRejectFinancialPatchForBalanceAdjustment() {
+	void transactionUpdate_shouldAllowAmountPatchForBalanceAdjustmentAndReapplyHoldingBalance() {
 		UUID transactionId = UUID.randomUUID();
 		Transaction transaction = Transaction.builder()
 				.id(transactionId)
@@ -194,6 +194,7 @@ class TransactionServiceImplTest {
 				.balanceAdjustmentDirection(org.leoric.expensetracker.transaction.models.constants.BalanceAdjustmentDirection.ADDITION)
 				.amount(100)
 				.currencyCode("CZK")
+				.feeAmount(0)
 				.transactionDate(Instant.now())
 				.build();
 
@@ -215,11 +216,53 @@ class TransactionServiceImplTest {
 
 		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
 
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+		when(transactionMapper.toResponse(any(Transaction.class))).thenReturn(minimalResponse(transaction));
+
+		service.transactionUpdate(user, trackerId, transactionId, request);
+
+		assertThat(transaction.getAmount()).isEqualTo(200L);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(10_100L);
+		verify(holdingRepository).save(holdingA);
+	}
+
+	@Test
+	void transactionUpdate_shouldRejectHoldingChangeForBalanceAdjustment() {
+		UUID transactionId = UUID.randomUUID();
+		Transaction transaction = Transaction.builder()
+				.id(transactionId)
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.BALANCE_ADJUSTMENT)
+				.status(TransactionStatus.COMPLETED)
+				.holding(holdingA)
+				.balanceAdjustmentDirection(org.leoric.expensetracker.transaction.models.constants.BalanceAdjustmentDirection.ADDITION)
+				.amount(100)
+				.currencyCode("CZK")
+				.feeAmount(0)
+				.transactionDate(Instant.now())
+				.build();
+
+		UpdateTransactionRequestDto request = new UpdateTransactionRequestDto(
+				holdingB.getId(),
+				null,
+				null,
+				200L,
+				"CZK",
+				null,
+				0L,
+				null,
+				null,
+				null,
+				null,
+				null,
+				null
+		);
+
+		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+
 		assertThatThrownBy(() -> service.transactionUpdate(user, trackerId, transactionId, request))
 				.isInstanceOf(OperationNotPermittedException.class)
-				.hasMessageContaining("Financial fields");
-
-		verify(transactionRepository, never()).save(any(Transaction.class));
+				.hasMessageContaining("Holding cannot be changed");
 	}
 
 	@Test
@@ -414,7 +457,7 @@ class TransactionServiceImplTest {
 				.build();
 
 		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
-		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(btcTx, eurTx, czkTx));
+		when(transactionRepository.findAll(anyTransactionSpec())).thenReturn(List.of(btcTx, eurTx, czkTx));
 		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
 		when(assetRepository.findAllByCodeUpperIn(Set.of("BTC", "EUR", "CZK"))).thenReturn(Set.of(btc, eur, czk));
 		when(exchangeRateService.convertAmount(eq(100L), eq(btc), eq(czk), any(Instant.class))).thenReturn(5_000L);
@@ -432,8 +475,8 @@ class TransactionServiceImplTest {
 		);
 
 		assertThat(result.content()).hasSize(3);
-		assertThat(result.content().get(0).id()).isEqualTo(btcTx.getId());
-		assertThat(result.content().get(0).convertedAmount()).isEqualTo(5_000L);
+		assertThat(result.content().getFirst().id()).isEqualTo(btcTx.getId());
+		assertThat(result.content().getFirst().convertedAmount()).isEqualTo(5_000L);
 		assertThat(result.content().get(0).convertedInto()).isEqualTo("CZK");
 		assertThat(result.content().get(0).convertedAssetScale()).isEqualTo(2);
 		assertThat(result.content().get(1).id()).isEqualTo(eurTx.getId());
@@ -470,9 +513,9 @@ class TransactionServiceImplTest {
 
 		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
 		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
-		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+		when(transactionRepository.findAll(anyTransactionSpec(), any(Pageable.class)))
 				.thenReturn(new PageImpl<>(List.of(tx), pageable, 1));
-		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(tx));
+		when(transactionRepository.findAll(anyTransactionSpec())).thenReturn(List.of(tx));
 		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK"))).thenReturn(Set.of());
 		when(transactionMapper.toResponse(tx)).thenReturn(minimalResponse(tx));
 
@@ -484,13 +527,13 @@ class TransactionServiceImplTest {
 		);
 
 		assertThat(result.content()).hasSize(1);
-		assertThat(result.content().get(0).convertedAmount()).isNull();
-		assertThat(result.content().get(0).convertedInto()).isNull();
-		assertThat(result.content().get(0).convertedAssetScale()).isNull();
+		assertThat(result.content().getFirst().convertedAmount()).isNull();
+		assertThat(result.content().getFirst().convertedInto()).isNull();
+		assertThat(result.content().getFirst().convertedAssetScale()).isNull();
 		assertThat(result.totals().byAsset()).hasSize(1);
-		assertThat(result.totals().byAsset().get(0).assetCode()).isEqualTo("CZK");
-		assertThat(result.totals().byAsset().get(0).assetScale()).isNull();
-		assertThat(result.totals().byAsset().get(0).expenseAmount()).isEqualTo(100L);
+		assertThat(result.totals().byAsset().getFirst().assetCode()).isEqualTo("CZK");
+		assertThat(result.totals().byAsset().getFirst().assetScale()).isNull();
+		assertThat(result.totals().byAsset().getFirst().expenseAmount()).isEqualTo(100L);
 		assertThat(result.totals().converted().convertedInto()).isNull();
 		assertThat(result.totals().converted().incomeAmount()).isNull();
 		verifyNoInteractions(exchangeRateService);
@@ -515,9 +558,9 @@ class TransactionServiceImplTest {
 
 		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
 		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
-		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+		when(transactionRepository.findAll(anyTransactionSpec(), any(Pageable.class)))
 				.thenReturn(new PageImpl<>(List.of(tx), pageable, 1));
-		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(tx));
+		when(transactionRepository.findAll(anyTransactionSpec())).thenReturn(List.of(tx));
 		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK"))).thenReturn(Set.of(czk));
 		when(transactionMapper.toResponse(tx)).thenReturn(minimalResponse(tx));
 
@@ -529,11 +572,11 @@ class TransactionServiceImplTest {
 		);
 
 		assertThat(result.content()).hasSize(1);
-		assertThat(result.content().get(0).convertedAmount()).isEqualTo(100L);
-		assertThat(result.content().get(0).convertedSourceAmount()).isNull();
-		assertThat(result.content().get(0).convertedTargetAmount()).isNull();
-		assertThat(result.content().get(0).convertedInto()).isEqualTo("CZK");
-		assertThat(result.content().get(0).convertedAssetScale()).isEqualTo(2);
+		assertThat(result.content().getFirst().convertedAmount()).isEqualTo(100L);
+		assertThat(result.content().getFirst().convertedSourceAmount()).isNull();
+		assertThat(result.content().getFirst().convertedTargetAmount()).isNull();
+		assertThat(result.content().getFirst().convertedInto()).isEqualTo("CZK");
+		assertThat(result.content().getFirst().convertedAssetScale()).isEqualTo(2);
 		verifyNoInteractions(exchangeRateService);
 	}
 
@@ -569,9 +612,9 @@ class TransactionServiceImplTest {
 
 		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
 		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
-		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+		when(transactionRepository.findAll(anyTransactionSpec(), any(Pageable.class)))
 				.thenReturn(new PageImpl<>(List.of(transfer), pageable, 1));
-		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(transfer));
+		when(transactionRepository.findAll(anyTransactionSpec())).thenReturn(List.of(transfer));
 		when(assetRepository.findAllByCodeUpperIn(Set.of("BTC", "CZK"))).thenReturn(Set.of(czk));
 
 		when(transactionMapper.toResponse(transfer)).thenReturn(new TransactionResponseDto(
@@ -616,8 +659,8 @@ class TransactionServiceImplTest {
 		);
 
 		assertThat(result.content()).hasSize(1);
-		assertThat(result.content().get(0).exchangeRate()).isEqualByComparingTo("1600160.02");
-		assertThat(result.content().get(0).exchangeRate().scale()).isEqualTo(2);
+		assertThat(result.content().getFirst().exchangeRate()).isEqualByComparingTo("1600160.02");
+		assertThat(result.content().getFirst().exchangeRate().scale()).isEqualTo(2);
 	}
 
 	@Test
@@ -652,9 +695,9 @@ class TransactionServiceImplTest {
 
 		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
 		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
-		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+		when(transactionRepository.findAll(anyTransactionSpec(), any(Pageable.class)))
 				.thenReturn(new PageImpl<>(List.of(transfer), pageable, 1));
-		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(transfer));
+		when(transactionRepository.findAll(anyTransactionSpec())).thenReturn(List.of(transfer));
 		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK", "EUR"))).thenReturn(Set.of(czk, eur));
 		when(exchangeRateService.convertAmount(eq(4L), eq(eur), eq(czk), any(Instant.class))).thenReturn(120L);
 		when(transactionMapper.toResponse(transfer)).thenReturn(minimalResponse(transfer));
@@ -667,7 +710,7 @@ class TransactionServiceImplTest {
 		);
 
 		assertThat(result.totals().byAsset()).hasSize(2);
-		assertThat(result.totals().byAsset().get(0).assetCode()).isEqualTo("CZK");
+		assertThat(result.totals().byAsset().getFirst().assetCode()).isEqualTo("CZK");
 		assertThat(result.totals().byAsset().get(0).incomeAmount()).isEqualTo(0L);
 		assertThat(result.totals().byAsset().get(0).expenseAmount()).isEqualTo(100L);
 		assertThat(result.totals().byAsset().get(1).assetCode()).isEqualTo("EUR");
@@ -676,13 +719,12 @@ class TransactionServiceImplTest {
 		assertThat(result.totals().converted().expenseAmount()).isEqualTo(100L);
 
 		assertThat(result.content()).hasSize(1);
-		assertThat(result.content().get(0).convertedAmount()).isEqualTo(100L);
-		assertThat(result.content().get(0).convertedSourceAmount()).isEqualTo(100L);
-		assertThat(result.content().get(0).convertedTargetAmount()).isEqualTo(120L);
+		assertThat(result.content().getFirst().convertedAmount()).isEqualTo(100L);
+		assertThat(result.content().getFirst().convertedSourceAmount()).isEqualTo(100L);
+		assertThat(result.content().getFirst().convertedTargetAmount()).isEqualTo(120L);
 	}
 
 	@Test
-
 	void transactionFindAllPageable_shouldCountOnlyFeeEffectForInternalSameAssetTransferOnTrackerTotals() {
 		Asset czk = Asset.builder().code("CZK").scale(2).build();
 
@@ -705,9 +747,9 @@ class TransactionServiceImplTest {
 
 		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
 		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
-		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+		when(transactionRepository.findAll(anyTransactionSpec(), any(Pageable.class)))
 				.thenReturn(new PageImpl<>(List.of(transfer), pageable, 1));
-		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(transfer));
+		when(transactionRepository.findAll(anyTransactionSpec())).thenReturn(List.of(transfer));
 		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK"))).thenReturn(Set.of(czk));
 		when(transactionMapper.toResponse(transfer)).thenReturn(minimalResponse(transfer));
 
@@ -719,10 +761,10 @@ class TransactionServiceImplTest {
 		);
 
 		assertThat(result.totals().byAsset()).hasSize(1);
-		assertThat(result.totals().byAsset().get(0).assetCode()).isEqualTo("CZK");
-		assertThat(result.totals().byAsset().get(0).incomeAmount()).isEqualTo(0L);
-		assertThat(result.totals().byAsset().get(0).expenseAmount()).isEqualTo(2L);
-		assertThat(result.totals().byAsset().get(0).netAmount()).isEqualTo(-2L);
+		assertThat(result.totals().byAsset().getFirst().assetCode()).isEqualTo("CZK");
+		assertThat(result.totals().byAsset().getFirst().incomeAmount()).isEqualTo(0L);
+		assertThat(result.totals().byAsset().getFirst().expenseAmount()).isEqualTo(2L);
+		assertThat(result.totals().byAsset().getFirst().netAmount()).isEqualTo(-2L);
 	}
 
 	@Test
@@ -748,9 +790,9 @@ class TransactionServiceImplTest {
 
 		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of());
 		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
-		when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+		when(transactionRepository.findAll(anyTransactionSpec(), any(Pageable.class)))
 				.thenReturn(new PageImpl<>(List.of(transfer), pageable, 1));
-		when(transactionRepository.findAll(any(Specification.class))).thenReturn(List.of(transfer));
+		when(transactionRepository.findAll(anyTransactionSpec())).thenReturn(List.of(transfer));
 		when(assetRepository.findAllByCodeUpperIn(Set.of("CZK"))).thenReturn(Set.of(czk));
 		when(transactionMapper.toResponse(transfer)).thenReturn(minimalResponse(transfer));
 
@@ -762,10 +804,10 @@ class TransactionServiceImplTest {
 		);
 
 		assertThat(result.totals().byAsset()).hasSize(1);
-		assertThat(result.totals().byAsset().get(0).assetCode()).isEqualTo("CZK");
-		assertThat(result.totals().byAsset().get(0).incomeAmount()).isEqualTo(98L);
-		assertThat(result.totals().byAsset().get(0).expenseAmount()).isEqualTo(0L);
-		assertThat(result.totals().byAsset().get(0).netAmount()).isEqualTo(98L);
+		assertThat(result.totals().byAsset().getFirst().assetCode()).isEqualTo("CZK");
+		assertThat(result.totals().byAsset().getFirst().incomeAmount()).isEqualTo(98L);
+		assertThat(result.totals().byAsset().getFirst().expenseAmount()).isEqualTo(0L);
+		assertThat(result.totals().byAsset().getFirst().netAmount()).isEqualTo(98L);
 	}
 
 	private TransactionResponseDto minimalResponse(Transaction transaction) {
@@ -802,5 +844,10 @@ class TransactionServiceImplTest {
 				null,
 				null
 		);
+	}
+
+	@SuppressWarnings("unchecked")
+	private Specification<Transaction> anyTransactionSpec() {
+		return any(Specification.class);
 	}
 }

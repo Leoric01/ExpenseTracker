@@ -2,6 +2,12 @@ package org.leoric.expensetracker.transaction.repositories;
 
 import org.leoric.expensetracker.transaction.models.Transaction;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -14,7 +20,28 @@ import java.util.Set;
 import java.util.UUID;
 
 @Repository
+@NullMarked
 public interface TransactionRepository extends JpaRepository<Transaction, UUID>, JpaSpecificationExecutor<Transaction> {
+
+	@Override
+	@EntityGraph(attributePaths = {
+			"holding", "holding.account",
+			"sourceHolding", "sourceHolding.account", "sourceHolding.asset",
+			"targetHolding", "targetHolding.account", "targetHolding.asset",
+			"category",
+			"attachments"
+	})
+	Page<Transaction> findAll(@Nullable Specification<Transaction> spec, Pageable pageable);
+
+	@Override
+	@EntityGraph(attributePaths = {
+			"holding", "holding.account",
+			"sourceHolding", "sourceHolding.account", "sourceHolding.asset",
+			"targetHolding", "targetHolding.account", "targetHolding.asset",
+			"category",
+			"attachments"
+	})
+	List<Transaction> findAll(@Nullable Specification<Transaction> spec);
 
 	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 

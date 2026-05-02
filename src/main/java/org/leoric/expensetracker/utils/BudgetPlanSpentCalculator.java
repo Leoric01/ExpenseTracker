@@ -15,6 +15,7 @@ import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -58,23 +59,25 @@ public class BudgetPlanSpentCalculator {
 		assetByCode.put(normalizeCode(targetAsset.getCode()), targetAsset);
 
 		long totalSpent = 0L;
+		LocalDate conversionDate = LocalDate.now(ZoneOffset.UTC);
 		for (Transaction transaction : transactions) {
 			Asset sourceAsset = resolveAsset(assetByCode, transaction.getCurrencyCode());
-			long normalizedAmount = transaction.getAmount();
+			long transactionAmount = resolveTransactionAmountForBudget(plan, transaction);
+			long normalizedAmount = transactionAmount;
 
 			if (!normalizeCode(sourceAsset.getCode()).equals(normalizeCode(targetAsset.getCode()))) {
 				Long converted = exchangeRateService.convertAmount(
-						transaction.getAmount(),
+						transactionAmount,
 						sourceAsset,
 						targetAsset,
-						transaction.getTransactionDate());
+						conversionDate);
 				if (converted == null) {
 					log.warn(
 							"Missing exchange rate for transaction {} ({} -> {}, date={}); skipping amount in budget spent calculation",
 							transaction.getId(),
 							sourceAsset.getCode(),
 							targetAsset.getCode(),
-							transaction.getTransactionDate());
+							conversionDate);
 					continue;
 				}
 				normalizedAmount = converted;
@@ -84,6 +87,13 @@ public class BudgetPlanSpentCalculator {
 		}
 
 		return totalSpent;
+	}
+
+	private long resolveTransactionAmountForBudget(BudgetPlan plan, Transaction transaction) {
+		if (plan.getCategory() != null && plan.getCategory().getCategoryKind() == CategoryKind.EXPENSE) {
+			return Math.addExact(transaction.getAmount(), transaction.getFeeAmount());
+		}
+		return transaction.getAmount();
 	}
 
 	private Asset resolveAsset(Map<String, Asset> assetByCode, String code) {

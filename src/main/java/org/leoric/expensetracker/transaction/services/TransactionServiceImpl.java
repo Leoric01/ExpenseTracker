@@ -452,18 +452,7 @@ public class TransactionServiceImpl implements TransactionService {
 		if (transaction.getTransactionType() == TransactionType.TRANSFER) {
 			patchTransferFinancialFields(transaction, trackerId, request);
 		} else if (transaction.getTransactionType() == TransactionType.BALANCE_ADJUSTMENT) {
-			if (request.holdingId() != null
-					|| request.sourceHoldingId() != null
-					|| request.targetHoldingId() != null
-					|| request.amount() != null
-					|| request.currencyCode() != null
-					|| request.exchangeRate() != null
-					|| request.feeAmount() != null
-					|| request.settledAmount() != null) {
-				throw new OperationNotPermittedException(
-						"Financial fields (holding/source/target, amount, settled, currency, exchange rate, fee) cannot be changed on a %s transaction"
-								.formatted(transaction.getTransactionType()));
-			}
+			patchBalanceAdjustmentFields(transaction, request);
 		} else {
 			patchIncomeOrExpenseFinancialFields(transaction, trackerId, request);
 		}
@@ -516,7 +505,12 @@ public class TransactionServiceImpl implements TransactionService {
 			assertHoldingActive(newHolding);
 		}
 
-		long oldEffect = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+		long oldEffect = resolveIncomeExpenseBalanceEffect(
+				transaction.getTransactionType(),
+				transaction.getAmount(),
+				transaction.getFeeAmount(),
+				transaction.getSettledAmount()
+		);
 
 		long newAmount = request.amount() != null ? request.amount() : transaction.getAmount();
 		long newFeeAmount = request.feeAmount() != null ? request.feeAmount() : transaction.getFeeAmount();
@@ -555,7 +549,7 @@ public class TransactionServiceImpl implements TransactionService {
 					.longValueExact() + newFeeAmount;
 			newEffect = newSettledAmount;
 		} else {
-			newEffect = newAmount;
+			newEffect = resolveIncomeExpenseBalanceEffect(transaction.getTransactionType(), newAmount, newFeeAmount, null);
 		}
 
 		if (transaction.getTransactionType() == TransactionType.INCOME) {
@@ -701,6 +695,51 @@ public class TransactionServiceImpl implements TransactionService {
 		transaction.setFeeAmount(newFee);
 		transaction.setCurrencyCode(newSource.getAsset().getCode());
 		transaction.setExchangeRate(effectiveNewExchangeRate);
+	}
+
+	private void patchBalanceAdjustmentFields(Transaction transaction, UpdateTransactionRequestDto request) {
+		if (request.sourceHoldingId() != null
+				|| request.targetHoldingId() != null
+				|| request.exchangeRate() != null
+				|| request.settledAmount() != null) {
+			throw new OperationNotPermittedException(
+					"Financial fields (holding/source/target, amount, settled, currency, exchange rate, fee) cannot be changed on a %s transaction"
+							.formatted(transaction.getTransactionType()));
+		}
+
+		if (request.holdingId() != null
+				&& (transaction.getHolding() == null || !request.holdingId().equals(transaction.getHolding().getId()))) {
+			throw new OperationNotPermittedException("Holding cannot be changed on a %s transaction"
+					.formatted(transaction.getTransactionType()));
+		}
+
+		if (request.currencyCode() != null
+				&& !request.currencyCode().equalsIgnoreCase(transaction.getCurrencyCode())) {
+			throw new OperationNotPermittedException("Currency cannot be changed on a %s transaction"
+					.formatted(transaction.getTransactionType()));
+		}
+
+		if (request.feeAmount() != null
+				&& request.feeAmount() != transaction.getFeeAmount()) {
+			throw new OperationNotPermittedException("Fee amount cannot be changed on a %s transaction"
+					.formatted(transaction.getTransactionType()));
+		}
+
+		if (request.amount() == null || request.amount().equals(transaction.getAmount())) {
+			return;
+		}
+
+		Holding holding = transaction.getHolding();
+		long oldSignedEffect = transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION
+				? transaction.getAmount()
+				: -transaction.getAmount();
+		long newSignedEffect = transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION
+				? request.amount()
+				: -request.amount();
+
+		holding.setCurrentAmount(holding.getCurrentAmount() - oldSignedEffect + newSignedEffect);
+		holdingRepository.save(holding);
+		transaction.setAmount(request.amount());
 	}
 
 	@Override
@@ -1195,7 +1234,7 @@ public class TransactionServiceImpl implements TransactionService {
 					.longValueExact() + feeAmount;
 			balanceEffect = settledAmount;
 		} else {
-			balanceEffect = request.amount();
+			balanceEffect = resolveIncomeExpenseBalanceEffect(type, request.amount(), feeAmount, null);
 		}
 
 		if (type == TransactionType.INCOME) {
@@ -1361,13 +1400,23 @@ public class TransactionServiceImpl implements TransactionService {
 		switch (transaction.getTransactionType()) {
 			case INCOME -> {
 				Holding holding = transaction.getHolding();
-				long effect = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+							long effect = resolveIncomeExpenseBalanceEffect(
+									TransactionType.INCOME,
+									transaction.getAmount(),
+									transaction.getFeeAmount(),
+									transaction.getSettledAmount()
+							);
 				holding.setCurrentAmount(holding.getCurrentAmount() - effect);
 				holdingRepository.save(holding);
 			}
 			case EXPENSE -> {
 				Holding holding = transaction.getHolding();
-				long effect = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+							long effect = resolveIncomeExpenseBalanceEffect(
+									TransactionType.EXPENSE,
+									transaction.getAmount(),
+									transaction.getFeeAmount(),
+									transaction.getSettledAmount()
+							);
 				holding.setCurrentAmount(holding.getCurrentAmount() + effect);
 				holdingRepository.save(holding);
 			}
@@ -1554,6 +1603,16 @@ public class TransactionServiceImpl implements TransactionService {
 					"Category '%s' is of kind %s but transaction type is %s".formatted(
 							category.getName(), category.getCategoryKind(), type));
 		}
+	}
+
+	private long resolveIncomeExpenseBalanceEffect(TransactionType type, long amount, long feeAmount, Long settledAmount) {
+		if (settledAmount != null) {
+			return settledAmount;
+		}
+		if (type == TransactionType.EXPENSE) {
+			return Math.addExact(amount, feeAmount);
+		}
+		return amount;
 	}
 
 	private static final class MutableAssetTotals {
