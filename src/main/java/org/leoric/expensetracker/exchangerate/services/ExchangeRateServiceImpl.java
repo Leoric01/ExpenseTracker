@@ -200,25 +200,8 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 
 	private void saveToCache(String baseCode, String quoteCode, LocalDate date, BigDecimal rate, MarketDataSource source) {
 		try {
-			Optional<ExchangeRateCache> existing = cacheRepository
-					.findByBaseAssetCodeAndQuoteAssetCodeAndRateDate(baseCode, quoteCode, date);
-
-			ExchangeRateCache entry;
-			if (existing.isPresent()) {
-				entry = existing.get();
-				entry.setRate(rate);
-				entry.setFetchedAt(Instant.now());
-			} else {
-				entry = ExchangeRateCache.builder()
-						.baseAssetCode(baseCode)
-						.quoteAssetCode(quoteCode)
-						.rateDate(date)
-						.rate(rate)
-						.source(source)
-						.fetchedAt(Instant.now())
-						.build();
-			}
-			cacheRepository.save(entry);
+			Instant fetchedAt = Instant.now();
+			cacheRepository.upsertRate(baseCode, quoteCode, date, rate, source.name(), fetchedAt);
 			log.debug("Cached rate {}/{} on {} = {}", baseCode, quoteCode, date, rate);
 		} catch (Exception e) {
 			log.warn("Failed to cache exchange rate {}/{} on {}: {}", baseCode, quoteCode, date, e.getMessage());

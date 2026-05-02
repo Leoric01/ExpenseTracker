@@ -7,6 +7,7 @@ import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.category.models.constants.CategoryKind;
+import org.leoric.expensetracker.category.repositories.CategoryRepository;
 import org.leoric.expensetracker.exchangerate.services.interfaces.ExchangeRateService;
 import org.leoric.expensetracker.transaction.models.Transaction;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
@@ -19,6 +20,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayDeque;
 import java.util.Set;
 import java.util.UUID;
 
@@ -30,14 +32,14 @@ public class BudgetPlanSpentCalculator {
 	private final TransactionRepository transactionRepository;
 	private final AssetRepository assetRepository;
 	private final ExchangeRateService exchangeRateService;
+	private final CategoryRepository categoryRepository;
 
 	public long computeAlreadySpent(BudgetPlan plan) {
 		if (plan.getCategory() == null) {
 			return 0;
 		}
 
-		Set<UUID> categoryIds = new HashSet<>();
-		collectCategoryIds(plan.getCategory(), categoryIds);
+		Set<UUID> categoryIds = collectCategoryIds(plan.getExpenseTracker().getId(), plan.getCategory().getId());
 
 		TransactionType txType = plan.getCategory().getCategoryKind() == CategoryKind.INCOME
 				? TransactionType.INCOME
@@ -105,12 +107,34 @@ public class BudgetPlanSpentCalculator {
 		return code == null ? "" : code.trim().toUpperCase();
 	}
 
-	private void collectCategoryIds(Category category, Set<UUID> ids) {
-		ids.add(category.getId());
-		if (category.getChildren() != null) {
-			for (Category child : category.getChildren()) {
-				collectCategoryIds(child, ids);
+	private Set<UUID> collectCategoryIds(UUID trackerId, UUID rootCategoryId) {
+		List<Category> activeCategories = categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId);
+		Map<UUID, List<UUID>> childrenByParentId = new HashMap<>();
+
+		for (Category category : activeCategories) {
+			if (category.getParent() == null) {
+				continue;
+			}
+			childrenByParentId
+					.computeIfAbsent(category.getParent().getId(), ignored -> new java.util.ArrayList<>())
+					.add(category.getId());
+		}
+
+		Set<UUID> ids = new HashSet<>();
+		ArrayDeque<UUID> stack = new ArrayDeque<>();
+		stack.push(rootCategoryId);
+
+		while (!stack.isEmpty()) {
+			UUID current = stack.pop();
+			if (!ids.add(current)) {
+				continue;
+			}
+
+			for (UUID childId : childrenByParentId.getOrDefault(current, List.of())) {
+				stack.push(childId);
 			}
 		}
+
+		return ids;
 	}
 }
