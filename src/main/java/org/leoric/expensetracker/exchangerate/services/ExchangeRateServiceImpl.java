@@ -26,6 +26,8 @@ import java.util.Optional;
 @Slf4j
 @RequiredArgsConstructor
 public class ExchangeRateServiceImpl implements ExchangeRateService {
+	private static final BigDecimal LONG_MAX = BigDecimal.valueOf(Long.MAX_VALUE);
+	private static final BigDecimal LONG_MIN = BigDecimal.valueOf(Long.MIN_VALUE);
 
 	private final ExchangeRateCacheRepository cacheRepository;
 	private final FrankfurterClient frankfurterClient;
@@ -84,7 +86,19 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 					.divide(scaleFactor, 0, RoundingMode.HALF_UP);
 		}
 
-		return result.setScale(0, RoundingMode.HALF_UP).longValueExact();
+		BigDecimal rounded = result.setScale(0, RoundingMode.HALF_UP);
+		if (rounded.compareTo(LONG_MAX) > 0) {
+			log.warn("Conversion clipped to Long.MAX_VALUE for {} -> {} on {} (amountMinorUnits={}, scaleDiff={}, rate={}, rounded={})",
+					fromAsset.getCode(), toAsset.getCode(), date, amountMinorUnits, scaleDiff, rate, rounded);
+			return Long.MAX_VALUE;
+		}
+		if (rounded.compareTo(LONG_MIN) < 0) {
+			log.warn("Conversion clipped to Long.MIN_VALUE for {} -> {} on {} (amountMinorUnits={}, scaleDiff={}, rate={}, rounded={})",
+					fromAsset.getCode(), toAsset.getCode(), date, amountMinorUnits, scaleDiff, rate, rounded);
+			return Long.MIN_VALUE;
+		}
+
+		return rounded.longValue();
 	}
 
 	/**

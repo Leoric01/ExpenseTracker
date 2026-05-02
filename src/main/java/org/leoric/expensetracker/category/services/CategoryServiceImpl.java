@@ -41,6 +41,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -321,6 +322,7 @@ public class CategoryServiceImpl implements CategoryService {
 		Map<String, AssetSummaryTotals> totalsByAssetCode = new HashMap<>();
 		Map<String, Asset> assetCacheByCode = new HashMap<>();
 		Asset displayAsset = resolveDisplayAsset(displayAssetCode);
+		LocalDate rateDate = LocalDate.now(ZoneOffset.UTC);
 		long convertedExpectedExpense = 0L;
 		long convertedExpectedIncome = 0L;
 		long convertedActualExpense = 0L;
@@ -426,9 +428,18 @@ public class CategoryServiceImpl implements CategoryService {
 					String assetCode = entry.getKey();
 					AssetSummaryTotals totals = entry.getValue();
 					Asset asset = resolveAsset(assetCode, assetCacheByCode);
+					BigDecimal exchangeRate = null;
+					if (displayAsset != null && asset != null) {
+						if (asset.getCode().equalsIgnoreCase(displayAsset.getCode())) {
+							exchangeRate = BigDecimal.ONE;
+						} else {
+							exchangeRate = exchangeRateService.getRate(asset, displayAsset, rateDate);
+						}
+					}
 					return new CategoryMovementAssetTotalsDto(
 							assetCode,
 							asset != null ? asset.getScale() : null,
+							exchangeRate,
 							totals.expectedExpense,
 							totals.expectedIncome,
 							totals.expectedIncome - totals.expectedExpense,
