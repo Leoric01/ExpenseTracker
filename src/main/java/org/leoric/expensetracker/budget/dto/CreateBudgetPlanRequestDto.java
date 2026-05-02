@@ -17,9 +17,9 @@ public record CreateBudgetPlanRequestDto(
 		@Positive(message = "Amount must be positive")
 		Long amount,
 
-		@NotBlank(message = "Currency code is required")
+		@NotBlank(message = "Asset code is required")
 		@ValidCurrencyCode
-		String currencyCode,
+		String assetCode,
 
 		@NotNull(message = "Period type is required")
 		PeriodType periodType,

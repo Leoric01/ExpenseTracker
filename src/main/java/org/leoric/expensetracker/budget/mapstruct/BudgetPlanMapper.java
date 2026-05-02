@@ -29,7 +29,7 @@ public interface BudgetPlanMapper {
 	@Mapping(target = "lastModifiedDate", ignore = true)
 	@Mapping(target = "createdBy", ignore = true)
 	@Mapping(target = "lastModifiedBy", ignore = true)
-	@Mapping(target = "currencyCode", expression = "java(dto.currencyCode() != null ? dto.currencyCode().toUpperCase() : null)")
+	@Mapping(target = "currencyCode", expression = "java(dto.assetCode() != null ? dto.assetCode().toUpperCase() : null)")
 	BudgetPlan toEntity(CreateBudgetPlanRequestDto dto);
 
 	@Mapping(source = "category.id", target = "categoryId")
@@ -58,8 +58,8 @@ public interface BudgetPlanMapper {
 
 	@AfterMapping
 	default void normalizeUpdate(UpdateBudgetPlanRequestDto dto, @MappingTarget BudgetPlan entity) {
-		if (dto.currencyCode() != null) {
-			entity.setCurrencyCode(dto.currencyCode().toUpperCase());
+		if (dto.assetCode() != null) {
+			entity.setCurrencyCode(dto.assetCode().toUpperCase());
 		}
 	}
 

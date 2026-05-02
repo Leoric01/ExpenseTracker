@@ -12,7 +12,7 @@ public record UpdateBudgetPlanRequestDto(
 		Long amount,
 
 		@ValidCurrencyCode
-		String currencyCode,
+		String assetCode,
 
 		PeriodType periodType,
 
