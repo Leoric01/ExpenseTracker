@@ -1,6 +1,7 @@
 package org.leoric.expensetracker.category.services.interfaces;
 
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.category.dto.CategoryActivePageResponse;
 import org.leoric.expensetracker.category.dto.CategoryActiveTreeResponseDto;
 import org.leoric.expensetracker.category.dto.CategoryBulkExportResponseDto;
 import org.leoric.expensetracker.category.dto.CategoryMovementSummaryResponseDto;
@@ -32,6 +33,8 @@ public interface CategoryService {
 	Page<CategoryResponseDto> categoryFindAll(User currentUser, UUID trackerId, String search, Pageable pageable);
 
 	Page<CategoryResponseDto> categoryFindAllActive(User currentUser, UUID trackerId, String search, LocalDate dateFrom, LocalDate dateTo, Pageable pageable);
+
+	CategoryActivePageResponse categoryFindAllActiveLight(User currentUser, UUID trackerId, String search, LocalDate dateFrom, LocalDate dateTo, Pageable pageable);
 
 	CategoryMovementSummaryResponseDto categoryMovementSummary(User currentUser, UUID trackerId, Instant dateFrom, Instant dateTo, String displayAssetCode);
 

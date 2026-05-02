@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,6 +18,10 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 	List<Category> findByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId);
 
 	Page<Category> findByExpenseTrackerIdAndActiveTrueAndParentIsNull(UUID expenseTrackerId, Pageable pageable);
+
+	Page<Category> findByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId, Pageable pageable);
+
+	List<Category> findByExpenseTrackerIdAndActiveTrueAndIdIn(UUID expenseTrackerId, Collection<UUID> ids);
 
 	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 

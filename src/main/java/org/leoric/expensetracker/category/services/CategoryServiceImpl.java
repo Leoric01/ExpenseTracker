@@ -9,10 +9,14 @@ import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.budget.dto.CategoryActiveBudgetPlanDto;
 import org.leoric.expensetracker.budget.mapstruct.BudgetPlanMapper;
 import org.leoric.expensetracker.category.dto.CategoryActiveTreeResponseDto;
+import org.leoric.expensetracker.category.dto.CategoryActiveBudgetPlanEmbed;
+import org.leoric.expensetracker.category.dto.CategoryActivePageResponse;
+import org.leoric.expensetracker.category.dto.CategoryActiveRowResponse;
 import org.leoric.expensetracker.category.dto.CategoryBulkExportResponseDto;
 import org.leoric.expensetracker.category.dto.CategoryMovementAssetTotalsDto;
 import org.leoric.expensetracker.category.dto.CategoryMovementConvertedTotalsDto;
 import org.leoric.expensetracker.category.dto.CategoryMovementSummaryResponseDto;
+import org.leoric.expensetracker.category.dto.PageMetadata;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
@@ -49,6 +53,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -293,6 +299,42 @@ public class CategoryServiceImpl implements CategoryService {
 
 		return categoryRepository.findByExpenseTrackerIdAndActiveTrueAndParentIsNull(trackerId, pageable)
 				.map(category -> toActiveResponse(category, activeBudgetPlansByCategoryId, budgetPlansInRangeByCategoryId));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public CategoryActivePageResponse categoryFindAllActiveLight(User currentUser, UUID trackerId, String search, LocalDate dateFrom, LocalDate dateTo, Pageable pageable) {
+		Page<Category> matchedPage;
+		if (search != null && !search.isBlank()) {
+			matchedPage = categoryRepository.findActiveByExpenseTrackerIdWithSearch(trackerId, search, pageable);
+		} else {
+			matchedPage = categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId, pageable);
+		}
+
+		List<Category> categories = collectCategoriesWithParents(trackerId, matchedPage.getContent(), search != null && !search.isBlank());
+
+		Map<UUID, List<BudgetPlan>> budgetPlansInRangeByCategoryId;
+		if (dateFrom != null && dateTo != null) {
+			budgetPlansInRangeByCategoryId = budgetPlanRepository
+					.findAllActiveByExpenseTrackerIdWithCategoryInRange(trackerId, dateFrom, dateTo)
+					.stream()
+					.collect(Collectors.groupingBy(plan -> plan.getCategory().getId()));
+		} else {
+			budgetPlansInRangeByCategoryId = Map.of();
+		}
+
+		List<CategoryActiveRowResponse> rows = categories.stream()
+				.map(category -> new CategoryActiveRowResponse(
+						category.getId().toString(),
+						category.getName(),
+						category.getCategoryKind(),
+						category.getParent() != null ? category.getParent().getId().toString() : null,
+						category.getSortOrder() != null ? category.getSortOrder() : 0,
+						mapBudgetPlansForPeriodLight(category, budgetPlansInRangeByCategoryId)
+				))
+				.toList();
+
+		return new CategoryActivePageResponse(rows, toPageMetadata(matchedPage));
 	}
 
 	@Override
@@ -720,6 +762,73 @@ public class CategoryServiceImpl implements CategoryService {
 		}
 	}
 
+	private List<Category> collectCategoriesWithParents(UUID trackerId, List<Category> matchedCategories, boolean includeParents) {
+		Map<UUID, Category> categoriesById = new LinkedHashMap<>();
+		for (Category category : matchedCategories) {
+			categoriesById.put(category.getId(), category);
+		}
+
+		if (!includeParents) {
+			return categoriesById.values().stream()
+					.sorted(CATEGORY_ACTIVE_TREE_COMPARATOR_ENTITY)
+					.toList();
+		}
+
+		Set<UUID> parentIdsToLoad = matchedCategories.stream()
+				.map(Category::getParent)
+				.filter(java.util.Objects::nonNull)
+				.map(Category::getId)
+				.filter(id -> !categoriesById.containsKey(id))
+				.collect(Collectors.toCollection(LinkedHashSet::new));
+
+		while (!parentIdsToLoad.isEmpty()) {
+			List<Category> loadedParents = categoryRepository.findByExpenseTrackerIdAndActiveTrueAndIdIn(trackerId, parentIdsToLoad);
+			parentIdsToLoad = new LinkedHashSet<>();
+
+			for (Category parent : loadedParents) {
+				if (categoriesById.putIfAbsent(parent.getId(), parent) == null && parent.getParent() != null) {
+					UUID grandParentId = parent.getParent().getId();
+					if (!categoriesById.containsKey(grandParentId)) {
+						parentIdsToLoad.add(grandParentId);
+					}
+				}
+			}
+		}
+
+		return categoriesById.values().stream()
+				.sorted(CATEGORY_ACTIVE_TREE_COMPARATOR_ENTITY)
+				.toList();
+	}
+
+	private List<CategoryActiveBudgetPlanEmbed> mapBudgetPlansForPeriodLight(Category category, Map<UUID, List<BudgetPlan>> budgetPlansInRangeByCategoryId) {
+		List<BudgetPlan> plans = budgetPlansInRangeByCategoryId.get(category.getId());
+		if (plans == null || plans.isEmpty()) {
+			return List.of();
+		}
+
+		return plans.stream()
+				.sorted(Comparator.comparing(BudgetPlan::getValidFrom).reversed())
+				.map(plan -> new CategoryActiveBudgetPlanEmbed(
+						plan.getId().toString(),
+						plan.getName(),
+						plan.getAmount(),
+						plan.getCurrencyCode(),
+						plan.getPeriodType(),
+						toUtcStartOfDay(plan.getValidFrom()),
+						toUtcStartOfDay(plan.getValidTo()),
+						budgetPlanSpentCalculator.computeAlreadySpent(plan)
+				))
+				.toList();
+	}
+
+	private Instant toUtcStartOfDay(LocalDate date) {
+		return date == null ? null : date.atStartOfDay().toInstant(ZoneOffset.UTC);
+	}
+
+	private PageMetadata toPageMetadata(Page<?> page) {
+		return new PageMetadata(page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+	}
+
 	private CategoryResponseDto toActiveResponse(Category category, Map<UUID, BudgetPlan> activeBudgetPlansByCategoryId, Map<UUID, List<BudgetPlan>> budgetPlansInRangeByCategoryId) {
 		CategoryResponseDto mapped = categoryMapper.toResponse(category);
 
@@ -875,6 +984,10 @@ public class CategoryServiceImpl implements CategoryService {
 				.map(this::toCategoryActiveBudgetPlanResponse)
 				.toList();
 	}
+
+	private static final Comparator<Category> CATEGORY_ACTIVE_TREE_COMPARATOR_ENTITY = Comparator
+			.comparing(Category::getSortOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+			.thenComparing(category -> category.getName() == null ? "" : category.getName(), String.CASE_INSENSITIVE_ORDER);
 
 	private static final class AssetSummaryTotals {
 		private long expectedExpense;
