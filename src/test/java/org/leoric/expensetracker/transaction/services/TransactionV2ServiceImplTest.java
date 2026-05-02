@@ -260,7 +260,7 @@ class TransactionV2ServiceImplTest {
 		assertThat(response.targetAddition()).isEqualTo(190L);
 		assertThat(response.sourceHoldingName()).isEqualTo("Source");
 		assertThat(response.targetHoldingName()).isEqualTo("Target");
-		assertThat(response.currencyCode()).isEqualTo("CZK");
+		assertThat(response.assetCode()).isEqualTo("CZK");
 		assertThat(response.sourceAssetScale()).isEqualTo(2);
 		assertThat(response.targetAssetScale()).isEqualTo(2);
 		assertThat(source.getCurrentAmount()).isEqualTo(900L);

@@ -156,7 +156,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		holdingRepository.save(source);
 		holdingRepository.save(target);
 
-		String currencyCode = source.getAsset().getCode();
+		String assetCode = source.getAsset().getCode();
 		Instant transactionDate = transactionDateInput != null ? transactionDateInput : Instant.now();
 
 		Transaction transaction = Transaction.builder()
@@ -166,7 +166,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				.sourceHolding(source)
 				.targetHolding(target)
 				.amount(resolved.amount())
-				.currencyCode(currencyCode)
+				.currencyCode(assetCode)
 				.exchangeRate(null)
 				.feeAmount(resolved.feeAmount())
 				.settledAmount(resolved.settledAmount())
@@ -274,7 +274,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 		holdingRepository.save(source);
 		holdingRepository.save(target);
 
-		String currencyCode = source.getAsset().getCode();
+		String assetCode = source.getAsset().getCode();
 		Instant transactionDate = transactionDateInput != null ? transactionDateInput : Instant.now();
 
 		Transaction transaction = Transaction.builder()
@@ -284,7 +284,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				.sourceHolding(source)
 				.targetHolding(target)
 				.amount(resolved.amount())
-				.currencyCode(currencyCode)
+				.currencyCode(assetCode)
 				.exchangeRate(resolved.exchangeRate())
 				.feeAmount(resolved.feeAmount())
 				.settledAmount(resolved.settledAmount())
@@ -315,7 +315,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				source.getAsset().getScale(),
 				target.getAsset().getCode(),
 				target.getAsset().getScale(),
-				currencyCode,
+				assetCode,
 				resolved.exchangeRate(),
 				transactionDate
 		);

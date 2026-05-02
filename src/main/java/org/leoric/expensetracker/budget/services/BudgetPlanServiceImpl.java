@@ -3,6 +3,7 @@ package org.leoric.expensetracker.budget.services;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.leoric.expensetracker.asset.models.Asset;
 import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.budget.dto.BudgetPlanResponseDto;
@@ -576,7 +577,27 @@ public class BudgetPlanServiceImpl implements BudgetPlanService {
 
 	private BudgetPlanResponseDto toResponseWithSpent(BudgetPlan plan) {
 		long alreadySpent = budgetPlanSpentCalculator.computeAlreadySpent(plan);
-		return budgetPlanMapper.toResponseWithSpent(plan, alreadySpent);
+		BudgetPlanResponseDto mapped = budgetPlanMapper.toResponseWithSpent(plan, alreadySpent);
+		Integer assetScale = assetRepository.findByCodeIgnoreCase(plan.getCurrencyCode())
+				.map(Asset::getScale)
+				.orElse(null);
+
+		return new BudgetPlanResponseDto(
+				mapped.id(),
+				mapped.name(),
+				mapped.amount(),
+				mapped.assetCode(),
+				assetScale,
+				mapped.periodType(),
+				mapped.categoryId(),
+				mapped.categoryName(),
+				mapped.validFrom(),
+				mapped.validTo(),
+				mapped.active(),
+				mapped.alreadySpent(),
+				mapped.createdDate(),
+				mapped.lastModifiedDate()
+		);
 	}
 
 	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {

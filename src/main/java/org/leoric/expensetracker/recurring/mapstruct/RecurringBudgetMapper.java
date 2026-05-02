@@ -36,6 +36,8 @@ public interface RecurringBudgetMapper {
 
 	@Mapping(source = "category.id", target = "categoryId")
 	@Mapping(source = "category.name", target = "categoryName")
+	@Mapping(source = "currencyCode", target = "assetCode")
+	@Mapping(target = "assetScale", ignore = true)
 	RecurringBudgetResponseDto toResponse(RecurringBudgetTemplate entity);
 
 	@Mapping(target = "id", ignore = true)

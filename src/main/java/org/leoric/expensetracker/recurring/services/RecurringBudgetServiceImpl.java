@@ -3,6 +3,8 @@ package org.leoric.expensetracker.recurring.services;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.leoric.expensetracker.asset.models.Asset;
+import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.budget.models.constants.PeriodType;
@@ -38,6 +40,7 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 	private final BudgetPlanRepository budgetPlanRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final CategoryRepository categoryRepository;
+	private final AssetRepository assetRepository;
 	private final RecurringBudgetMapper mapper;
 
 	@Override
@@ -62,7 +65,7 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 		// Immediately generate budget plans for periods that are already due
 		generateDueBudgetPlans(template);
 
-		return mapper.toResponse(template);
+		return toResponseWithAssetScale(template);
 	}
 
 	@Override
@@ -70,7 +73,7 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 	public RecurringBudgetResponseDto recurringBudgetFindById(User currentUser, UUID trackerId, UUID templateId) {
 		RecurringBudgetTemplate template = getTemplateOrThrow(templateId);
 		assertTemplateBelongsToTracker(template, trackerId);
-		return mapper.toResponse(template);
+		return toResponseWithAssetScale(template);
 	}
 
 	@Override
@@ -78,10 +81,10 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 	public Page<RecurringBudgetResponseDto> recurringBudgetFindAll(User currentUser, UUID trackerId, String search, Pageable pageable) {
 		if (search != null && !search.isBlank()) {
 			return templateRepository.findByExpenseTrackerIdWithSearch(trackerId, search, pageable)
-					.map(mapper::toResponse);
+					.map(this::toResponseWithAssetScale);
 		}
 		return templateRepository.findByExpenseTrackerId(trackerId, pageable)
-				.map(mapper::toResponse);
+				.map(this::toResponseWithAssetScale);
 	}
 
 	@Override
@@ -89,10 +92,10 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 	public Page<RecurringBudgetResponseDto> recurringBudgetFindAllActive(User currentUser, UUID trackerId, String search, Pageable pageable) {
 		if (search != null && !search.isBlank()) {
 			return templateRepository.findByExpenseTrackerIdAndActiveTrueWithSearch(trackerId, search, pageable)
-					.map(mapper::toResponse);
+					.map(this::toResponseWithAssetScale);
 		}
 		return templateRepository.findByExpenseTrackerIdAndActiveTrue(trackerId, pageable)
-				.map(mapper::toResponse);
+				.map(this::toResponseWithAssetScale);
 	}
 
 	@Override
@@ -119,7 +122,7 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 		recomputeTemplateNextRunDate(template);
 		template = templateRepository.save(template);
 
-		return mapper.toResponse(template);
+		return toResponseWithAssetScale(template);
 	}
 
 	@Override
@@ -297,5 +300,30 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 			case QUARTERLY -> current.plusMonths(3L * interval);
 			case YEARLY -> current.plusYears(interval);
 		};
+	}
+
+	private RecurringBudgetResponseDto toResponseWithAssetScale(RecurringBudgetTemplate template) {
+		RecurringBudgetResponseDto mapped = mapper.toResponse(template);
+		Integer assetScale = assetRepository.findByCodeIgnoreCase(template.getCurrencyCode())
+				.map(Asset::getScale)
+				.orElse(null);
+
+		return new RecurringBudgetResponseDto(
+				mapped.id(),
+				mapped.name(),
+				mapped.amount(),
+				mapped.assetCode(),
+				assetScale,
+				mapped.periodType(),
+				mapped.intervalValue(),
+				mapped.categoryId(),
+				mapped.categoryName(),
+				mapped.startDate(),
+				mapped.endDate(),
+				mapped.nextRunDate(),
+				mapped.active(),
+				mapped.createdDate(),
+				mapped.lastModifiedDate()
+		);
 	}
 }

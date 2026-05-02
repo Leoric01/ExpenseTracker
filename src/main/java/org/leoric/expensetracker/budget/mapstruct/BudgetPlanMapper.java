@@ -34,14 +34,20 @@ public interface BudgetPlanMapper {
 
 	@Mapping(source = "category.id", target = "categoryId")
 	@Mapping(source = "category.name", target = "categoryName")
+	@Mapping(source = "currencyCode", target = "assetCode")
+	@Mapping(target = "assetScale", ignore = true)
 	@Mapping(target = "alreadySpent", expression = "java(0L)")
 	BudgetPlanResponseDto toResponse(BudgetPlan entity);
 
 	@Mapping(source = "entity.category.id", target = "categoryId")
 	@Mapping(source = "entity.category.name", target = "categoryName")
+	@Mapping(source = "entity.currencyCode", target = "assetCode")
+	@Mapping(target = "assetScale", ignore = true)
 	@Mapping(source = "alreadySpent", target = "alreadySpent")
 	BudgetPlanResponseDto toResponseWithSpent(BudgetPlan entity, long alreadySpent);
 
+	@Mapping(source = "currencyCode", target = "assetCode")
+	@Mapping(target = "assetScale", ignore = true)
 	@Mapping(target = "alreadySpent", expression = "java(0L)")
 	CategoryActiveBudgetPlanDto toCategoryActiveBudgetPlanDto(BudgetPlan entity);
 

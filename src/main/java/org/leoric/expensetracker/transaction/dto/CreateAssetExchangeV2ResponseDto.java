@@ -22,7 +22,7 @@ public record CreateAssetExchangeV2ResponseDto(
 		Integer sourceAssetScale,
 		String targetAssetCode,
 		Integer targetAssetScale,
-		String currencyCode,
+		String assetCode,
 		BigDecimal exchangeRate,
 		Instant transactionDate
 ) {

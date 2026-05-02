@@ -15,7 +15,7 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface ValidCurrencyCode {
 
-	String message() default "Invalid ISO 4217 currency code";
+	String message() default "Unknown asset code";
 
 	Class<?>[] groups() default {};
 

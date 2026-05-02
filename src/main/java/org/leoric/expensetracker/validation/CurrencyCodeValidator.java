@@ -2,22 +2,23 @@ package org.leoric.expensetracker.validation;
 
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
+import org.leoric.expensetracker.asset.repositories.AssetRepository;
+import org.springframework.stereotype.Component;
 
-import java.util.Currency;
-import java.util.Set;
-import java.util.stream.Collectors;
-
+@Component
 public class CurrencyCodeValidator implements ConstraintValidator<ValidCurrencyCode, String> {
 
-	private static final Set<String> VALID_CURRENCY_CODES = Currency.getAvailableCurrencies().stream()
-			.map(Currency::getCurrencyCode)
-			.collect(Collectors.toUnmodifiableSet());
+	private final AssetRepository assetRepository;
+
+	public CurrencyCodeValidator(AssetRepository assetRepository) {
+		this.assetRepository = assetRepository;
+	}
 
 	@Override
 	public boolean isValid(String value, ConstraintValidatorContext context) {
 		if (value == null) {
 			return true; // let @NotBlank / @NotNull handle nullability
 		}
-		return VALID_CURRENCY_CODES.contains(value.toUpperCase());
+		return assetRepository.existsByCodeIgnoreCase(value);
 	}
 }

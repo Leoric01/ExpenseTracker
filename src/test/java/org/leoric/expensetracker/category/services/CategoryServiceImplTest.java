@@ -2,6 +2,7 @@ package org.leoric.expensetracker.category.services;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.leoric.expensetracker.asset.models.Asset;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.IntStream;
 
@@ -39,6 +41,8 @@ class CategoryServiceImplTest {
 	private BudgetPlanRepository budgetPlanRepository;
 	@Mock
 	private BudgetPlanSpentCalculator budgetPlanSpentCalculator;
+	@Mock
+	private org.leoric.expensetracker.asset.repositories.AssetRepository assetRepository;
 	@InjectMocks
 	private CategoryServiceImpl categoryService;
 
@@ -184,6 +188,8 @@ class CategoryServiceImplTest {
 				LocalDate.of(2026, 5, 31)))
 				.thenReturn(List.of(plan));
 		when(budgetPlanSpentCalculator.computeAlreadySpent(plan)).thenReturn(1200L);
+		when(assetRepository.findByCodeIgnoreCase("CZK"))
+				.thenReturn(Optional.of(Asset.builder().code("CZK").scale(2).build()));
 
 		CategoryActivePageResponse result = categoryService.categoryFindAllActiveLight(
 				user,

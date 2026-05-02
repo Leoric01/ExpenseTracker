@@ -18,7 +18,7 @@ public record TransactionV2ResponseDto(
 		UUID targetHoldingId,
 		String sourceAssetCode,
 		String targetAssetCode,
-		String currencyCode,
+		String assetCode,
 		BigDecimal exchangeRate,
 		Instant transactionDate
 ) {

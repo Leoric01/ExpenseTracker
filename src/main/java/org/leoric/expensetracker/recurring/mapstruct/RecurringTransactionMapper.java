@@ -19,8 +19,10 @@ public interface RecurringTransactionMapper {
 
 	@Mapping(source = "holding.id", target = "holdingId")
 	@Mapping(source = "holding.account.name", target = "holdingName")
+	@Mapping(source = "holding.asset.scale", target = "assetScale")
 	@Mapping(source = "category.id", target = "categoryId")
 	@Mapping(source = "category.name", target = "categoryName")
+	@Mapping(source = "currencyCode", target = "assetCode")
 	RecurringTransactionResponseDto toResponse(RecurringTransactionTemplate entity);
 
 	@BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE,

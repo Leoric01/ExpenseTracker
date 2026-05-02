@@ -806,6 +806,8 @@ public class CategoryServiceImpl implements CategoryService {
 			return List.of();
 		}
 
+		Map<String, Asset> assetCacheByCode = new HashMap<>();
+
 		return plans.stream()
 				.sorted(Comparator.comparing(BudgetPlan::getValidFrom).reversed())
 				.map(plan -> new CategoryActiveBudgetPlanEmbed(
@@ -813,6 +815,7 @@ public class CategoryServiceImpl implements CategoryService {
 						plan.getName(),
 						plan.getAmount(),
 						plan.getCurrencyCode(),
+						resolveAssetScale(plan.getCurrencyCode(), assetCacheByCode),
 						plan.getPeriodType(),
 						toUtcStartOfDay(plan.getValidFrom()),
 						toUtcStartOfDay(plan.getValidTo()),
@@ -959,12 +962,14 @@ public class CategoryServiceImpl implements CategoryService {
 	private CategoryActiveBudgetPlanDto toCategoryActiveBudgetPlanResponse(BudgetPlan plan) {
 		long alreadySpent = budgetPlanSpentCalculator.computeAlreadySpent(plan);
 		CategoryActiveBudgetPlanDto mapped = budgetPlanMapper.toCategoryActiveBudgetPlanDto(plan);
+		Integer assetScale = resolveAssetScale(plan.getCurrencyCode(), new HashMap<>());
 
 		return new CategoryActiveBudgetPlanDto(
 				mapped.id(),
 				mapped.name(),
 				mapped.amount(),
-				mapped.currencyCode(),
+				mapped.assetCode(),
+				assetScale,
 				mapped.periodType(),
 				mapped.validFrom(),
 				mapped.validTo(),
@@ -988,6 +993,11 @@ public class CategoryServiceImpl implements CategoryService {
 	private static final Comparator<Category> CATEGORY_ACTIVE_TREE_COMPARATOR_ENTITY = Comparator
 			.comparing(Category::getSortOrder, Comparator.nullsLast(Comparator.naturalOrder()))
 			.thenComparing(category -> category.getName() == null ? "" : category.getName(), String.CASE_INSENSITIVE_ORDER);
+
+	private Integer resolveAssetScale(String assetCode, Map<String, Asset> cacheByCode) {
+		Asset asset = resolveAsset(assetCode, cacheByCode);
+		return asset != null ? asset.getScale() : null;
+	}
 
 	private static final class AssetSummaryTotals {
 		private long expectedExpense;

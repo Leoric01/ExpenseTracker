@@ -3,6 +3,7 @@ package org.leoric.expensetracker.recurring.services;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
 import org.leoric.expensetracker.budget.models.constants.PeriodType;
@@ -37,6 +38,8 @@ class RecurringBudgetServiceImplTest {
 	private BudgetPlanRepository budgetPlanRepository;
 	@Mock
 	private CategoryRepository categoryRepository;
+	@Mock
+	private AssetRepository assetRepository;
 	@Mock
 	private RecurringBudgetMapper mapper;
 
@@ -131,6 +134,8 @@ class RecurringBudgetServiceImplTest {
 
 		when(templateRepository.findById(templateId)).thenReturn(Optional.of(template));
 		when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+		when(assetRepository.findByCodeIgnoreCase("CZK"))
+				.thenReturn(Optional.of(org.leoric.expensetracker.asset.models.Asset.builder().code("CZK").scale(2).build()));
 		when(templateRepository.save(any(RecurringBudgetTemplate.class))).thenAnswer(inv -> inv.getArgument(0));
 		when(budgetPlanRepository.findByRecurringBudgetTemplateIdAndActiveTrueOrderByValidFromAsc(templateId))
 				.thenReturn(List.of(first, second));
@@ -167,6 +172,7 @@ class RecurringBudgetServiceImplTest {
 					t.getName(),
 					t.getAmount(),
 					t.getCurrencyCode(),
+					2,
 					t.getPeriodType(),
 					t.getIntervalValue(),
 					t.getCategory() != null ? t.getCategory().getId() : null,
@@ -257,6 +263,8 @@ class RecurringBudgetServiceImplTest {
 
 		when(templateRepository.findById(templateId)).thenReturn(Optional.of(template));
 		when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+		when(assetRepository.findByCodeIgnoreCase("CZK"))
+				.thenReturn(Optional.of(org.leoric.expensetracker.asset.models.Asset.builder().code("CZK").scale(2).build()));
 		when(templateRepository.save(any(RecurringBudgetTemplate.class))).thenAnswer(inv -> inv.getArgument(0));
 		when(budgetPlanRepository.findByRecurringBudgetTemplateIdAndActiveTrueOrderByValidFromAsc(templateId))
 				.thenReturn(List.of(first, second));
@@ -293,6 +301,7 @@ class RecurringBudgetServiceImplTest {
 					t.getName(),
 					t.getAmount(),
 					t.getCurrencyCode(),
+					2,
 					t.getPeriodType(),
 					t.getIntervalValue(),
 					t.getCategory() != null ? t.getCategory().getId() : null,
