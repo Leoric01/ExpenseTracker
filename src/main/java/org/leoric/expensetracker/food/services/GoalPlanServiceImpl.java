@@ -138,7 +138,7 @@ public class GoalPlanServiceImpl implements GoalPlanService {
 			goalPlan.setNotes(request.notes());
 		}
 		if (request.active() != null) {
-			if (Boolean.TRUE.equals(request.active())) {
+			if (request.active()) {
 				deactivateExistingActiveGoalPlanIfNeeded(trackerId);
 				goalPlan.setActive(true);
 			} else {

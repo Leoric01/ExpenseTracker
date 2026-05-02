@@ -17,8 +17,6 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
 	List<Account> findByInstitutionIdAndActiveTrue(UUID institutionId);
 
-	Page<Account> findByInstitutionIdAndActiveTrue(UUID institutionId, Pageable pageable);
-
 	@Query("""
 			SELECT a FROM Account a
 			WHERE a.institution.expenseTracker.id = :trackerId

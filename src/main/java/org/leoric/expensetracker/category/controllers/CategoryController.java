@@ -4,6 +4,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.category.dto.CategoryActivePageResponse;
+import org.leoric.expensetracker.category.dto.CategoryBulkExportResponseDto;
+import org.leoric.expensetracker.category.dto.CategoryActiveTreeResponseDto;
+import org.leoric.expensetracker.category.dto.CategoryMovementSummaryResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryRequestDto;
@@ -65,6 +69,14 @@ public class CategoryController {
 				.body(categoryService.categoryCreateBulk(currentUser, trackerId, request));
 	}
 
+	@GetMapping("/{trackerId}/export")
+	public ResponseEntity<List<CategoryBulkExportResponseDto>> categoryExportBulk(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(categoryService.categoryExportBulk(currentUser, trackerId));
+	}
+
 	@GetMapping("/{trackerId}")
 	public ResponseEntity<Page<CategoryResponseDto>> categoryFindAll(
 			@AuthenticationPrincipal User currentUser,
@@ -89,6 +101,39 @@ public class CategoryController {
 		log.debug("categoryFindAllActive — dateFrom(Instant)={}, dateTo(Instant)={}, from(LocalDate)={}, to(LocalDate)={}",
 				dateFrom, dateTo, from, to);
 		return ResponseEntity.ok(categoryService.categoryFindAllActive(currentUser, trackerId, search, from, to, pageable));
+	}
+
+	@GetMapping("/{trackerId}/active-light")
+	public ResponseEntity<CategoryActivePageResponse> categoryFindAllActiveLight(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@RequestParam(required = false) String search,
+			@RequestParam(required = false) Instant dateFrom,
+			@RequestParam(required = false) Instant dateTo,
+			@ParameterObject Pageable pageable) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		LocalDate from = dateFrom != null ? dateFrom.atZone(ZoneOffset.UTC).toLocalDate() : null;
+		LocalDate to = dateTo != null ? dateTo.atZone(ZoneOffset.UTC).toLocalDate() : null;
+		return ResponseEntity.ok(categoryService.categoryFindAllActiveLight(currentUser, trackerId, search, from, to, pageable));
+	}
+
+	@GetMapping("/{trackerId}/active/tree")
+	public ResponseEntity<List<CategoryActiveTreeResponseDto>> categoryFindAllActiveTree(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(categoryService.categoryFindAllActiveTree(currentUser, trackerId));
+	}
+
+	@GetMapping("/{trackerId}/summary")
+	public ResponseEntity<CategoryMovementSummaryResponseDto> categoryMovementSummary(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@RequestParam Instant dateFrom,
+			@RequestParam Instant dateTo,
+			@RequestParam(required = false) String displayAssetCode) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(categoryService.categoryMovementSummary(currentUser, trackerId, dateFrom, dateTo, displayAssetCode));
 	}
 
 	@GetMapping("/{trackerId}/{categoryId}")

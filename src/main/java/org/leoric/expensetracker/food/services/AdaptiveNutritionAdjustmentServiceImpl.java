@@ -44,7 +44,7 @@ public class AdaptiveNutritionAdjustmentServiceImpl implements AdaptiveNutrition
 			throw new IllegalArgumentException("At least 4 weekly checkins are required for adaptive adjustment");
 		}
 
-		WeeklyCheckin latest = usableCheckins.get(usableCheckins.size() - 1);
+		WeeklyCheckin latest = usableCheckins.getLast();
 		WeeklyCheckin reference = usableCheckins.get(usableCheckins.size() - 2);
 
 		BigDecimal observedWeightChangeKg = latest.getAvgWeightKg()

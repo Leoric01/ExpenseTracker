@@ -1,6 +1,7 @@
 package org.leoric.expensetracker.holding.mapstruct;
 
 import org.leoric.expensetracker.holding.dto.HoldingResponseDto;
+import org.leoric.expensetracker.holding.dto.HoldingLiteResponseDto;
 import org.leoric.expensetracker.holding.models.Holding;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -24,6 +25,12 @@ public interface HoldingMapper {
 	@Mapping(source = "asset.assetType", target = "assetType")
 	@Mapping(source = "asset.scale", target = "assetScale")
 	HoldingResponseDto toResponse(Holding entity);
+
+	@Mapping(source = "account.institution.name", target = "institutionName")
+	@Mapping(source = "account.name", target = "accountName")
+	@Mapping(source = "asset.code", target = "assetCode")
+	@Mapping(source = "asset.scale", target = "assetScale")
+	HoldingLiteResponseDto toLiteResponse(Holding entity);
 
 	default OffsetDateTime map(Instant instant) {
 		return instant == null ? null : instant.atOffset(ZoneOffset.UTC);

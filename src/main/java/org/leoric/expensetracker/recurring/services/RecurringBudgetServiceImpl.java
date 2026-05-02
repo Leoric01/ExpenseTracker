@@ -51,18 +51,9 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 			assertCategoryBelongsToTracker(category, trackerId);
 		}
 
-		RecurringBudgetTemplate template = RecurringBudgetTemplate.builder()
-				.expenseTracker(tracker)
-				.name(request.name())
-				.amount(request.amount())
-				.currencyCode(request.currencyCode().toUpperCase())
-				.periodType(request.periodType())
-				.intervalValue(request.intervalValue() != null ? request.intervalValue() : 1)
-				.startDate(request.startDate())
-				.endDate(request.endDate())
-				.nextRunDate(request.startDate())
-				.category(category)
-				.build();
+		RecurringBudgetTemplate template = mapper.toEntity(request);
+		template.setExpenseTracker(tracker);
+		template.setCategory(category);
 
 		template = templateRepository.save(template);
 		log.info("User {} created recurring budget template '{}' in tracker '{}'",
@@ -110,7 +101,7 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 		RecurringBudgetTemplate template = getTemplateOrThrow(templateId);
 		assertTemplateBelongsToTracker(template, trackerId);
 
-		Category newCategory = null;
+		Category newCategory;
 		if (request.categoryId() != null) {
 			newCategory = getCategoryOrThrow(request.categoryId());
 			assertCategoryBelongsToTracker(newCategory, trackerId);
@@ -119,16 +110,14 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 
 		mapper.updateFromDto(request, template);
 
-		if (request.currencyCode() != null) {
-			template.setCurrencyCode(request.currencyCode().toUpperCase());
-		}
-
 		template = templateRepository.save(template);
 		log.info("User {} updated recurring budget template '{}' in tracker '{}'",
 				currentUser.getEmail(), template.getName(), template.getExpenseTracker().getName());
 
-		// Update currently active budget plan(s) generated from this template
-		updateCurrentBudgetPlans(template, newCategory);
+		// Keep already generated linked plans consistent with the updated template.
+		patchLinkedBudgetPlansFromTemplate(template);
+		recomputeTemplateNextRunDate(template);
+		template = templateRepository.save(template);
 
 		return mapper.toResponse(template);
 	}
@@ -212,22 +201,50 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 		}
 	}
 
-	private void updateCurrentBudgetPlans(RecurringBudgetTemplate template, Category newCategory) {
-		LocalDate today = LocalDate.now();
-		List<BudgetPlan> currentPlans = budgetPlanRepository.findCurrentActiveByRecurringTemplateId(template.getId(), today);
+	private void patchLinkedBudgetPlansFromTemplate(RecurringBudgetTemplate template) {
+		List<BudgetPlan> linkedPlans = budgetPlanRepository
+				.findByRecurringBudgetTemplateIdAndActiveTrueOrderByValidFromAsc(template.getId());
 
-		for (BudgetPlan plan : currentPlans) {
-			plan.setName(template.getName());
-			plan.setAmount(template.getAmount());
-			plan.setCurrencyCode(template.getCurrencyCode());
-			plan.setPeriodType(template.getPeriodType());
-			if (newCategory != null) {
-				plan.setCategory(newCategory);
-			}
+		for (int i = 0; i < linkedPlans.size(); i++) {
+			BudgetPlan plan = linkedPlans.get(i);
+			mapper.updateBudgetPlanFromTemplate(template, plan);
+
+			LocalDate planValidFrom = computeCycleStartByIndex(template.getStartDate(), template.getPeriodType(), template.getIntervalValue(), i);
+			LocalDate planValidTo = computeNextRunDate(planValidFrom, template.getPeriodType(), template.getIntervalValue()).minusDays(1);
+
+			plan.setValidFrom(planValidFrom);
+			plan.setValidTo(planValidTo);
 			budgetPlanRepository.save(plan);
-			log.info("Updated current budget plan '{}' (valid {} — {}) to match recurring template '{}'",
-					plan.getName(), plan.getValidFrom(), plan.getValidTo(), template.getId());
+
+			log.info("Patched linked budget plan '{}' (valid {} — {}) from recurring template '{}'",
+					plan.getName(), planValidFrom, planValidTo, template.getId());
 		}
+	}
+
+	private void recomputeTemplateNextRunDate(RecurringBudgetTemplate template) {
+		List<BudgetPlan> linkedPlans = budgetPlanRepository
+				.findByRecurringBudgetTemplateIdAndActiveTrueOrderByValidFromAsc(template.getId());
+
+		LocalDate nextRun;
+		if (linkedPlans.isEmpty()) {
+			nextRun = template.getStartDate();
+		} else {
+			BudgetPlan lastPlan = linkedPlans.getLast();
+			nextRun = computeNextRunDate(lastPlan.getValidFrom(), template.getPeriodType(), template.getIntervalValue());
+		}
+
+		template.setNextRunDate(nextRun);
+		if (template.getEndDate() != null && nextRun != null && nextRun.isAfter(template.getEndDate())) {
+			template.setActive(false);
+		}
+	}
+
+	private LocalDate computeCycleStartByIndex(LocalDate startDate, PeriodType periodType, int interval, int index) {
+		LocalDate cycleStart = startDate;
+		for (int i = 0; i < index; i++) {
+			cycleStart = computeNextRunDate(cycleStart, periodType, interval);
+		}
+		return cycleStart;
 	}
 
 	private int generateDueBudgetPlans(RecurringBudgetTemplate template) {
@@ -247,17 +264,7 @@ public class RecurringBudgetServiceImpl implements RecurringBudgetService {
 			LocalDate planValidFrom = template.getNextRunDate();
 			LocalDate planValidTo = computeNextRunDate(planValidFrom, template.getPeriodType(), template.getIntervalValue()).minusDays(1);
 
-			BudgetPlan plan = BudgetPlan.builder()
-					.expenseTracker(template.getExpenseTracker())
-					.recurringBudgetTemplate(template)
-					.category(template.getCategory())
-					.name(template.getName())
-					.amount(template.getAmount())
-					.currencyCode(template.getCurrencyCode())
-					.periodType(template.getPeriodType())
-					.validFrom(planValidFrom)
-					.validTo(planValidTo)
-					.build();
+			BudgetPlan plan = mapper.toBudgetPlan(template, planValidFrom, planValidTo);
 
 			budgetPlanRepository.save(plan);
 			count++;

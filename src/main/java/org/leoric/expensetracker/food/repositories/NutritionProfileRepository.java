@@ -12,7 +12,5 @@ public interface NutritionProfileRepository extends JpaRepository<NutritionProfi
 
 	Optional<NutritionProfile> findByExpenseTrackerId(UUID expenseTrackerId);
 
-	boolean existsByExpenseTrackerId(UUID expenseTrackerId);
-
 	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 }

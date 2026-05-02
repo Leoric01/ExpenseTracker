@@ -21,6 +21,8 @@ import org.leoric.expensetracker.holding.services.interfaces.HoldingSummaryBuild
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.institution.dto.AccountSummaryResponseDto;
 import org.leoric.expensetracker.institution.dto.CreateInstitutionRequestDto;
+import org.leoric.expensetracker.institution.dto.FinanceHeaderBalancesResponse;
+import org.leoric.expensetracker.institution.dto.FinanceHeaderNativeBalanceRow;
 import org.leoric.expensetracker.institution.dto.InstitutionDashboardResponseDto;
 import org.leoric.expensetracker.institution.dto.InstitutionResponseDto;
 import org.leoric.expensetracker.institution.dto.InstitutionSummaryResponseDto;
@@ -39,7 +41,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -199,6 +204,53 @@ public class InstitutionServiceImpl implements InstitutionService {
 		);
 	}
 
+	@Override
+	@Transactional(readOnly = true)
+	public FinanceHeaderBalancesResponse institutionHeaderBalances(User currentUser, UUID trackerId, Instant from, Instant to) {
+		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
+		Asset displayAsset = tracker.getPreferredDisplayAsset();
+		LocalDate endDate = to.atZone(ZoneOffset.UTC).toLocalDate();
+
+		List<Holding> holdings = holdingRepository.findByExpenseTrackerIdAndFullyActiveHierarchy(trackerId);
+		Map<AssetKey, Long> nativeBalancesByAsset = new HashMap<>();
+
+		long convertedTotal = 0L;
+		for (Holding holding : holdings) {
+			HoldingSummaryResponseDto summary = holdingSummaryBuilder.buildSummary(holding, from, to);
+
+			AssetKey assetKey = new AssetKey(holding.getAsset().getCode(), holding.getAsset().getScale());
+			nativeBalancesByAsset.merge(assetKey, summary.endBalance(), Long::sum);
+
+			if (displayAsset != null) {
+				HoldingSummaryResponseDto converted = enrichWithConversion(summary, holding.getAsset(), displayAsset, endDate, from);
+				if (converted.convertedEndBalance() != null) {
+					convertedTotal += converted.convertedEndBalance();
+				}
+			}
+		}
+
+		List<FinanceHeaderNativeBalanceRow> nativeBalances = nativeBalancesByAsset.entrySet().stream()
+				.sorted(Comparator
+						.comparing((Map.Entry<AssetKey, Long> entry) -> entry.getKey().assetCode())
+						.thenComparing(entry -> entry.getKey().assetScale()))
+				.map(entry -> new FinanceHeaderNativeBalanceRow(
+						entry.getKey().assetCode(),
+						entry.getKey().assetScale(),
+						entry.getValue()))
+				.toList();
+
+		Long grandTotalConverted = displayAsset != null ? convertedTotal : null;
+
+		return new FinanceHeaderBalancesResponse(
+				from,
+				to,
+				displayAsset != null ? displayAsset.getCode() : null,
+				displayAsset != null ? displayAsset.getScale() : null,
+				grandTotalConverted,
+				nativeBalances
+		);
+	}
+
 	private InstitutionSummaryResponseDto buildInstitutionSummary(Institution institution, Instant from, Instant to,
 	                                                               Asset displayAsset, LocalDate rateDate) {
 		List<Account> accounts = accountRepository.findByInstitutionIdAndActiveTrue(institution.getId());
@@ -327,5 +379,8 @@ public class InstitutionServiceImpl implements InstitutionService {
 		if (!institution.getExpenseTracker().getId().equals(trackerId)) {
 			throw new EntityNotFoundException("Institution not found in this expense tracker");
 		}
+	}
+
+	private record AssetKey(String assetCode, int assetScale) {
 	}
 }

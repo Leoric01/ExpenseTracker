@@ -2,6 +2,7 @@ package org.leoric.expensetracker.institution.services.interfaces;
 
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.institution.dto.CreateInstitutionRequestDto;
+import org.leoric.expensetracker.institution.dto.FinanceHeaderBalancesResponse;
 import org.leoric.expensetracker.institution.dto.InstitutionDashboardResponseDto;
 import org.leoric.expensetracker.institution.dto.InstitutionResponseDto;
 import org.leoric.expensetracker.institution.dto.UpdateInstitutionRequestDto;
@@ -31,4 +32,6 @@ public interface InstitutionService {
 	InstitutionResponseDto institutionDeleteIcon(User currentUser, UUID trackerId, UUID institutionId);
 
 	InstitutionDashboardResponseDto institutionDashboard(User currentUser, UUID trackerId, Instant from, Instant to);
+
+	FinanceHeaderBalancesResponse institutionHeaderBalances(User currentUser, UUID trackerId, Instant from, Instant to);
 }

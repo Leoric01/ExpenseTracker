@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.institution.dto.CreateInstitutionRequestDto;
+import org.leoric.expensetracker.institution.dto.FinanceHeaderBalancesResponse;
 import org.leoric.expensetracker.institution.dto.InstitutionDashboardResponseDto;
 import org.leoric.expensetracker.institution.dto.InstitutionResponseDto;
 import org.leoric.expensetracker.institution.dto.UpdateInstitutionRequestDto;
@@ -68,6 +69,24 @@ public class InstitutionController {
 		}
 
 		return ResponseEntity.ok(institutionService.institutionDashboard(currentUser, trackerId, from, to));
+	}
+
+	@GetMapping("/{trackerId}/header-balances")
+	public ResponseEntity<FinanceHeaderBalancesResponse> institutionHeaderBalances(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@RequestParam(required = false) Instant from,
+			@RequestParam(required = false) Instant to) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+
+		if (from == null) {
+			from = YearMonth.now(ZoneOffset.UTC).atDay(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+		}
+		if (to == null) {
+			to = Instant.now();
+		}
+
+		return ResponseEntity.ok(institutionService.institutionHeaderBalances(currentUser, trackerId, from, to));
 	}
 
 	@GetMapping("/{trackerId}")

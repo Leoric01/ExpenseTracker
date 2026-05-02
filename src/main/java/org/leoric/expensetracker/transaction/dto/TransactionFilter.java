@@ -13,6 +13,7 @@ public record TransactionFilter(
 		TransactionType transactionType,
 		TransactionStatus status,
 		Instant dateFrom,
-		Instant dateTo
+		Instant dateTo,
+		TransactionAmountRateMode rateMode
 ) {
 }

@@ -17,6 +17,8 @@ public interface RecurringBudgetTemplateRepository extends JpaRepository<Recurri
 
 	List<RecurringBudgetTemplate> findByExpenseTrackerId(UUID expenseTrackerId);
 
+	List<RecurringBudgetTemplate> findByExpenseTrackerIdAndActiveTrue(UUID expenseTrackerId);
+
 	List<RecurringBudgetTemplate> findByActiveTrueAndNextRunDateLessThanEqual(LocalDate date);
 
 	List<RecurringBudgetTemplate> findByExpenseTrackerIdAndActiveTrueAndNextRunDateLessThanEqual(UUID expenseTrackerId, LocalDate date);

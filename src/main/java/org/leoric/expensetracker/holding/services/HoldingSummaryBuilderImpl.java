@@ -11,6 +11,7 @@ import org.leoric.expensetracker.transaction.models.constants.BalanceAdjustmentD
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -64,13 +65,15 @@ public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 					}
 				}
 				case TRANSFER -> {
+					boolean internalSameAssetTransfer = isInternalSameAssetTransfer(t);
 					if (t.getSourceHolding() != null && t.getSourceHolding().getId().equals(holdingId)) {
 						totalTransferOut += t.getAmount();
 						totalExpense += t.getAmount();
 					}
 					if (t.getTargetHolding() != null && t.getTargetHolding().getId().equals(holdingId)) {
-						totalTransferIn += t.getAmount();
-						totalIncome += t.getAmount();
+						long transferInAmount = internalSameAssetTransfer ? resolveTransferSettledAmount(t) : t.getAmount();
+						totalTransferIn += transferInAmount;
+						totalIncome += transferInAmount;
 					}
 				}
 				case BALANCE_ADJUSTMENT -> {
@@ -120,11 +123,12 @@ public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 				case INCOME -> net += t.getAmount();
 				case EXPENSE -> net -= t.getAmount();
 				case TRANSFER -> {
+					boolean internalSameAssetTransfer = isInternalSameAssetTransfer(t);
 					if (t.getSourceHolding() != null && t.getSourceHolding().getId().equals(holdingId)) {
 						net -= t.getAmount();
 					}
 					if (t.getTargetHolding() != null && t.getTargetHolding().getId().equals(holdingId)) {
-						net += t.getAmount();
+						net += internalSameAssetTransfer ? resolveTransferSettledAmount(t) : t.getAmount();
 					}
 				}
 				case BALANCE_ADJUSTMENT -> {
@@ -137,6 +141,39 @@ public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 			}
 		}
 		return net;
+	}
+
+	private boolean isInternalSameAssetTransfer(Transaction transaction) {
+		if (transaction.getSourceHolding() == null || transaction.getTargetHolding() == null) {
+			return false;
+		}
+		if (transaction.getSourceHolding().getAsset() == null || transaction.getTargetHolding().getAsset() == null) {
+			return false;
+		}
+
+		String sourceCode = transaction.getSourceHolding().getAsset().getCode();
+		String targetCode = transaction.getTargetHolding().getAsset().getCode();
+		if (!sourceCode.equalsIgnoreCase(targetCode)) {
+			return false;
+		}
+
+		return transaction.getExchangeRate() == null || BigDecimal.ONE.compareTo(transaction.getExchangeRate()) == 0;
+	}
+
+	private long resolveTransferSettledAmount(Transaction transaction) {
+		if (transaction.getSettledAmount() != null) {
+			return transaction.getSettledAmount();
+		}
+
+		if (isInternalSameAssetTransfer(transaction) && transaction.getFeeAmount() != 0) {
+			try {
+				return Math.subtractExact(transaction.getAmount(), transaction.getFeeAmount());
+			} catch (ArithmeticException ex) {
+				log.warn("Overflow while deriving settledAmount for transfer '{}'", transaction.getId());
+			}
+		}
+
+		return transaction.getAmount();
 	}
 
 	private static class CategoryBucket {

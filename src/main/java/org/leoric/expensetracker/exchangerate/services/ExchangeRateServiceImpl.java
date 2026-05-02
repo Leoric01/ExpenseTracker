@@ -26,6 +26,8 @@ import java.util.Optional;
 @Slf4j
 @RequiredArgsConstructor
 public class ExchangeRateServiceImpl implements ExchangeRateService {
+	private static final BigDecimal LONG_MAX = BigDecimal.valueOf(Long.MAX_VALUE);
+	private static final BigDecimal LONG_MIN = BigDecimal.valueOf(Long.MIN_VALUE);
 
 	private final ExchangeRateCacheRepository cacheRepository;
 	private final FrankfurterClient frankfurterClient;
@@ -84,7 +86,19 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 					.divide(scaleFactor, 0, RoundingMode.HALF_UP);
 		}
 
-		return result.setScale(0, RoundingMode.HALF_UP).longValueExact();
+		BigDecimal rounded = result.setScale(0, RoundingMode.HALF_UP);
+		if (rounded.compareTo(LONG_MAX) > 0) {
+			log.warn("Conversion clipped to Long.MAX_VALUE for {} -> {} on {} (amountMinorUnits={}, scaleDiff={}, rate={}, rounded={})",
+					fromAsset.getCode(), toAsset.getCode(), date, amountMinorUnits, scaleDiff, rate, rounded);
+			return Long.MAX_VALUE;
+		}
+		if (rounded.compareTo(LONG_MIN) < 0) {
+			log.warn("Conversion clipped to Long.MIN_VALUE for {} -> {} on {} (amountMinorUnits={}, scaleDiff={}, rate={}, rounded={})",
+					fromAsset.getCode(), toAsset.getCode(), date, amountMinorUnits, scaleDiff, rate, rounded);
+			return Long.MIN_VALUE;
+		}
+
+		return rounded.longValue();
 	}
 
 	/**
@@ -152,8 +166,8 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 
 	private BigDecimal fetchCryptoToCrypto(Asset from, Asset to, LocalDate date, boolean isToday) {
 		// Use USD as intermediary: fromCrypto→USD / toCrypto→USD
-		BigDecimal fromToUsd = fetchCryptoToFiatByCode(from, "usd", date, isToday);
-		BigDecimal toToUsd = fetchCryptoToFiatByCode(to, "usd", date, isToday);
+		BigDecimal fromToUsd = fetchCryptoToFiatByCode(from, date, isToday);
+		BigDecimal toToUsd = fetchCryptoToFiatByCode(to, date, isToday);
 
 		if (fromToUsd != null && toToUsd != null && toToUsd.compareTo(BigDecimal.ZERO) != 0) {
 			return fromToUsd.divide(toToUsd, 12, RoundingMode.HALF_UP);
@@ -161,13 +175,13 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 		return null;
 	}
 
-	private BigDecimal fetchCryptoToFiatByCode(Asset crypto, String fiatCode, LocalDate date, boolean isToday) {
+	private BigDecimal fetchCryptoToFiatByCode(Asset crypto, LocalDate date, boolean isToday) {
 		String coinId = crypto.getMarketDataKey();
 		if (coinId == null) return null;
 
 		return isToday
-				? coinGeckoClient.getCurrentPrice(coinId, fiatCode)
-				: coinGeckoClient.getHistoricalPrice(coinId, fiatCode, date);
+				? coinGeckoClient.getCurrentPrice(coinId, "usd")
+				: coinGeckoClient.getHistoricalPrice(coinId, "usd", date);
 	}
 
 	private boolean isCacheValid(ExchangeRateCache cached, LocalDate date) {
@@ -186,25 +200,8 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 
 	private void saveToCache(String baseCode, String quoteCode, LocalDate date, BigDecimal rate, MarketDataSource source) {
 		try {
-			Optional<ExchangeRateCache> existing = cacheRepository
-					.findByBaseAssetCodeAndQuoteAssetCodeAndRateDate(baseCode, quoteCode, date);
-
-			if (existing.isPresent()) {
-				ExchangeRateCache entry = existing.get();
-				entry.setRate(rate);
-				entry.setFetchedAt(Instant.now());
-				cacheRepository.save(entry);
-			} else {
-				ExchangeRateCache entry = ExchangeRateCache.builder()
-						.baseAssetCode(baseCode)
-						.quoteAssetCode(quoteCode)
-						.rateDate(date)
-						.rate(rate)
-						.source(source)
-						.fetchedAt(Instant.now())
-						.build();
-				cacheRepository.save(entry);
-			}
+			Instant fetchedAt = Instant.now();
+			cacheRepository.upsertRate(baseCode, quoteCode, date, rate, source.name(), fetchedAt);
 			log.debug("Cached rate {}/{} on {} = {}", baseCode, quoteCode, date, rate);
 		} catch (Exception e) {
 			log.warn("Failed to cache exchange rate {}/{} on {}: {}", baseCode, quoteCode, date, e.getMessage());

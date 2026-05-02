@@ -18,6 +18,13 @@ import org.leoric.expensetracker.handler.exceptions.InvalidHabitCompletionExcept
 import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchException;
 import org.leoric.expensetracker.handler.exceptions.NotAuthorizedForThisExpenseTrackerException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.handler.exceptions.AssetExchangeAmountLessThanFeeException;
+import org.leoric.expensetracker.handler.exceptions.AssetExchangeSameAssetException;
+import org.leoric.expensetracker.handler.exceptions.AssetExchangeSettledAmountRequiredException;
+import org.leoric.expensetracker.handler.exceptions.TransferAmountComputationException;
+import org.leoric.expensetracker.handler.exceptions.TransferAmountInputMissingException;
+import org.leoric.expensetracker.handler.exceptions.TransferExchangeRateInvalidException;
+import org.leoric.expensetracker.handler.exceptions.TransferFeeOnlyInputException;
 import org.leoric.expensetracker.handler.exceptions.WidgetItemReorderMismatchException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -235,6 +242,48 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionResponse> handleInvalidHabitCompletionException(InvalidHabitCompletionException ex) {
 		log.warn("[{}] {}", INVALID_HABIT_COMPLETION.getCode(), ex.getMessage(), ex);
 		return build(INVALID_HABIT_COMPLETION, ex.getMessage());
+	}
+
+	@ExceptionHandler(TransferAmountInputMissingException.class)
+	public ResponseEntity<ExceptionResponse> handleTransferAmountInputMissingException(TransferAmountInputMissingException ex) {
+		log.warn("[{}] {}", TRANSFER_AMOUNT_INPUT_MISSING.getCode(), ex.getMessage(), ex);
+		return build(TRANSFER_AMOUNT_INPUT_MISSING, ex.getMessage());
+	}
+
+	@ExceptionHandler(TransferFeeOnlyInputException.class)
+	public ResponseEntity<ExceptionResponse> handleTransferFeeOnlyInputException(TransferFeeOnlyInputException ex) {
+		log.warn("[{}] {}", TRANSFER_FEE_ONLY_INPUT.getCode(), ex.getMessage(), ex);
+		return build(TRANSFER_FEE_ONLY_INPUT, ex.getMessage());
+	}
+
+	@ExceptionHandler(TransferAmountComputationException.class)
+	public ResponseEntity<ExceptionResponse> handleTransferAmountComputationException(TransferAmountComputationException ex) {
+		log.warn("[{}] {}", TRANSFER_AMOUNT_COMPUTATION_ERROR.getCode(), ex.getMessage(), ex);
+		return build(TRANSFER_AMOUNT_COMPUTATION_ERROR, ex.getMessage());
+	}
+
+	@ExceptionHandler(AssetExchangeSameAssetException.class)
+	public ResponseEntity<ExceptionResponse> handleAssetExchangeSameAssetException(AssetExchangeSameAssetException ex) {
+		log.warn("[{}] {}", ASSET_EXCHANGE_SAME_ASSET.getCode(), ex.getMessage(), ex);
+		return build(ASSET_EXCHANGE_SAME_ASSET, ex.getMessage());
+	}
+
+	@ExceptionHandler(AssetExchangeAmountLessThanFeeException.class)
+	public ResponseEntity<ExceptionResponse> handleAssetExchangeAmountLessThanFeeException(AssetExchangeAmountLessThanFeeException ex) {
+		log.warn("[{}] {}", ASSET_EXCHANGE_AMOUNT_LESS_THAN_FEE.getCode(), ex.getMessage(), ex);
+		return build(ASSET_EXCHANGE_AMOUNT_LESS_THAN_FEE, ex.getMessage());
+	}
+
+	@ExceptionHandler(AssetExchangeSettledAmountRequiredException.class)
+	public ResponseEntity<ExceptionResponse> handleAssetExchangeSettledAmountRequiredException(AssetExchangeSettledAmountRequiredException ex) {
+		log.warn("[{}] {}", ASSET_EXCHANGE_SETTLED_AMOUNT_REQUIRED.getCode(), ex.getMessage(), ex);
+		return build(ASSET_EXCHANGE_SETTLED_AMOUNT_REQUIRED, ex.getMessage());
+	}
+
+	@ExceptionHandler(TransferExchangeRateInvalidException.class)
+	public ResponseEntity<ExceptionResponse> handleTransferExchangeRateInvalidException(TransferExchangeRateInvalidException ex) {
+		log.warn("[{}] {}", TRANSFER_EXCHANGE_RATE_INVALID.getCode(), ex.getMessage(), ex);
+		return build(TRANSFER_EXCHANGE_RATE_INVALID, ex.getMessage());
 	}
 
 	private ResponseEntity<ExceptionResponse> build(BusinessErrorCodes code, String errorMessage) {

@@ -3,7 +3,9 @@ package org.leoric.expensetracker.exchangerate.services.interfaces;
 import org.leoric.expensetracker.asset.models.Asset;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 
 /**
  * Service for fetching exchange rates between assets.
@@ -38,4 +40,8 @@ public interface ExchangeRateService {
 	 * @return converted amount in the target asset's minor units, or null if rate unavailable
 	 */
 	Long convertAmount(long amountMinorUnits, Asset fromAsset, Asset toAsset, LocalDate date);
+
+	default Long convertAmount(long amountMinorUnits, Asset fromAsset, Asset toAsset, Instant at) {
+		return convertAmount(amountMinorUnits, fromAsset, toAsset, at.atZone(ZoneOffset.UTC).toLocalDate());
+	}
 }

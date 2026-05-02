@@ -60,7 +60,7 @@ public class AccountServiceImpl implements AccountService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public AccountResponseDto accountFindById(User currentUser, UUID trackerId, UUID accountId) {
+	public AccountResponseDto accountFindById(UUID trackerId, UUID accountId) {
 		Account account = getAccountOrThrow(accountId);
 		assertAccountBelongsToTracker(account, trackerId);
 		return accountMapper.toResponse(account);
@@ -68,7 +68,7 @@ public class AccountServiceImpl implements AccountService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public Page<AccountResponseDto> accountFindAll(User currentUser, UUID trackerId, String search, Pageable pageable) {
+	public Page<AccountResponseDto> accountFindAll(UUID trackerId, String search, Pageable pageable) {
 		if (search != null && !search.isBlank()) {
 			return accountRepository.findByExpenseTrackerIdAndActiveTrueWithSearch(trackerId, search, pageable)
 					.map(accountMapper::toResponse);

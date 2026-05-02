@@ -16,8 +16,6 @@ import org.leoric.expensetracker.food.models.GoalPlan;
 import org.leoric.expensetracker.food.models.NutritionTarget;
 import org.leoric.expensetracker.food.models.WeeklyCheckin;
 import org.leoric.expensetracker.food.repositories.DailyNutritionLogRepository;
-import org.leoric.expensetracker.food.repositories.GoalPlanRepository;
-import org.leoric.expensetracker.food.repositories.NutritionTargetRepository;
 import org.leoric.expensetracker.food.repositories.WeeklyCheckinRepository;
 import org.leoric.expensetracker.food.services.interfaces.NutritionDashboardService;
 import org.leoric.expensetracker.food.services.interfaces.NutritionDomainLookupService;
@@ -40,8 +38,6 @@ import static java.util.stream.Collectors.toList;
 @RequiredArgsConstructor
 public class NutritionDashboardServiceImpl implements NutritionDashboardService {
 
-	private final GoalPlanRepository goalPlanRepository;
-	private final NutritionTargetRepository nutritionTargetRepository;
 	private final DailyNutritionLogRepository dailyNutritionLogRepository;
 	private final WeeklyCheckinRepository weeklyCheckinRepository;
 	private final NutritionDomainLookupService nutritionDomainLookupService;

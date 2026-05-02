@@ -31,21 +31,6 @@ public interface HabitScheduleSlotRepository extends JpaRepository<HabitSchedule
 			WHERE s.habit.expenseTracker.id = :trackerId
 			AND s.habit.isDeleted = false
 			AND s.habit.active = true
-			AND s.habit.validFrom <= :date
-			AND (s.habit.validTo IS NULL OR s.habit.validTo >= :date)
-			AND s.dayOfWeek = :dayOfWeek
-			ORDER BY s.dayBlock ASC, s.sortOrder ASC, s.habit.sortOrder ASC, s.habit.name ASC
-			""")
-	List<HabitScheduleSlot> findAgendaSlotsForDate(
-			@Param("trackerId") UUID trackerId,
-			@Param("date") LocalDate date,
-			@Param("dayOfWeek") DayOfWeek dayOfWeek);
-
-	@Query("""
-			SELECT s FROM HabitScheduleSlot s
-			WHERE s.habit.expenseTracker.id = :trackerId
-			AND s.habit.isDeleted = false
-			AND s.habit.active = true
 			AND s.habit.validFrom <= :endDate
 			AND (s.habit.validTo IS NULL OR s.habit.validTo >= :startDate)
 			ORDER BY s.habit.id ASC, s.dayOfWeek ASC, s.dayBlock ASC, s.sortOrder ASC

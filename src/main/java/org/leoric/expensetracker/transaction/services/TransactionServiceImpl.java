@@ -3,21 +3,30 @@ package org.leoric.expensetracker.transaction.services;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.leoric.expensetracker.asset.models.Asset;
+import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.category.repositories.CategoryRepository;
+import org.leoric.expensetracker.exchangerate.services.interfaces.ExchangeRateService;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.holding.models.Holding;
+import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.transaction.TransactionSpecification;
 import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.dto.PageMetaDto;
+import org.leoric.expensetracker.transaction.dto.TransactionAmountRateMode;
 import org.leoric.expensetracker.transaction.dto.TransactionAttachmentResponseDto;
+import org.leoric.expensetracker.transaction.dto.TransactionConvertedTotalsDto;
 import org.leoric.expensetracker.transaction.dto.TransactionFilter;
+import org.leoric.expensetracker.transaction.dto.TransactionPageItemResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionPageResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
+import org.leoric.expensetracker.transaction.dto.TransactionTotalsByAssetDto;
 import org.leoric.expensetracker.transaction.dto.TransactionTotalsDto;
 import org.leoric.expensetracker.transaction.dto.UpdateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.mapstruct.TransactionMapper;
@@ -29,8 +38,6 @@ import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.repositories.TransactionAttachmentRepository;
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.leoric.expensetracker.transaction.services.interfaces.TransactionService;
-import org.leoric.expensetracker.holding.models.Holding;
-import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -42,11 +49,14 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -62,8 +72,10 @@ public class TransactionServiceImpl implements TransactionService {
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final HoldingRepository holdingRepository;
 	private final CategoryRepository categoryRepository;
+	private final AssetRepository assetRepository;
 	private final TransactionMapper transactionMapper;
 	private final ImageService imageService;
+	private final ExchangeRateService exchangeRateService;
 
 	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
 			"application/pdf",
@@ -92,11 +104,19 @@ public class TransactionServiceImpl implements TransactionService {
 	public TransactionResponseDto transactionFindById(User currentUser, UUID trackerId, UUID transactionId) {
 		Transaction transaction = getTransactionOrThrow(transactionId);
 		assertTransactionBelongsToTracker(transaction, trackerId);
-		return transactionMapper.toResponse(transaction);
+		return enrichWithAssetScale(normalizeDisplayedExchangeRate(transactionMapper.toResponse(transaction)));
 	}
+
 	@Override
 	@Transactional(readOnly = true)
 	public TransactionPageResponseDto transactionFindAllPageable(User currentUser, UUID trackerId, TransactionFilter filter, Pageable pageable) {
+		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
+		Asset displayAsset = tracker.getPreferredDisplayAsset();
+		TransactionAmountRateMode rateMode = filter.rateMode() != null ? filter.rateMode() : TransactionAmountRateMode.NOW;
+		log.debug("transactionFindAllPageable called: trackerId={}, search='{}', categoryId={}, holdingId={}, type={}, status={}, dateFrom={}, dateTo={}, rateMode={}, pageable={}",
+		          trackerId, filter.search(), filter.categoryId(), filter.holdingId(), filter.transactionType(), filter.status(),
+		          filter.dateFrom(), filter.dateTo(), rateMode, pageable);
+
 		List<Category> categories = categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId);
 
 		Map<UUID, List<Category>> childrenByParentId = categories.stream()
@@ -107,8 +127,13 @@ public class TransactionServiceImpl implements TransactionService {
 
 		Set<UUID> explicitCategoryIds = resolveDescendantCategoryIds(filter.categoryId(), childrenByParentId);
 		Set<UUID> searchCategoryIds = resolveSearchMatchedCategoryIds(filter.search(), categories, childrenByParentId);
+		boolean b = filter.search() != null && !filter.search().isBlank();
+		if (b) {
+			log.debug("transaction search context: trackerId={}, explicitCategoryIdsCount={}, searchCategoryIdsCount={}",
+			          trackerId, explicitCategoryIds.size(), searchCategoryIds.size());
+		}
 
-		Pageable normalizedPageable = normalizeTransactionPageable(pageable);
+		Optional<Sort.Order> amountSortOrder = getAmountSortOrder(pageable);
 
 		Specification<Transaction> specification = TransactionSpecification.filter(
 				trackerId,
@@ -117,19 +142,68 @@ public class TransactionServiceImpl implements TransactionService {
 				searchCategoryIds
 		);
 
+		if (amountSortOrder.isPresent()) {
+			List<Transaction> matchingTransactions = transactionRepository.findAll(specification);
+			TransactionTotalsDto totals = calculateTotals(matchingTransactions, filter.holdingId(), displayAsset, rateMode);
+			return buildAmountSortedPageResponse(
+					filter,
+					pageable,
+					amountSortOrder.get(),
+					matchingTransactions,
+					rootCategoryByCategoryId,
+					totals,
+					displayAsset
+			);
+		}
+
+		Pageable normalizedPageable = normalizeTransactionPageable(pageable);
 		Page<Transaction> transactionPage = transactionRepository.findAll(specification, normalizedPageable);
+		if (b) {
+			log.debug("transaction search result page: trackerId={}, search='{}', returnedElements={}, totalElements={}, pageNumber={}, pageSize={}",
+			          trackerId, filter.search(), transactionPage.getNumberOfElements(), transactionPage.getTotalElements(),
+			          transactionPage.getNumber(), transactionPage.getSize());
+			if (transactionPage.getTotalElements() == 0) {
+				long trackerTransactionCount = transactionRepository.count((root, _, cb) ->
+						                                                           cb.equal(root.get("expenseTracker").get("id"), trackerId));
+				log.warn("transaction search returned 0 rows: trackerId={}, search='{}', trackerTransactionCount={}",
+				         trackerId, filter.search(), trackerTransactionCount);
+			}
+		}
 
 		TransactionTotalsDto totals = calculateTotals(
 				transactionRepository.findAll(specification),
-				filter.holdingId()
+				filter.holdingId(),
+				displayAsset,
+				rateMode
 		);
 
-		List<TransactionResponseDto> content = transactionPage.getContent().stream()
-				.map(transaction -> toTransactionResponse(transaction, rootCategoryByCategoryId))
+		List<TransactionResponseDto> content = enrichWithAssetScale(
+				transactionPage.getContent().stream()
+						.map(transaction -> toTransactionResponse(transaction, rootCategoryByCategoryId))
+						.toList()
+		);
+
+		Map<String, Asset> pageAssetByCodeUpper = buildAssetByCodeUpper(transactionPage.getContent());
+		Instant nowInstant = Instant.now();
+		Map<UUID, ConvertedAmounts> convertedById = new HashMap<>();
+		for (Transaction transaction : transactionPage.getContent()) {
+			convertedById.put(
+					transaction.getId(),
+					resolveConvertedAmounts(transaction, filter.holdingId(), displayAsset, pageAssetByCodeUpper, rateMode, nowInstant)
+			);
+		}
+
+		List<TransactionPageItemResponseDto> responseContent = content.stream()
+				.map(dto -> toPageItemResponse(
+						dto,
+						convertedById.get(dto.id()),
+						displayAsset != null ? displayAsset.getCode() : null,
+						displayAsset != null ? displayAsset.getScale() : null
+				))
 				.toList();
 
 		return new TransactionPageResponseDto(
-				content,
+				responseContent,
 				new PageMetaDto(
 						transactionPage.getSize(),
 						transactionPage.getNumber(),
@@ -140,12 +214,248 @@ public class TransactionServiceImpl implements TransactionService {
 		);
 	}
 
+	private TransactionPageResponseDto buildAmountSortedPageResponse(
+			TransactionFilter filter,
+			Pageable pageable,
+			Sort.Order amountSortOrder,
+			List<Transaction> matchingTransactions,
+			Map<UUID, RootCategoryInfo> rootCategoryByCategoryId,
+			TransactionTotalsDto totals,
+			Asset displayAsset
+	) {
+		Map<String, Asset> assetByCodeUpper = buildAssetByCodeUpper(matchingTransactions);
+		Instant nowInstant = Instant.now();
+
+		UUID holdingId = filter.holdingId();
+		TransactionAmountRateMode rateMode = filter.rateMode() != null ? filter.rateMode() : TransactionAmountRateMode.NOW;
+
+		List<AmountSortableTransaction> sortableItems = matchingTransactions.stream()
+				.map(transaction -> new AmountSortableTransaction(
+						transaction,
+						toTransactionResponse(transaction, rootCategoryByCategoryId),
+						resolveConvertedAmounts(transaction, holdingId, displayAsset, assetByCodeUpper, rateMode, nowInstant)
+				))
+				.sorted(amountSortComparator(amountSortOrder))
+				.toList();
+
+		List<TransactionResponseDto> orderedDtosWithScale = enrichWithAssetScale(
+				sortableItems.stream().map(AmountSortableTransaction::dto).toList()
+		);
+
+		Map<UUID, ConvertedAmounts> convertedById = new HashMap<>();
+		for (AmountSortableTransaction item : sortableItems) {
+			convertedById.putIfAbsent(item.transaction().getId(), item.convertedAmounts());
+		}
+
+		List<TransactionPageItemResponseDto> orderedItems = orderedDtosWithScale.stream()
+				.map(dto -> toPageItemResponse(
+						dto,
+						convertedById.get(dto.id()),
+						displayAsset != null ? displayAsset.getCode() : null,
+						displayAsset != null ? displayAsset.getScale() : null
+				))
+				.toList();
+
+		long totalElements = orderedItems.size();
+		int fromIndex = (int) Math.min(pageable.getOffset(), totalElements);
+		int toIndex = (int) Math.min((long) fromIndex + pageable.getPageSize(), totalElements);
+		List<TransactionPageItemResponseDto> pageContent = orderedItems.subList(fromIndex, toIndex);
+		int totalPages = pageable.getPageSize() == 0 ? 0 : (int) Math.ceil((double) totalElements / pageable.getPageSize());
+
+		return new TransactionPageResponseDto(
+				pageContent,
+				new PageMetaDto(pageable.getPageSize(), pageable.getPageNumber(), totalElements, totalPages),
+				totals
+		);
+	}
+
+	private Comparator<AmountSortableTransaction> amountSortComparator(Sort.Order order) {
+		Comparator<Long> convertedComparator = order.isAscending()
+				? Comparator.nullsFirst(Long::compareTo)
+				: Comparator.nullsLast(Comparator.reverseOrder());
+
+		return Comparator
+				.comparing((AmountSortableTransaction item) -> item.convertedAmounts().effectiveAmount(), convertedComparator)
+				.thenComparing((left, right) -> right.transaction().getTransactionDate().compareTo(left.transaction().getTransactionDate()))
+				.thenComparing((left, right) -> right.transaction().getId().compareTo(left.transaction().getId()));
+	}
+
+	private ConvertedAmounts resolveConvertedAmounts(
+			Transaction transaction,
+			UUID holdingId,
+			Asset displayAsset,
+			Map<String, Asset> assetByCodeUpper,
+			TransactionAmountRateMode rateMode,
+			Instant nowInstant
+	) {
+		if (displayAsset == null) {
+			return new ConvertedAmounts(null, null, null);
+		}
+
+		Instant rateInstant = resolveRateInstant(transaction, rateMode, nowInstant);
+
+		if (transaction.getTransactionType() != TransactionType.TRANSFER
+				|| transaction.getSourceHolding() == null
+				|| transaction.getTargetHolding() == null
+				|| transaction.getSourceHolding().getAsset() == null
+				|| transaction.getTargetHolding().getAsset() == null) {
+			if (transaction.getCurrencyCode() == null) {
+				return new ConvertedAmounts(null, null, null);
+			}
+
+			Long effective = convertToDisplayAmount(
+					transaction.getAmount(),
+					transaction.getCurrencyCode().toUpperCase(),
+					displayAsset,
+					assetByCodeUpper,
+					rateInstant
+			);
+			return new ConvertedAmounts(effective, null, null);
+		}
+
+		String sourceAssetCode = transaction.getSourceHolding().getAsset().getCode().toUpperCase();
+		String targetAssetCode = transaction.getTargetHolding().getAsset().getCode().toUpperCase();
+
+		Long convertedSource = convertToDisplayAmount(
+				transaction.getAmount(),
+				sourceAssetCode,
+				displayAsset,
+				assetByCodeUpper,
+				rateInstant
+		);
+
+		Long convertedTarget = convertToDisplayAmount(
+				resolveTransferSettledAmount(transaction),
+				targetAssetCode,
+				displayAsset,
+				assetByCodeUpper,
+				rateInstant
+		);
+
+		Long effective = resolveEffectiveAmountForSorting(transaction, holdingId, convertedSource, convertedTarget);
+		return new ConvertedAmounts(effective, convertedSource, convertedTarget);
+	}
+
+	private Long resolveEffectiveAmountForSorting(
+			Transaction transaction,
+			UUID holdingId,
+			Long convertedSource,
+			Long convertedTarget
+	) {
+		if (transaction.getTransactionType() != TransactionType.TRANSFER || holdingId == null) {
+			return convertedSource;
+		}
+
+		if (transaction.getSourceHolding() != null && holdingId.equals(transaction.getSourceHolding().getId())) {
+			return convertedSource;
+		}
+		if (transaction.getTargetHolding() != null && holdingId.equals(transaction.getTargetHolding().getId())) {
+			return convertedTarget;
+		}
+		return convertedSource;
+	}
+
+	private Instant resolveRateInstant(Transaction transaction, TransactionAmountRateMode rateMode, Instant nowInstant) {
+		TransactionAmountRateMode effectiveRateMode = rateMode != null ? rateMode : TransactionAmountRateMode.NOW;
+		Instant rateInstant = effectiveRateMode == TransactionAmountRateMode.TRANSACTION_DATE
+				? transaction.getTransactionDate()
+				: nowInstant;
+		return rateInstant != null ? rateInstant : nowInstant;
+	}
+
+	private Map<String, Asset> buildAssetByCodeUpper(List<Transaction> transactions) {
+		Set<String> codesUpper = transactions.stream()
+				.flatMap(transaction -> java.util.stream.Stream.of(
+						transaction.getCurrencyCode(),
+						transaction.getSourceHolding() != null && transaction.getSourceHolding().getAsset() != null
+								? transaction.getSourceHolding().getAsset().getCode()
+								: null,
+						transaction.getTargetHolding() != null && transaction.getTargetHolding().getAsset() != null
+								? transaction.getTargetHolding().getAsset().getCode()
+								: null
+				))
+				.filter(Objects::nonNull)
+				.map(String::toUpperCase)
+				.collect(Collectors.toSet());
+
+		if (codesUpper.isEmpty()) {
+			return Map.of();
+		}
+
+		return assetRepository.findAllByCodeUpperIn(codesUpper).stream()
+				.collect(Collectors.toMap(asset -> asset.getCode().toUpperCase(), Function.identity()));
+	}
+
+	private Optional<Sort.Order> getAmountSortOrder(Pageable pageable) {
+		return pageable.getSort().stream()
+				.filter(order -> "amount".equals(order.getProperty()))
+				.findFirst();
+	}
+
+	private TransactionPageItemResponseDto toPageItemResponse(
+			TransactionResponseDto dto,
+			ConvertedAmounts converted,
+			String convertedInto,
+			Integer convertedAssetScale
+	) {
+		Long convertedAmount = converted != null ? converted.effectiveAmount() : null;
+		Long convertedSourceAmount = converted != null ? converted.sourceAmount() : null;
+		Long convertedTargetAmount = converted != null ? converted.targetAmount() : null;
+
+		return new TransactionPageItemResponseDto(
+				dto.id(),
+				dto.transactionType(),
+				dto.status(),
+				dto.holdingId(),
+				dto.holdingName(),
+				dto.sourceHoldingId(),
+				dto.sourceHoldingName(),
+				dto.sourceHoldingAssetCode(),
+				dto.sourceHoldingAssetScale(),
+				dto.targetHoldingId(),
+				dto.targetHoldingName(),
+				dto.targetHoldingAssetCode(),
+				dto.targetHoldingAssetScale(),
+				dto.categoryId(),
+				dto.categoryName(),
+				dto.rootCategoryId(),
+				dto.rootCategoryName(),
+				dto.amount(),
+				dto.assetCode(),
+				dto.assetScale(),
+				dto.exchangeRate(),
+				dto.feeAmount(),
+				dto.settledAmount(),
+				dto.balanceAdjustmentDirection(),
+				dto.transactionDate(),
+				dto.description(),
+				dto.note(),
+				dto.externalRef(),
+				dto.attachments(),
+				dto.createdDate(),
+				dto.lastModifiedDate(),
+				convertedAmount,
+				convertedSourceAmount,
+				convertedTargetAmount,
+				convertedInto,
+				convertedAssetScale
+		);
+	}
+
 	@Override
 	@Transactional
 	public TransactionResponseDto transactionUpdate(User currentUser, UUID trackerId, UUID transactionId, UpdateTransactionRequestDto request) {
 		Transaction transaction = getTransactionOrThrow(transactionId);
 		assertTransactionBelongsToTracker(transaction, trackerId);
 		assertNotCancelled(transaction);
+
+		if (transaction.getTransactionType() == TransactionType.TRANSFER) {
+			patchTransferFinancialFields(transaction, trackerId, request);
+		} else if (transaction.getTransactionType() == TransactionType.BALANCE_ADJUSTMENT) {
+			patchBalanceAdjustmentFields(transaction, request);
+		} else {
+			patchIncomeOrExpenseFinancialFields(transaction, trackerId, request);
+		}
 
 		if (request.categoryId() != null) {
 			if (transaction.getTransactionType() == TransactionType.TRANSFER
@@ -174,7 +484,262 @@ public class TransactionServiceImpl implements TransactionService {
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} updated transaction '{}' in tracker '{}'",
 		         currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
-		return transactionMapper.toResponse(transaction);
+		return enrichWithAssetScale(normalizeDisplayedExchangeRate(transactionMapper.toResponse(transaction)));
+	}
+
+	private void patchIncomeOrExpenseFinancialFields(Transaction transaction, UUID trackerId, UpdateTransactionRequestDto request) {
+		boolean financialPatchRequested = request.holdingId() != null
+				|| request.amount() != null
+				|| request.currencyCode() != null
+				|| request.exchangeRate() != null
+				|| request.feeAmount() != null;
+		if (!financialPatchRequested) {
+			return;
+		}
+
+		Holding oldHolding = transaction.getHolding();
+		Holding newHolding = oldHolding;
+		if (request.holdingId() != null) {
+			newHolding = getHoldingOrThrow(request.holdingId());
+			assertHoldingBelongsToTracker(newHolding, trackerId);
+			assertHoldingActive(newHolding);
+		}
+
+		long oldEffect = resolveIncomeExpenseBalanceEffect(
+				transaction.getTransactionType(),
+				transaction.getAmount(),
+				transaction.getFeeAmount(),
+				transaction.getSettledAmount()
+		);
+
+		long newAmount = request.amount() != null ? request.amount() : transaction.getAmount();
+		long newFeeAmount = request.feeAmount() != null ? request.feeAmount() : transaction.getFeeAmount();
+		String newCurrencyCode = request.currencyCode() != null
+				? request.currencyCode().toUpperCase()
+				: transaction.getCurrencyCode();
+		if (request.currencyCode() != null) {
+			assertAssetCodeExists(newCurrencyCode);
+		}
+
+		String holdingAssetCode = newHolding.getAsset().getCode();
+		boolean crossCurrency = !newCurrencyCode.equals(holdingAssetCode);
+		boolean currencyChanged = request.currencyCode() != null
+				&& !request.currencyCode().equalsIgnoreCase(transaction.getCurrencyCode());
+		boolean holdingChanged = request.holdingId() != null
+				&& !request.holdingId().equals(oldHolding.getId());
+
+		BigDecimal newExchangeRate = null;
+		Long newSettledAmount = null;
+		long newEffect;
+
+		if (crossCurrency) {
+			BigDecimal effectiveRate = request.exchangeRate();
+			if (effectiveRate == null && !currencyChanged && !holdingChanged) {
+				effectiveRate = transaction.getExchangeRate();
+			}
+			if (effectiveRate == null || effectiveRate.compareTo(BigDecimal.ZERO) <= 0) {
+				throw new OperationNotPermittedException(
+						"Exchange rate is required for cross-currency transactions (transaction %s, holding %s)"
+								.formatted(newCurrencyCode, holdingAssetCode));
+			}
+			newExchangeRate = effectiveRate;
+			newSettledAmount = BigDecimal.valueOf(newAmount)
+					.multiply(newExchangeRate)
+					.setScale(0, RoundingMode.HALF_UP)
+					.longValueExact() + newFeeAmount;
+			newEffect = newSettledAmount;
+		} else {
+			newEffect = resolveIncomeExpenseBalanceEffect(transaction.getTransactionType(), newAmount, newFeeAmount, null);
+		}
+
+		if (transaction.getTransactionType() == TransactionType.INCOME) {
+			oldHolding.setCurrentAmount(oldHolding.getCurrentAmount() - oldEffect);
+			newHolding.setCurrentAmount(newHolding.getCurrentAmount() + newEffect);
+		} else {
+			oldHolding.setCurrentAmount(oldHolding.getCurrentAmount() + oldEffect);
+			newHolding.setCurrentAmount(newHolding.getCurrentAmount() - newEffect);
+		}
+
+		if (oldHolding.getId().equals(newHolding.getId())) {
+			holdingRepository.save(oldHolding);
+		} else {
+			holdingRepository.save(oldHolding);
+			holdingRepository.save(newHolding);
+		}
+
+		transaction.setHolding(newHolding);
+		transaction.setAmount(newAmount);
+		transaction.setCurrencyCode(newCurrencyCode);
+		transaction.setExchangeRate(newExchangeRate);
+		transaction.setFeeAmount(newFeeAmount);
+		transaction.setSettledAmount(newSettledAmount);
+	}
+
+	private void patchTransferFinancialFields(Transaction transaction, UUID trackerId, UpdateTransactionRequestDto request) {
+		boolean financialPatchRequested = request.sourceHoldingId() != null
+				|| request.targetHoldingId() != null
+				|| request.amount() != null
+				|| request.settledAmount() != null
+				|| request.feeAmount() != null
+				|| request.currencyCode() != null
+				|| request.exchangeRate() != null;
+		if (!financialPatchRequested) {
+			return;
+		}
+
+		Holding oldSource = transaction.getSourceHolding();
+		Holding oldTarget = transaction.getTargetHolding();
+
+		Holding newSource = oldSource;
+		if (request.sourceHoldingId() != null) {
+			newSource = getHoldingOrThrow(request.sourceHoldingId());
+			assertHoldingBelongsToTracker(newSource, trackerId);
+			assertHoldingActive(newSource);
+		}
+
+		Holding newTarget = oldTarget;
+		if (request.targetHoldingId() != null) {
+			newTarget = getHoldingOrThrow(request.targetHoldingId());
+			assertHoldingBelongsToTracker(newTarget, trackerId);
+			assertHoldingActive(newTarget);
+		}
+
+		if (newSource.getId().equals(newTarget.getId())) {
+			throw new OperationNotPermittedException("Source and target holdings must be different");
+		}
+
+		boolean sameAssetTransfer = newSource.getAsset().getCode().equalsIgnoreCase(newTarget.getAsset().getCode());
+
+		if (request.currencyCode() != null) {
+			assertAssetCodeExists(request.currencyCode().toUpperCase());
+			if (!request.currencyCode().equalsIgnoreCase(newSource.getAsset().getCode())) {
+				throw new OperationNotPermittedException("Currency code on transfer must match source holding asset code");
+			}
+		}
+
+		if (sameAssetTransfer && request.exchangeRate() != null) {
+			throw new OperationNotPermittedException("Exchange rate cannot be patched on same-asset transfers");
+		}
+
+		long oldSourceDeduction = isInternalSameAssetTransfer(transaction)
+				? transaction.getAmount()
+				: transaction.getAmount() + transaction.getFeeAmount();
+		long oldTargetAddition = isInternalSameAssetTransfer(transaction)
+				? resolveTransferSettledAmount(transaction)
+				: (transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount());
+
+		long newAmount = request.amount() != null ? request.amount() : transaction.getAmount();
+		long newFee = request.feeAmount() != null ? request.feeAmount() : transaction.getFeeAmount();
+		Long requestedSettled = request.settledAmount();
+
+		long newSettled;
+		BigDecimal effectiveNewExchangeRate;
+
+		if (sameAssetTransfer) {
+			if (requestedSettled != null) {
+				newSettled = requestedSettled;
+				newFee = Math.subtractExact(newAmount, newSettled);
+			} else if (request.feeAmount() != null || request.amount() != null) {
+				newSettled = Math.subtractExact(newAmount, newFee);
+			} else {
+				newSettled = resolveTransferSettledAmount(transaction);
+			}
+			effectiveNewExchangeRate = null;
+		} else {
+			BigDecimal effectiveRate = request.exchangeRate() != null ? request.exchangeRate() : transaction.getExchangeRate();
+			if (effectiveRate == null || effectiveRate.compareTo(BigDecimal.ZERO) <= 0) {
+				throw new OperationNotPermittedException(
+						"Exchange rate is required for cross-asset transfer patch (%s -> %s)"
+								.formatted(newSource.getAsset().getCode(), newTarget.getAsset().getCode()));
+			}
+
+			if (requestedSettled != null) {
+				newSettled = requestedSettled;
+			} else if (request.amount() != null || request.exchangeRate() != null) {
+				newSettled = BigDecimal.valueOf(newAmount)
+						.multiply(effectiveRate)
+						.setScale(0, RoundingMode.HALF_UP)
+						.longValueExact();
+			} else {
+				newSettled = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+			}
+			effectiveNewExchangeRate = effectiveRate;
+		}
+
+		oldSource.setCurrentAmount(oldSource.getCurrentAmount() + oldSourceDeduction);
+		oldTarget.setCurrentAmount(oldTarget.getCurrentAmount() - oldTargetAddition);
+
+		long newSourceDeduction = sameAssetTransfer ? newAmount : Math.addExact(newAmount, newFee);
+		long newTargetAddition = newSettled;
+
+		newSource.setCurrentAmount(newSource.getCurrentAmount() - newSourceDeduction);
+		newTarget.setCurrentAmount(newTarget.getCurrentAmount() + newTargetAddition);
+
+		holdingRepository.save(oldSource);
+		if (!oldTarget.getId().equals(oldSource.getId())) {
+			holdingRepository.save(oldTarget);
+		}
+		if (!newSource.getId().equals(oldSource.getId()) && !newSource.getId().equals(oldTarget.getId())) {
+			holdingRepository.save(newSource);
+		}
+		if (!newTarget.getId().equals(newSource.getId())
+				&& !newTarget.getId().equals(oldSource.getId())
+				&& !newTarget.getId().equals(oldTarget.getId())) {
+			holdingRepository.save(newTarget);
+		}
+
+		transaction.setSourceHolding(newSource);
+		transaction.setTargetHolding(newTarget);
+		transaction.setAmount(newAmount);
+		transaction.setSettledAmount(newSettled);
+		transaction.setFeeAmount(newFee);
+		transaction.setCurrencyCode(newSource.getAsset().getCode());
+		transaction.setExchangeRate(effectiveNewExchangeRate);
+	}
+
+	private void patchBalanceAdjustmentFields(Transaction transaction, UpdateTransactionRequestDto request) {
+		if (request.sourceHoldingId() != null
+				|| request.targetHoldingId() != null
+				|| request.exchangeRate() != null
+				|| request.settledAmount() != null) {
+			throw new OperationNotPermittedException(
+					"Financial fields (holding/source/target, amount, settled, currency, exchange rate, fee) cannot be changed on a %s transaction"
+							.formatted(transaction.getTransactionType()));
+		}
+
+		if (request.holdingId() != null
+				&& (transaction.getHolding() == null || !request.holdingId().equals(transaction.getHolding().getId()))) {
+			throw new OperationNotPermittedException("Holding cannot be changed on a %s transaction"
+					.formatted(transaction.getTransactionType()));
+		}
+
+		if (request.currencyCode() != null
+				&& !request.currencyCode().equalsIgnoreCase(transaction.getCurrencyCode())) {
+			throw new OperationNotPermittedException("Currency cannot be changed on a %s transaction"
+					.formatted(transaction.getTransactionType()));
+		}
+
+		if (request.feeAmount() != null
+				&& request.feeAmount() != transaction.getFeeAmount()) {
+			throw new OperationNotPermittedException("Fee amount cannot be changed on a %s transaction"
+					.formatted(transaction.getTransactionType()));
+		}
+
+		if (request.amount() == null || request.amount().equals(transaction.getAmount())) {
+			return;
+		}
+
+		Holding holding = transaction.getHolding();
+		long oldSignedEffect = transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION
+				? transaction.getAmount()
+				: -transaction.getAmount();
+		long newSignedEffect = transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION
+				? request.amount()
+				: -request.amount();
+
+		holding.setCurrentAmount(holding.getCurrentAmount() - oldSignedEffect + newSignedEffect);
+		holdingRepository.save(holding);
+		transaction.setAmount(request.amount());
 	}
 
 	@Override
@@ -190,10 +755,11 @@ public class TransactionServiceImpl implements TransactionService {
 
 		log.info("User {} cancelled transaction '{}' in tracker '{}'",
 		         currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
-		return transactionMapper.toResponse(transaction);
+		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
 	}
+
 	private TransactionResponseDto toTransactionResponse(Transaction transaction, Map<UUID, RootCategoryInfo> rootCategoryByCategoryId) {
-		TransactionResponseDto dto = transactionMapper.toResponse(transaction);
+		TransactionResponseDto dto = normalizeDisplayedExchangeRate(transactionMapper.toResponse(transaction));
 
 		if (dto.categoryId() == null) {
 			return dto;
@@ -213,14 +779,19 @@ public class TransactionServiceImpl implements TransactionService {
 				dto.holdingName(),
 				dto.sourceHoldingId(),
 				dto.sourceHoldingName(),
+				dto.sourceHoldingAssetCode(),
+				dto.sourceHoldingAssetScale(),
 				dto.targetHoldingId(),
 				dto.targetHoldingName(),
+				dto.targetHoldingAssetCode(),
+				dto.targetHoldingAssetScale(),
 				dto.categoryId(),
 				dto.categoryName(),
 				rootCategory.id(),
 				rootCategory.name(),
 				dto.amount(),
-				dto.currencyCode(),
+				dto.assetCode(),
+				dto.assetScale(),
 				dto.exchangeRate(),
 				dto.feeAmount(),
 				dto.settledAmount(),
@@ -234,48 +805,336 @@ public class TransactionServiceImpl implements TransactionService {
 				dto.lastModifiedDate()
 		);
 	}
-	private TransactionTotalsDto calculateTotals(List<Transaction> transactions, UUID holdingId) {
-		long incomeAmount = 0;
-		long expenseAmount = 0;
+
+	private TransactionResponseDto enrichWithAssetScale(TransactionResponseDto dto) {
+		if (dto.assetCode() == null) {
+			return dto;
+		}
+		Integer scale = assetRepository.findByCodeIgnoreCase(dto.assetCode())
+				.map(Asset::getScale)
+				.orElse(null);
+		return withAssetScale(dto, scale);
+	}
+
+	private List<TransactionResponseDto> enrichWithAssetScale(List<TransactionResponseDto> dtos) {
+		Set<String> codesUpper = dtos.stream()
+				.map(TransactionResponseDto::assetCode)
+				.filter(Objects::nonNull)
+				.map(String::toUpperCase)
+				.collect(Collectors.toSet());
+
+		if (codesUpper.isEmpty()) {
+			return dtos;
+		}
+
+		Map<String, Integer> scaleByCodeUpper = assetRepository.findAllByCodeUpperIn(codesUpper)
+				.stream()
+				.collect(Collectors.toMap(asset -> asset.getCode().toUpperCase(), Asset::getScale));
+
+		return dtos.stream()
+				.map(dto -> withAssetScale(dto,
+				                           dto.assetCode() == null ? null : scaleByCodeUpper.get(dto.assetCode().toUpperCase())))
+				.toList();
+	}
+
+	private TransactionResponseDto withAssetScale(TransactionResponseDto dto, Integer assetScale) {
+		return new TransactionResponseDto(
+				dto.id(),
+				dto.transactionType(),
+				dto.status(),
+				dto.holdingId(),
+				dto.holdingName(),
+				dto.sourceHoldingId(),
+				dto.sourceHoldingName(),
+				dto.sourceHoldingAssetCode(),
+				dto.sourceHoldingAssetScale(),
+				dto.targetHoldingId(),
+				dto.targetHoldingName(),
+				dto.targetHoldingAssetCode(),
+				dto.targetHoldingAssetScale(),
+				dto.categoryId(),
+				dto.categoryName(),
+				dto.rootCategoryId(),
+				dto.rootCategoryName(),
+				dto.amount(),
+				dto.assetCode(),
+				assetScale,
+				dto.exchangeRate(),
+				dto.feeAmount(),
+				dto.settledAmount(),
+				dto.balanceAdjustmentDirection(),
+				dto.transactionDate(),
+				dto.description(),
+				dto.note(),
+				dto.externalRef(),
+				dto.attachments(),
+				dto.createdDate(),
+				dto.lastModifiedDate()
+		);
+	}
+
+	private TransactionTotalsDto calculateTotals(
+			List<Transaction> transactions,
+			UUID holdingId,
+			Asset displayAsset,
+			TransactionAmountRateMode rateMode
+	) {
+		Map<String, MutableAssetTotals> totalsByAsset = new HashMap<>();
+
+		Set<String> codesUpper = transactions.stream()
+				.filter(transaction -> transaction.getStatus() == TransactionStatus.COMPLETED)
+				.flatMap(transaction -> java.util.stream.Stream.of(
+						transaction.getCurrencyCode(),
+						transaction.getSourceHolding() != null && transaction.getSourceHolding().getAsset() != null
+								? transaction.getSourceHolding().getAsset().getCode()
+								: null,
+						transaction.getTargetHolding() != null && transaction.getTargetHolding().getAsset() != null
+								? transaction.getTargetHolding().getAsset().getCode()
+								: null
+				))
+				.filter(Objects::nonNull)
+				.map(String::toUpperCase)
+				.collect(Collectors.toSet());
+
+		Map<String, Asset> assetByCodeUpper = codesUpper.isEmpty()
+				? Map.of()
+				: assetRepository.findAllByCodeUpperIn(codesUpper).stream()
+				.collect(Collectors.toMap(asset -> asset.getCode().toUpperCase(), Function.identity()));
+
+		MutableConvertedTotals convertedTotals = new MutableConvertedTotals();
+		convertedTotals.complete = displayAsset != null;
+		Instant nowInstant = Instant.now();
 
 		for (Transaction transaction : transactions) {
 			if (transaction.getStatus() != TransactionStatus.COMPLETED) {
 				continue;
 			}
 
+			Instant rateInstant = resolveRateInstant(transaction, rateMode, nowInstant);
+
 			switch (transaction.getTransactionType()) {
-				case INCOME -> incomeAmount += transaction.getAmount();
-				case EXPENSE -> expenseAmount += transaction.getAmount();
+				case INCOME -> applyTotalsDelta(
+						totalsByAsset,
+						convertedTotals,
+						transaction.getCurrencyCode(),
+						transaction.getAmount(),
+						0,
+						displayAsset,
+						assetByCodeUpper,
+						rateInstant
+				);
+				case EXPENSE -> applyTotalsDelta(
+						totalsByAsset,
+						convertedTotals,
+						transaction.getCurrencyCode(),
+						0,
+						transaction.getAmount(),
+						displayAsset,
+						assetByCodeUpper,
+						rateInstant
+				);
 				case BALANCE_ADJUSTMENT -> {
 					if (transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION) {
-						incomeAmount += transaction.getAmount();
+						applyTotalsDelta(
+								totalsByAsset,
+								convertedTotals,
+								transaction.getCurrencyCode(),
+								transaction.getAmount(),
+								0,
+								displayAsset,
+								assetByCodeUpper,
+								rateInstant
+						);
 					} else if (transaction.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.DEDUCTION) {
-						expenseAmount += transaction.getAmount();
+						applyTotalsDelta(
+								totalsByAsset,
+								convertedTotals,
+								transaction.getCurrencyCode(),
+								0,
+								transaction.getAmount(),
+								displayAsset,
+								assetByCodeUpper,
+								rateInstant
+						);
 					}
 				}
 				case TRANSFER -> {
+					String sourceAssetCode = transaction.getSourceHolding() != null && transaction.getSourceHolding().getAsset() != null
+							? transaction.getSourceHolding().getAsset().getCode()
+							: transaction.getCurrencyCode();
+					String targetAssetCode = transaction.getTargetHolding() != null && transaction.getTargetHolding().getAsset() != null
+							? transaction.getTargetHolding().getAsset().getCode()
+							: sourceAssetCode;
+					boolean sameAssetTransfer = isSameAssetTransferByAssetCode(sourceAssetCode, targetAssetCode);
+
 					if (holdingId == null) {
-						continue;
+						if (sameAssetTransfer) {
+							long feeEffect = resolveTransferEffectiveFee(transaction);
+							if (feeEffect > 0) {
+								applyTotalsDelta(totalsByAsset, convertedTotals, sourceAssetCode, 0, feeEffect, displayAsset, assetByCodeUpper, rateInstant);
+							} else if (feeEffect < 0) {
+								applyTotalsDelta(totalsByAsset, convertedTotals, sourceAssetCode, -feeEffect, 0, displayAsset, assetByCodeUpper, rateInstant);
+							}
+						} else {
+							applyTotalsDelta(totalsByAsset, convertedTotals, sourceAssetCode, 0, transaction.getAmount(), displayAsset, assetByCodeUpper, rateInstant);
+							applyTotalsDelta(totalsByAsset, convertedTotals, targetAssetCode, resolveTransferSettledAmount(transaction), 0, displayAsset, assetByCodeUpper, rateInstant);
+						}
+						break;
 					}
 
 					boolean outgoing = transaction.getSourceHolding() != null && holdingId.equals(transaction.getSourceHolding().getId());
 					boolean incoming = transaction.getTargetHolding() != null && holdingId.equals(transaction.getTargetHolding().getId());
 
 					if (outgoing) {
-						expenseAmount += transaction.getAmount();
+						applyTotalsDelta(totalsByAsset, convertedTotals, sourceAssetCode, 0, transaction.getAmount(), displayAsset, assetByCodeUpper, rateInstant);
 					}
 					if (incoming) {
-						incomeAmount += transaction.getAmount();
+						applyTotalsDelta(totalsByAsset, convertedTotals, targetAssetCode, resolveTransferSettledAmount(transaction), 0, displayAsset, assetByCodeUpper, rateInstant);
 					}
 				}
 			}
 		}
 
-		return new TransactionTotalsDto(
-				incomeAmount,
-				expenseAmount,
-				incomeAmount - expenseAmount
+		List<TransactionTotalsByAssetDto> byAsset = totalsByAsset.entrySet().stream()
+				.sorted(Map.Entry.comparingByKey())
+				.map(entry -> new TransactionTotalsByAssetDto(
+						entry.getKey(),
+						assetByCodeUpper.get(entry.getKey()) != null ? assetByCodeUpper.get(entry.getKey()).getScale() : null,
+						entry.getValue().income,
+						entry.getValue().expense,
+						entry.getValue().income - entry.getValue().expense
+				))
+				.toList();
+
+		TransactionConvertedTotalsDto converted = new TransactionConvertedTotalsDto(
+				convertedTotals.complete ? convertedTotals.income : null,
+				convertedTotals.complete ? convertedTotals.expense : null,
+				convertedTotals.complete ? convertedTotals.income - convertedTotals.expense : null,
+				displayAsset != null ? displayAsset.getCode() : null
 		);
+
+		return new TransactionTotalsDto(byAsset, converted);
+	}
+
+	private void applyTotalsDelta(
+			Map<String, MutableAssetTotals> totalsByAsset,
+			MutableConvertedTotals convertedTotals,
+			String assetCode,
+			long incomeDelta,
+			long expenseDelta,
+			Asset displayAsset,
+			Map<String, Asset> assetByCodeUpper,
+			Instant rateInstant
+	) {
+		if (incomeDelta == 0 && expenseDelta == 0) {
+			return;
+		}
+
+		String assetCodeUpper = assetCode != null ? assetCode.toUpperCase() : null;
+		if (assetCodeUpper != null) {
+			MutableAssetTotals totals = totalsByAsset.computeIfAbsent(assetCodeUpper, ignored -> new MutableAssetTotals());
+			totals.income += incomeDelta;
+			totals.expense += expenseDelta;
+		}
+
+		if (!convertedTotals.complete) {
+			return;
+		}
+
+		if (incomeDelta > 0) {
+			Long converted = convertToDisplayAmount(incomeDelta, assetCodeUpper, displayAsset, assetByCodeUpper, rateInstant);
+			if (converted == null) {
+				convertedTotals.complete = false;
+				return;
+			}
+			convertedTotals.income += converted;
+		}
+
+		if (expenseDelta > 0) {
+			Long converted = convertToDisplayAmount(expenseDelta, assetCodeUpper, displayAsset, assetByCodeUpper, rateInstant);
+			if (converted == null) {
+				convertedTotals.complete = false;
+				return;
+			}
+			convertedTotals.expense += converted;
+		}
+	}
+
+	private boolean isSameAssetTransferByAssetCode(String sourceAssetCode, String targetAssetCode) {
+		return sourceAssetCode != null
+				&& sourceAssetCode.equalsIgnoreCase(targetAssetCode);
+	}
+
+	private boolean isInternalSameAssetTransfer(Transaction transaction) {
+		if (transaction.getTransactionType() != TransactionType.TRANSFER) {
+			return false;
+		}
+		if (transaction.getHolding() != null) {
+			return false;
+		}
+		if (transaction.getSourceHolding() == null || transaction.getTargetHolding() == null) {
+			return false;
+		}
+		if (transaction.getSourceHolding().getAsset() == null || transaction.getTargetHolding().getAsset() == null) {
+			return false;
+		}
+
+		String sourceCode = transaction.getSourceHolding().getAsset().getCode();
+		String targetCode = transaction.getTargetHolding().getAsset().getCode();
+		if (!sourceCode.equalsIgnoreCase(targetCode)) {
+			return false;
+		}
+
+		return transaction.getExchangeRate() == null || BigDecimal.ONE.compareTo(transaction.getExchangeRate()) == 0;
+	}
+
+	private long resolveTransferSettledAmount(Transaction transaction) {
+		if (transaction.getSettledAmount() != null) {
+			return transaction.getSettledAmount();
+		}
+
+		if (isInternalSameAssetTransfer(transaction) && transaction.getFeeAmount() != 0) {
+			try {
+				return Math.subtractExact(transaction.getAmount(), transaction.getFeeAmount());
+			} catch (ArithmeticException ex) {
+				log.warn("Overflow while deriving settledAmount for transfer '{}'", transaction.getId());
+			}
+		}
+
+		return transaction.getAmount();
+	}
+
+	private long resolveTransferEffectiveFee(Transaction transaction) {
+		long settledAmount = resolveTransferSettledAmount(transaction);
+		try {
+			return Math.subtractExact(transaction.getAmount(), settledAmount);
+		} catch (ArithmeticException ex) {
+			log.warn("Overflow while deriving fee effect for transfer '{}'", transaction.getId());
+			return transaction.getFeeAmount();
+		}
+	}
+
+	private Long convertToDisplayAmount(
+			long amount,
+			String sourceAssetCodeUpper,
+			Asset displayAsset,
+			Map<String, Asset> assetByCodeUpper,
+			Instant rateInstant
+	) {
+		if (displayAsset == null || sourceAssetCodeUpper == null) {
+			return null;
+		}
+
+		if (displayAsset.getCode().equalsIgnoreCase(sourceAssetCodeUpper)) {
+			return amount;
+		}
+
+		Asset sourceAsset = assetByCodeUpper.get(sourceAssetCodeUpper);
+		if (sourceAsset == null) {
+			return null;
+		}
+
+		return exchangeRateService.convertAmount(amount, sourceAsset, displayAsset, rateInstant);
 	}
 
 	private Pageable normalizeTransactionPageable(Pageable pageable) {
@@ -375,7 +1234,7 @@ public class TransactionServiceImpl implements TransactionService {
 					.longValueExact() + feeAmount;
 			balanceEffect = settledAmount;
 		} else {
-			balanceEffect = request.amount();
+			balanceEffect = resolveIncomeExpenseBalanceEffect(type, request.amount(), feeAmount, null);
 		}
 
 		if (type == TransactionType.INCOME) {
@@ -406,7 +1265,7 @@ public class TransactionServiceImpl implements TransactionService {
 		log.info("User {} created {} transaction '{}' ({} {}{}) in tracker '{}'",
 		         currentUser.getEmail(), type, transaction.getId(), request.amount(), txnCurrency,
 		         crossCurrency ? " → " + settledAmount + " " + holdingAssetCode : "", tracker.getName());
-		return transactionMapper.toResponse(transaction);
+		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
 	}
 
 	// ── TRANSFER ──
@@ -484,7 +1343,7 @@ public class TransactionServiceImpl implements TransactionService {
 		         currentUser.getEmail(), transaction.getId(), request.amount(), txnCurrency,
 		         crossCurrency ? " @" + exchangeRate + " → " + settledAmount + " " + targetAssetCode : "",
 		         source.getAccount().getName(), target.getAccount().getName(), tracker.getName());
-		return transactionMapper.toResponse(transaction);
+		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
 	}
 
 	// ── BALANCE ADJUSTMENT ──
@@ -532,7 +1391,7 @@ public class TransactionServiceImpl implements TransactionService {
 		log.info("User {} created BALANCE_ADJUSTMENT '{}' ({} {} {}) on holding '{}' in tracker '{}'",
 		         currentUser.getEmail(), transaction.getId(), direction, absAmount,
 		         holding.getAsset().getCode(), holding.getAccount().getName(), tracker.getName());
-		return transactionMapper.toResponse(transaction);
+		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
 	}
 
 	// ── Cancel reversal ──
@@ -541,21 +1400,40 @@ public class TransactionServiceImpl implements TransactionService {
 		switch (transaction.getTransactionType()) {
 			case INCOME -> {
 				Holding holding = transaction.getHolding();
-				long effect = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+							long effect = resolveIncomeExpenseBalanceEffect(
+									TransactionType.INCOME,
+									transaction.getAmount(),
+									transaction.getFeeAmount(),
+									transaction.getSettledAmount()
+							);
 				holding.setCurrentAmount(holding.getCurrentAmount() - effect);
 				holdingRepository.save(holding);
 			}
 			case EXPENSE -> {
 				Holding holding = transaction.getHolding();
-				long effect = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+							long effect = resolveIncomeExpenseBalanceEffect(
+									TransactionType.EXPENSE,
+									transaction.getAmount(),
+									transaction.getFeeAmount(),
+									transaction.getSettledAmount()
+							);
 				holding.setCurrentAmount(holding.getCurrentAmount() + effect);
 				holdingRepository.save(holding);
 			}
 			case TRANSFER -> {
 				Holding source = transaction.getSourceHolding();
 				Holding target = transaction.getTargetHolding();
-				long sourceReversal = transaction.getAmount() + transaction.getFeeAmount();
-				long targetReversal = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+				long sourceReversal;
+				long targetReversal;
+
+				if (isInternalSameAssetTransfer(transaction)) {
+					sourceReversal = transaction.getAmount();
+					targetReversal = resolveTransferSettledAmount(transaction);
+				} else {
+					sourceReversal = transaction.getAmount() + transaction.getFeeAmount();
+					targetReversal = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
+				}
+
 				source.setCurrentAmount(source.getCurrentAmount() + sourceReversal);
 				target.setCurrentAmount(target.getCurrentAmount() - targetReversal);
 				holdingRepository.save(source);
@@ -660,6 +1538,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		return current;
 	}
+
 	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {
 		return expenseTrackerRepository.findById(trackerId)
 				.orElseThrow(() -> new EntityNotFoundException("Expense tracker not found"));
@@ -678,6 +1557,12 @@ public class TransactionServiceImpl implements TransactionService {
 	private Category getCategoryOrThrow(UUID categoryId) {
 		return categoryRepository.findById(categoryId)
 				.orElseThrow(() -> new EntityNotFoundException("Category not found"));
+	}
+
+	private void assertAssetCodeExists(String assetCode) {
+		if (!assetRepository.existsByCodeIgnoreCase(assetCode)) {
+			throw new OperationNotPermittedException("Asset code '%s' does not exist".formatted(assetCode));
+		}
 	}
 
 	private void assertTransactionBelongsToTracker(Transaction transaction, UUID trackerId) {
@@ -720,9 +1605,89 @@ public class TransactionServiceImpl implements TransactionService {
 		}
 	}
 
+	private long resolveIncomeExpenseBalanceEffect(TransactionType type, long amount, long feeAmount, Long settledAmount) {
+		if (settledAmount != null) {
+			return settledAmount;
+		}
+		if (type == TransactionType.EXPENSE) {
+			return Math.addExact(amount, feeAmount);
+		}
+		return amount;
+	}
+
+	private static final class MutableAssetTotals {
+		private long income;
+		private long expense;
+	}
+
+	private static final class MutableConvertedTotals {
+		private long income;
+		private long expense;
+		private boolean complete;
+	}
+
 	private record RootCategoryInfo(
 			UUID id,
 			String name
 	) {
+	}
+
+	private record AmountSortableTransaction(
+			Transaction transaction,
+			TransactionResponseDto dto,
+			ConvertedAmounts convertedAmounts
+	) {
+	}
+
+	private record ConvertedAmounts(
+			Long effectiveAmount,
+			Long sourceAmount,
+			Long targetAmount
+	) {
+	}
+
+	private TransactionResponseDto normalizeDisplayedExchangeRate(TransactionResponseDto dto) {
+		if (dto.exchangeRate() == null
+				|| dto.transactionType() != TransactionType.TRANSFER
+				|| dto.targetHoldingAssetScale() == null
+				|| dto.exchangeRate().scale() == dto.targetHoldingAssetScale()) {
+			return dto;
+		}
+
+		BigDecimal normalizedExchangeRate = dto.exchangeRate().setScale(dto.targetHoldingAssetScale(), RoundingMode.HALF_UP);
+
+		return new TransactionResponseDto(
+				dto.id(),
+				dto.transactionType(),
+				dto.status(),
+				dto.holdingId(),
+				dto.holdingName(),
+				dto.sourceHoldingId(),
+				dto.sourceHoldingName(),
+				dto.sourceHoldingAssetCode(),
+				dto.sourceHoldingAssetScale(),
+				dto.targetHoldingId(),
+				dto.targetHoldingName(),
+				dto.targetHoldingAssetCode(),
+				dto.targetHoldingAssetScale(),
+				dto.categoryId(),
+				dto.categoryName(),
+				dto.rootCategoryId(),
+				dto.rootCategoryName(),
+				dto.amount(),
+				dto.assetCode(),
+				dto.assetScale(),
+				normalizedExchangeRate,
+				dto.feeAmount(),
+				dto.settledAmount(),
+				dto.balanceAdjustmentDirection(),
+				dto.transactionDate(),
+				dto.description(),
+				dto.note(),
+				dto.externalRef(),
+				dto.attachments(),
+				dto.createdDate(),
+				dto.lastModifiedDate()
+		);
 	}
 }

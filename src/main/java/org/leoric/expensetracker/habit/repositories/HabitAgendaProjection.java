@@ -30,8 +30,6 @@ public interface HabitAgendaProjection {
 
 	DayBlock getDayBlock();
 
-	Integer getSlotSortOrder();
-
 	UUID getCompletionId();
 
 	LocalDate getCompletionDate();

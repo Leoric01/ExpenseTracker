@@ -24,8 +24,6 @@ public interface WeeklyCheckinRepository extends JpaRepository<WeeklyCheckin, UU
 
 	Optional<WeeklyCheckin> findByGoalPlanIdAndWeekIndex(UUID goalPlanId, Integer weekIndex);
 
-	Optional<WeeklyCheckin> findTopByGoalPlanIdOrderByWeekIndexDesc(UUID goalPlanId);
-
 	@Query("""
 			SELECT wc FROM WeeklyCheckin wc
 			WHERE wc.goalPlan.id = :goalPlanId
