@@ -23,9 +23,17 @@ import org.leoric.expensetracker.handler.exceptions.DuplicateTodoTitleException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeAmountLessThanFeeException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSameAssetException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSettledAmountRequiredException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateKanbanNameException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateKanbanStageNameException;
 import org.leoric.expensetracker.handler.exceptions.InvalidTodoException;
+import org.leoric.expensetracker.handler.exceptions.InvalidKanbanException;
+import org.leoric.expensetracker.handler.exceptions.KanbanBoardNotFoundException;
+import org.leoric.expensetracker.handler.exceptions.KanbanCardNotFoundException;
+import org.leoric.expensetracker.handler.exceptions.KanbanStageNotFoundException;
+import org.leoric.expensetracker.handler.exceptions.KanbanTagNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.TodoNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.TodoTagNotFoundException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateKanbanTagNameException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountComputationException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountInputMissingException;
 import org.leoric.expensetracker.handler.exceptions.TransferExchangeRateInvalidException;
@@ -277,6 +285,54 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionResponse> handleTodoTagNotFoundException(TodoTagNotFoundException ex) {
 		log.warn("[{}] {}", TODO_TAG_NOT_FOUND.getCode(), ex.getMessage(), ex);
 		return build(TODO_TAG_NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateKanbanNameException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateKanbanNameException(DuplicateKanbanNameException ex) {
+		log.warn("[{}] {}", DUPLICATE_KANBAN_NAME.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_KANBAN_NAME, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateKanbanStageNameException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateKanbanStageNameException(DuplicateKanbanStageNameException ex) {
+		log.warn("[{}] {}", DUPLICATE_KANBAN_STAGE_NAME.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_KANBAN_STAGE_NAME, ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidKanbanException.class)
+	public ResponseEntity<ExceptionResponse> handleInvalidKanbanException(InvalidKanbanException ex) {
+		log.warn("[{}] {}", INVALID_KANBAN.getCode(), ex.getMessage(), ex);
+		return build(INVALID_KANBAN, ex.getMessage());
+	}
+
+	@ExceptionHandler(KanbanBoardNotFoundException.class)
+	public ResponseEntity<ExceptionResponse> handleKanbanBoardNotFoundException(KanbanBoardNotFoundException ex) {
+		log.warn("[{}] {}", KANBAN_BOARD_NOT_FOUND.getCode(), ex.getMessage(), ex);
+		return build(KANBAN_BOARD_NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(KanbanStageNotFoundException.class)
+	public ResponseEntity<ExceptionResponse> handleKanbanStageNotFoundException(KanbanStageNotFoundException ex) {
+		log.warn("[{}] {}", KANBAN_STAGE_NOT_FOUND.getCode(), ex.getMessage(), ex);
+		return build(KANBAN_STAGE_NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(KanbanCardNotFoundException.class)
+	public ResponseEntity<ExceptionResponse> handleKanbanCardNotFoundException(KanbanCardNotFoundException ex) {
+		log.warn("[{}] {}", KANBAN_CARD_NOT_FOUND.getCode(), ex.getMessage(), ex);
+		return build(KANBAN_CARD_NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateKanbanTagNameException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateKanbanTagNameException(DuplicateKanbanTagNameException ex) {
+		log.warn("[{}] {}", DUPLICATE_KANBAN_TAG_NAME.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_KANBAN_TAG_NAME, ex.getMessage());
+	}
+
+	@ExceptionHandler(KanbanTagNotFoundException.class)
+	public ResponseEntity<ExceptionResponse> handleKanbanTagNotFoundException(KanbanTagNotFoundException ex) {
+		log.warn("[{}] {}", KANBAN_TAG_NOT_FOUND.getCode(), ex.getMessage(), ex);
+		return build(KANBAN_TAG_NOT_FOUND, ex.getMessage());
 	}
 
 	@ExceptionHandler(TransferAmountInputMissingException.class)

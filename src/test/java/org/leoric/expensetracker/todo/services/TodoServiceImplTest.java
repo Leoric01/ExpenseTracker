@@ -8,6 +8,7 @@ import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.InvalidTodoException;
 import org.leoric.expensetracker.handler.exceptions.TodoTagNotFoundException;
+import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.todo.dtos.TodoArchiveUpdateRequestDto;
 import org.leoric.expensetracker.todo.dtos.TodoStatusUpdateRequestDto;
 import org.leoric.expensetracker.todo.dtos.TodoUpsertRequestDto;
@@ -23,6 +24,7 @@ import org.leoric.expensetracker.todo.repositories.TodoTagRepository;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -55,6 +57,8 @@ class TodoServiceImplTest {
 	private TodoTagAssignmentRepository todoTagAssignmentRepository;
 	@Mock
 	private ExpenseTrackerRepository expenseTrackerRepository;
+	@Mock
+	private ImageService imageService;
 	@Mock
 	private TodoMapper todoMapper;
 
@@ -312,6 +316,75 @@ class TodoServiceImplTest {
 				LocalDate.of(2026, 5, 1)
 		)).isInstanceOf(InvalidTodoException.class)
 				.hasMessageContaining("dueFrom");
+	}
+
+	@Test
+	void todoUploadImage_shouldUploadViaCloudinaryAndPersistImageUrl() {
+		Todo todo = todo(UUID.randomUUID(), tracker, null, "Task");
+		when(todoRepository.findByIdAndIsDeletedFalse(todo.getId())).thenReturn(Optional.of(todo));
+		when(todoRepository.findByExpenseTrackerIdAndParentIdInAndIsDeletedFalse(eq(trackerId), anyCollection()))
+				.thenReturn(List.of());
+		when(todoTagAssignmentRepository.findAllByTodoIdsWithTag(anyCollection())).thenReturn(List.of());
+		when(todoMapper.toResponseDto(eq(todo), any(), any())).thenAnswer(invocation ->
+				new org.leoric.expensetracker.todo.dtos.TodoResponseDto(
+						todo.getId(),
+						null,
+						todo.getTitle(),
+						todo.getDescription(),
+						todo.getImageUrl(),
+						todo.getStatus(),
+						todo.getPriority(),
+						todo.getDueDate(),
+						null,
+						null,
+						todo.getEstimatedMinutes(),
+						todo.getNote(),
+						todo.getSortOrder(),
+						todo.isActive(),
+						java.util.List.of(),
+						java.util.List.of(),
+						null,
+						null
+				)
+		);
+		when(imageService.uploadImage(any(), eq("expense-tracker/todo")))
+				.thenReturn("https://res.cloudinary.com/demo/image/upload/v1/todo.png");
+
+		MockMultipartFile file = new MockMultipartFile("file", "todo.png", "image/png", new byte[]{1, 2, 3});
+		var response = todoService.todoUploadImage(user, trackerId, todo.getId(), file);
+
+		assertThat(todo.getImageUrl()).isEqualTo("https://res.cloudinary.com/demo/image/upload/v1/todo.png");
+		assertThat(response.imageUrl()).isEqualTo("https://res.cloudinary.com/demo/image/upload/v1/todo.png");
+		verify(imageService).uploadImage(any(), eq("expense-tracker/todo"));
+	}
+
+	@Test
+	void todoDeleteImage_shouldClearImageUrl() {
+		Todo todo = todo(UUID.randomUUID(), tracker, null, "Task");
+		todo.setImageUrl("https://res.cloudinary.com/demo/image/upload/v1/todo.png");
+		when(todoRepository.findByIdAndIsDeletedFalse(todo.getId())).thenReturn(Optional.of(todo));
+		when(imageService.deleteImageByUrl(todo.getImageUrl())).thenReturn(true);
+
+		todoService.todoDeleteImage(user, trackerId, todo.getId());
+
+		assertThat(todo.getImageUrl()).isNull();
+		verify(imageService).deleteImageByUrl("https://res.cloudinary.com/demo/image/upload/v1/todo.png");
+		verify(todoRepository).save(todo);
+	}
+
+	@Test
+	void todoDeleteImage_shouldNotClearDbWhenCloudinaryDeleteFails() {
+		Todo todo = todo(UUID.randomUUID(), tracker, null, "Task");
+		todo.setImageUrl("https://res.cloudinary.com/demo/image/upload/v1/todo.png");
+		when(todoRepository.findByIdAndIsDeletedFalse(todo.getId())).thenReturn(Optional.of(todo));
+		when(imageService.deleteImageByUrl(todo.getImageUrl())).thenReturn(false);
+
+		assertThatThrownBy(() -> todoService.todoDeleteImage(user, trackerId, todo.getId()))
+				.isInstanceOf(InvalidTodoException.class)
+				.hasMessageContaining("Cloudinary");
+
+		assertThat(todo.getImageUrl()).isEqualTo("https://res.cloudinary.com/demo/image/upload/v1/todo.png");
+		verify(todoRepository, never()).save(todo);
 	}
 
 	private void stubSubtree(Todo root, Map<UUID, List<Todo>> childrenByParentId) {

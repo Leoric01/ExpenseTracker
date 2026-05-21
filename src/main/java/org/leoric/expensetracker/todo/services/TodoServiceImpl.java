@@ -10,6 +10,7 @@ import org.leoric.expensetracker.handler.exceptions.DuplicateTodoTitleException;
 import org.leoric.expensetracker.handler.exceptions.InvalidTodoException;
 import org.leoric.expensetracker.handler.exceptions.TodoNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.TodoTagNotFoundException;
+import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.todo.dtos.TodoArchiveUpdateRequestDto;
 import org.leoric.expensetracker.todo.dtos.TodoResponseDto;
 import org.leoric.expensetracker.todo.dtos.TodoStatusUpdateRequestDto;
@@ -27,6 +28,7 @@ import org.leoric.expensetracker.todo.repositories.TodoTagRepository;
 import org.leoric.expensetracker.todo.services.interfaces.TodoService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -49,6 +51,12 @@ import java.util.stream.Collectors;
 public class TodoServiceImpl implements TodoService {
 
 	private static final int MAX_TREE_DEPTH = 15;
+	private static final Set<String> ALLOWED_IMAGE_CONTENT_TYPES = Set.of(
+			"image/jpeg",
+			"image/png",
+			"image/webp",
+			"image/heic"
+	);
 	private static final Comparator<Todo> TODO_ORDER = Comparator
 			.comparing((Todo t) -> t.getSortOrder() == null ? 0 : t.getSortOrder())
 			.thenComparing(Todo::getTitle, String.CASE_INSENSITIVE_ORDER);
@@ -57,6 +65,7 @@ public class TodoServiceImpl implements TodoService {
 	private final TodoTagRepository todoTagRepository;
 	private final TodoTagAssignmentRepository todoTagAssignmentRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
+	private final ImageService imageService;
 	private final TodoMapper todoMapper;
 
 	@Override
@@ -227,6 +236,52 @@ public class TodoServiceImpl implements TodoService {
 		List<TodoTag> tags = resolveTags(trackerId, tagIds);
 		replaceTodoTags(todo, tags);
 		log.info("User {} replaced tags on todo '{}' in tracker '{}'", currentUser.getEmail(), todo.getTitle(), trackerId);
+	}
+
+	@Override
+	@Transactional
+	public TodoResponseDto todoUploadImage(User currentUser, UUID trackerId, UUID todoId, MultipartFile file) {
+		Todo todo = getTodoOrThrow(todoId);
+		assertTodoBelongsToTracker(todo, trackerId);
+
+		if (file == null || file.isEmpty()) {
+			throw new InvalidTodoException("Image file is required");
+		}
+
+		String contentType = file.getContentType();
+		if (contentType == null || !ALLOWED_IMAGE_CONTENT_TYPES.contains(contentType)) {
+			throw new InvalidTodoException(
+					"Unsupported image type '%s'. Allowed: JPEG, PNG, WEBP, HEIC".formatted(contentType)
+			);
+		}
+
+		String imageUrl = imageService.uploadImage(file, "expense-tracker/todo");
+		todo.setImageUrl(imageUrl);
+		todoRepository.save(todo);
+
+		log.info("User {} uploaded image for todo '{}' in tracker '{}'", currentUser.getEmail(), todo.getTitle(), trackerId);
+		return todoFindById(currentUser, trackerId, todoId);
+	}
+
+	@Override
+	@Transactional
+	public void todoDeleteImage(User currentUser, UUID trackerId, UUID todoId) {
+		Todo todo = getTodoOrThrow(todoId);
+		assertTodoBelongsToTracker(todo, trackerId);
+
+		if (todo.getImageUrl() == null || todo.getImageUrl().isBlank()) {
+			return;
+		}
+
+		boolean deleted = imageService.deleteImageByUrl(todo.getImageUrl());
+		if (!deleted) {
+			throw new InvalidTodoException("Failed to delete image from Cloudinary. Todo image reference was not changed");
+		}
+
+		todo.setImageUrl(null);
+		todoRepository.save(todo);
+
+		log.info("User {} removed image from todo '{}' in tracker '{}'", currentUser.getEmail(), todo.getTitle(), trackerId);
 	}
 
 	@Override

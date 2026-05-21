@@ -7,6 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -14,8 +15,10 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -149,6 +152,50 @@ class TodoControllerIntegrationTest {
 								"""))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.businessErrorCode", is("B-1201")));
+	}
+
+	@Test
+	void todoUploadImage_shouldReturn400ForUnsupportedContentType() throws Exception {
+		UUID todoId = createTodo(trackerId, """
+				{
+				  "title": "Task for upload"
+				}
+				""");
+
+		MockMultipartFile file = new MockMultipartFile(
+				"file",
+				"todo.txt",
+				"text/plain",
+				"not-an-image".getBytes()
+		);
+
+		mockMvc.perform(multipart("/api/todo/{trackerId}/{todoId}/image", trackerId, todoId)
+						.file(file)
+						.header("Authorization", "Bearer " + jwtToken)
+						.with(request -> {
+							request.setMethod("POST");
+							return request;
+						}))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-5202")));
+	}
+
+	@Test
+	void todoDeleteImage_shouldBeIdempotentWhenImageIsMissing() throws Exception {
+		UUID todoId = createTodo(trackerId, """
+				{
+				  "title": "Task without image"
+				}
+				""");
+
+		mockMvc.perform(delete("/api/todo/{trackerId}/{todoId}/image", trackerId, todoId)
+						.header("Authorization", "Bearer " + jwtToken))
+				.andExpect(status().isNoContent());
+
+		mockMvc.perform(get("/api/todo/{trackerId}/{todoId}", trackerId, todoId)
+						.header("Authorization", "Bearer " + jwtToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.imageUrl", nullValue()));
 	}
 
 	private void registerAndLogin() throws Exception {

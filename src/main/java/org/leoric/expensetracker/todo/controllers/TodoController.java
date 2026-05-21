@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -141,6 +142,28 @@ public class TodoController {
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
 		todoService.todoDelete(currentUser, trackerId, todoId);
+		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping("/{trackerId}/{todoId}/image")
+	public ResponseEntity<TodoResponseDto> todoUploadImage(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID todoId,
+			@RequestParam("file") MultipartFile file
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		return ResponseEntity.ok(todoService.todoUploadImage(currentUser, trackerId, todoId, file));
+	}
+
+	@DeleteMapping("/{trackerId}/{todoId}/image")
+	public ResponseEntity<Void> todoDeleteImage(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID todoId
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		todoService.todoDeleteImage(currentUser, trackerId, todoId);
 		return ResponseEntity.noContent().build();
 	}
 

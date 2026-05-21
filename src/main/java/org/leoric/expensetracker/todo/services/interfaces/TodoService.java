@@ -8,6 +8,7 @@ import org.leoric.expensetracker.todo.dtos.TodoUpsertRequestDto;
 import org.leoric.expensetracker.todo.models.constants.TodoPriority;
 import org.leoric.expensetracker.todo.models.constants.TodoStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -38,6 +39,10 @@ public interface TodoService {
 	void todoArchive(User currentUser, UUID trackerId, UUID todoId, TodoArchiveUpdateRequestDto request);
 
 	void todoReplaceTags(User currentUser, UUID trackerId, UUID todoId, List<UUID> tagIds);
+
+	TodoResponseDto todoUploadImage(User currentUser, UUID trackerId, UUID todoId, MultipartFile file);
+
+	void todoDeleteImage(User currentUser, UUID trackerId, UUID todoId);
 
 	void todoDelete(User currentUser, UUID trackerId, UUID todoId);
 }
