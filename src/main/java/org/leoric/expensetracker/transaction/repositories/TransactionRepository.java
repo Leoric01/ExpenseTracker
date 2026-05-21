@@ -1,9 +1,9 @@
 package org.leoric.expensetracker.transaction.repositories;
 
-import org.leoric.expensetracker.transaction.models.Transaction;
-import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.leoric.expensetracker.transaction.models.Transaction;
+import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -42,6 +43,19 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 			"attachments"
 	})
 	List<Transaction> findAll(@Nullable Specification<Transaction> spec);
+
+	@EntityGraph(attributePaths = {
+			"holding",
+			"holding.asset",
+			"sourceHolding",
+			"sourceHolding.asset",
+			"targetHolding",
+			"targetHolding.asset",
+			"category",
+			"category.parent"})
+	Optional<Transaction> findWithDetailsByIdAndExpenseTrackerId(UUID id, UUID trackerId);
+
+	Optional<Transaction> findByIdAndExpenseTrackerId(UUID id, UUID trackerId);
 
 	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 
@@ -89,4 +103,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 			@Param("trackerId") UUID trackerId,
 			@Param("from") Instant from,
 			@Param("to") Instant to);
+
+	boolean existsByIdAndExpenseTrackerId(UUID transactionId, UUID trackerId);
 }

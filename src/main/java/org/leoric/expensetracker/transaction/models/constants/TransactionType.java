@@ -4,5 +4,6 @@ public enum TransactionType {
 	INCOME,
 	EXPENSE,
 	TRANSFER,
-	BALANCE_ADJUSTMENT
+	BALANCE_ADJUSTMENT,
+	TEST
 }

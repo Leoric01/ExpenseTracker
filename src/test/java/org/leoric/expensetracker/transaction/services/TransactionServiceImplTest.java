@@ -16,6 +16,7 @@ import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.institution.models.Institution;
 import org.leoric.expensetracker.transaction.dto.TransactionAmountRateMode;
+import org.leoric.expensetracker.transaction.dto.CreateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.dto.TransactionFilter;
 import org.leoric.expensetracker.transaction.dto.TransactionPageResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
@@ -808,6 +809,89 @@ class TransactionServiceImplTest {
 		assertThat(result.totals().byAsset().getFirst().incomeAmount()).isEqualTo(98L);
 		assertThat(result.totals().byAsset().getFirst().expenseAmount()).isEqualTo(0L);
 		assertThat(result.totals().byAsset().getFirst().netAmount()).isEqualTo(98L);
+	}
+
+	@Test
+	void transactionCreate_transferSameAssetWithFee_shouldStoreSettledAndKeepCancelReversible() {
+		UUID transactionId = UUID.randomUUID();
+		CreateTransactionRequestDto request = new CreateTransactionRequestDto(
+				TransactionType.TRANSFER,
+				null,
+				holdingA.getId(),
+				holdingB.getId(),
+				null,
+				100L,
+				null,
+				"CZK",
+				null,
+				2L,
+				Instant.parse("2026-05-01T10:00:00Z"),
+				"transfer",
+				null,
+				null
+		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(holdingA.getId())).thenReturn(Optional.of(holdingA));
+		when(holdingRepository.findById(holdingB.getId())).thenReturn(Optional.of(holdingB));
+		when(assetRepository.existsByCodeIgnoreCase("CZK")).thenReturn(true);
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> {
+			Transaction transaction = inv.getArgument(0);
+			if (transaction.getId() == null) {
+				transaction.setId(transactionId);
+			}
+			return transaction;
+		});
+		when(transactionMapper.toResponse(any(Transaction.class))).thenAnswer(inv -> minimalResponse(inv.getArgument(0)));
+		when(assetRepository.findByCodeIgnoreCase("CZK"))
+				.thenReturn(Optional.of(Asset.builder().code("CZK").scale(2).build()));
+
+		TransactionResponseDto created = service.transactionCreate(user, trackerId, request);
+		org.mockito.ArgumentCaptor<Transaction> transactionCaptor = org.mockito.ArgumentCaptor.forClass(Transaction.class);
+		verify(transactionRepository).save(transactionCaptor.capture());
+		Transaction saved = transactionCaptor.getValue();
+
+		assertThat(saved.getCurrencyCode()).isEqualTo("CZK");
+		assertThat(saved.getFeeAmount()).isEqualTo(2L);
+		assertThat(saved.getSettledAmount()).isEqualTo(98L);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(9_900L);
+		assertThat(holdingB.getCurrentAmount()).isEqualTo(20_098L);
+		assertThat(created.assetCode()).isEqualTo("CZK");
+
+		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(saved));
+		service.transactionCancel(user, trackerId, transactionId);
+
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(10_000L);
+		assertThat(holdingB.getCurrentAmount()).isEqualTo(20_000L);
+	}
+
+	@Test
+	void transactionCreate_transferCurrencyMismatchToSourceAsset_shouldFail() {
+		CreateTransactionRequestDto request = new CreateTransactionRequestDto(
+				TransactionType.TRANSFER,
+				null,
+				holdingA.getId(),
+				holdingB.getId(),
+				null,
+				100L,
+				null,
+				"EUR",
+				null,
+				0L,
+				Instant.parse("2026-05-01T10:00:00Z"),
+				null,
+				null,
+				null
+		);
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(holdingA.getId())).thenReturn(Optional.of(holdingA));
+		when(holdingRepository.findById(holdingB.getId())).thenReturn(Optional.of(holdingB));
+		when(assetRepository.existsByCodeIgnoreCase("EUR")).thenReturn(true);
+
+		assertThatThrownBy(() -> service.transactionCreate(user, trackerId, request))
+				.isInstanceOf(OperationNotPermittedException.class)
+				.hasMessageContaining("Currency code on transfer must match source holding asset code");
 	}
 
 	private TransactionResponseDto minimalResponse(Transaction transaction) {

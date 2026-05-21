@@ -18,6 +18,7 @@ import org.leoric.expensetracker.category.dto.CategoryMovementConvertedTotalsDto
 import org.leoric.expensetracker.category.dto.CategoryMovementSummaryResponseDto;
 import org.leoric.expensetracker.category.dto.PageMetadata;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
+import org.leoric.expensetracker.budget.models.constants.PeriodType;
 import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
 import org.leoric.expensetracker.category.dto.CategoryResponseDto;
 import org.leoric.expensetracker.category.dto.CreateCategoryBulkRequestDto;
@@ -46,9 +47,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -374,6 +377,7 @@ public class CategoryServiceImpl implements CategoryService {
 		int conversionFailures = 0;
 
 		List<BudgetPlan> plans = budgetPlanRepository.findAllActiveByExpenseTrackerIdWithCategoryInRange(trackerId, rangeFrom, rangeTo);
+		PeriodType selectedRangePeriodType = resolveRangePeriodType(rangeFrom, rangeTo);
 		log.debug("categoryMovementSummary budget plans in range: trackerId={}, plansCount={}", trackerId, plans.size());
 		for (BudgetPlan plan : plans) {
 			Category category = plan.getCategory();
@@ -384,16 +388,28 @@ public class CategoryServiceImpl implements CategoryService {
 				continue;
 			}
 
+			long expectedAmountForRange = computeExpectedAmountForRange(plan, rangeFrom, rangeTo, selectedRangePeriodType);
+			if (expectedAmountForRange <= 0) {
+				continue;
+			}
+
 			AssetSummaryTotals totals = totalsByAssetCode.computeIfAbsent(normalizeCode(plan.getCurrencyCode()), ignored -> new AssetSummaryTotals());
 			if (category.getCategoryKind() == CategoryKind.INCOME) {
-				totals.expectedIncome += plan.getAmount();
+				totals.expectedIncome += expectedAmountForRange;
 			} else {
-				totals.expectedExpense += plan.getAmount();
+				totals.expectedExpense += expectedAmountForRange;
 			}
 
 			if (displayAsset != null) {
 				conversionAttempts++;
-				Long converted = convertToDisplayAmount(plan.getAmount(), plan.getCurrencyCode(), plan.getValidFrom().atStartOfDay().toInstant(ZoneOffset.UTC), displayAsset, assetCacheByCode);
+				LocalDate conversionDate = rangeFrom.isAfter(plan.getValidFrom()) ? rangeFrom : plan.getValidFrom();
+				Long converted = convertToDisplayAmount(
+						expectedAmountForRange,
+						plan.getCurrencyCode(),
+						conversionDate.atStartOfDay().toInstant(ZoneOffset.UTC),
+						displayAsset,
+						assetCacheByCode
+				);
 				if (converted == null) {
 					conversionComplete = false;
 					conversionFailures++;
@@ -997,6 +1013,127 @@ public class CategoryServiceImpl implements CategoryService {
 	private Integer resolveAssetScale(String assetCode, Map<String, Asset> cacheByCode) {
 		Asset asset = resolveAsset(assetCode, cacheByCode);
 		return asset != null ? asset.getScale() : null;
+	}
+
+	private long computeExpectedAmountForRange(BudgetPlan plan, LocalDate rangeFrom, LocalDate rangeTo, PeriodType selectedRangePeriodType) {
+		if (plan.getAmount() <= 0 || plan.getValidFrom() == null || rangeFrom == null || rangeTo == null || rangeFrom.isAfter(rangeTo)) {
+			return 0L;
+		}
+
+		Long amountConvertedByPeriod = convertAmountByPeriod(plan.getAmount(), plan.getPeriodType(), selectedRangePeriodType);
+		if (amountConvertedByPeriod != null) {
+			return amountConvertedByPeriod;
+		}
+
+		LocalDate planStart = plan.getValidFrom();
+		LocalDate planEnd = resolveEffectivePlanEnd(plan);
+		if (planEnd.isBefore(planStart)) {
+			return 0L;
+		}
+
+		LocalDate overlapStart = planStart.isAfter(rangeFrom) ? planStart : rangeFrom;
+		LocalDate overlapEnd = planEnd.isBefore(rangeTo) ? planEnd : rangeTo;
+		if (overlapStart.isAfter(overlapEnd)) {
+			return 0L;
+		}
+
+		long totalPlanDays = ChronoUnit.DAYS.between(planStart, planEnd) + 1;
+		long overlapDays = ChronoUnit.DAYS.between(overlapStart, overlapEnd) + 1;
+
+		if (totalPlanDays <= 0 || overlapDays <= 0) {
+			return 0L;
+		}
+
+		if (overlapDays == totalPlanDays) {
+			return plan.getAmount();
+		}
+
+		return BigDecimal.valueOf(plan.getAmount())
+				.multiply(BigDecimal.valueOf(overlapDays))
+				.divide(BigDecimal.valueOf(totalPlanDays), 0, RoundingMode.HALF_UP)
+				.longValueExact();
+	}
+
+	private Long convertAmountByPeriod(long amount, PeriodType sourcePeriodType, PeriodType targetPeriodType) {
+		if (sourcePeriodType == null || targetPeriodType == null || sourcePeriodType == targetPeriodType) {
+			return sourcePeriodType == targetPeriodType ? amount : null;
+		}
+
+		Integer sourceMonths = toCalendarMonths(sourcePeriodType);
+		Integer targetMonths = toCalendarMonths(targetPeriodType);
+		if (sourceMonths == null || targetMonths == null) {
+			return null;
+		}
+
+		return BigDecimal.valueOf(amount)
+				.multiply(BigDecimal.valueOf(targetMonths))
+				.divide(BigDecimal.valueOf(sourceMonths), 0, RoundingMode.HALF_UP)
+				.longValueExact();
+	}
+
+	private Integer toCalendarMonths(PeriodType periodType) {
+		if (periodType == null) {
+			return null;
+		}
+
+		return switch (periodType) {
+			case MONTHLY -> 1;
+			case QUARTERLY -> 3;
+			case YEARLY -> 12;
+			default -> null;
+		};
+	}
+
+	private PeriodType resolveRangePeriodType(LocalDate rangeFrom, LocalDate rangeTo) {
+		if (rangeFrom == null || rangeTo == null || rangeFrom.isAfter(rangeTo)) {
+			return null;
+		}
+
+		if (rangeFrom.equals(rangeTo)) {
+			return PeriodType.DAILY;
+		}
+
+		if (rangeFrom.plusDays(6).equals(rangeTo)) {
+			return PeriodType.WEEKLY;
+		}
+
+		if (rangeFrom.getDayOfMonth() == 1 && rangeFrom.withDayOfMonth(rangeFrom.lengthOfMonth()).equals(rangeTo)) {
+			return PeriodType.MONTHLY;
+		}
+
+		if (rangeFrom.getMonthValue() % 3 == 1
+				&& rangeFrom.getDayOfMonth() == 1
+				&& rangeFrom.plusMonths(3).minusDays(1).equals(rangeTo)) {
+			return PeriodType.QUARTERLY;
+		}
+
+		if (rangeFrom.getMonthValue() == 1
+				&& rangeFrom.getDayOfMonth() == 1
+				&& rangeFrom.plusYears(1).minusDays(1).equals(rangeTo)) {
+			return PeriodType.YEARLY;
+		}
+
+		return null;
+	}
+
+	private LocalDate resolveEffectivePlanEnd(BudgetPlan plan) {
+		if (plan.getValidTo() != null) {
+			return plan.getValidTo();
+		}
+
+		LocalDate planStart = plan.getValidFrom();
+		if (planStart == null || plan.getPeriodType() == null) {
+			return planStart;
+		}
+
+		PeriodType periodType = plan.getPeriodType();
+		return switch (periodType) {
+			case DAILY -> planStart;
+			case WEEKLY -> planStart.plusWeeks(1).minusDays(1);
+			case MONTHLY -> planStart.plusMonths(1).minusDays(1);
+			case QUARTERLY -> planStart.plusMonths(3).minusDays(1);
+			case YEARLY -> planStart.plusYears(1).minusDays(1);
+		};
 	}
 
 	private static final class AssetSummaryTotals {

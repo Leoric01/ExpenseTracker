@@ -5,14 +5,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.leoric.expensetracker.asset.models.Asset;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.budget.models.BudgetPlan;
+import org.leoric.expensetracker.budget.models.constants.PeriodType;
 import org.leoric.expensetracker.budget.repositories.BudgetPlanRepository;
 import org.leoric.expensetracker.category.dto.CategoryActivePageResponse;
 import org.leoric.expensetracker.category.dto.CategoryActiveRowResponse;
 import org.leoric.expensetracker.category.dto.CategoryActiveTreeResponseDto;
+import org.leoric.expensetracker.category.dto.CategoryMovementSummaryResponseDto;
 import org.leoric.expensetracker.category.models.Category;
 import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.category.repositories.CategoryRepository;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.leoric.expensetracker.utils.BudgetPlanSpentCalculator;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -21,6 +24,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,6 +47,8 @@ class CategoryServiceImplTest {
 	private BudgetPlanSpentCalculator budgetPlanSpentCalculator;
 	@Mock
 	private org.leoric.expensetracker.asset.repositories.AssetRepository assetRepository;
+	@Mock
+	private TransactionRepository transactionRepository;
 	@InjectMocks
 	private CategoryServiceImpl categoryService;
 
@@ -253,5 +259,115 @@ class CategoryServiceImplTest {
 				.orElseThrow()
 				.parentId())
 				.isEqualTo(parent.getId().toString());
+	}
+
+	@Test
+	void categoryMovementSummary_shouldConvertYearlyBudgetToMonthlyExpectedTotals() {
+		UUID trackerId = UUID.randomUUID();
+		User user = User.builder().id(UUID.randomUUID()).email("tester@example.com").build();
+
+		Category expenseRoot = Category.builder()
+				.id(UUID.randomUUID())
+				.name("Housing")
+				.categoryKind(CategoryKind.EXPENSE)
+				.active(true)
+				.build();
+		Category incomeRoot = Category.builder()
+				.id(UUID.randomUUID())
+				.name("Salary")
+				.categoryKind(CategoryKind.INCOME)
+				.active(true)
+				.build();
+
+		BudgetPlan yearlyExpense = BudgetPlan.builder()
+				.id(UUID.randomUUID())
+				.category(expenseRoot)
+				.currencyCode("CZK")
+				.amount(60_000L)
+				.periodType(PeriodType.YEARLY)
+				.validFrom(LocalDate.of(2026, 1, 1))
+				.validTo(LocalDate.of(2026, 12, 31))
+				.active(true)
+				.build();
+		BudgetPlan yearlyIncome = BudgetPlan.builder()
+				.id(UUID.randomUUID())
+				.category(incomeRoot)
+				.currencyCode("CZK")
+				.amount(120_000L)
+				.periodType(PeriodType.YEARLY)
+				.validFrom(LocalDate.of(2026, 1, 1))
+				.validTo(LocalDate.of(2026, 12, 31))
+				.active(true)
+				.build();
+
+		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of(expenseRoot, incomeRoot));
+		when(budgetPlanRepository.findAllActiveByExpenseTrackerIdWithCategoryInRange(
+				trackerId,
+				LocalDate.of(2026, 5, 1),
+				LocalDate.of(2026, 5, 31)))
+				.thenReturn(List.of(yearlyExpense, yearlyIncome));
+		when(transactionRepository.findCompletedByExpenseTrackerIdAndDateRange(
+				trackerId,
+				LocalDate.of(2026, 5, 1).atStartOfDay().toInstant(ZoneOffset.UTC),
+				LocalDate.of(2026, 5, 31).atTime(23, 59, 59, 999_000_000).toInstant(ZoneOffset.UTC)))
+				.thenReturn(List.of());
+
+		CategoryMovementSummaryResponseDto result = categoryService.categoryMovementSummary(
+				user,
+				trackerId,
+				LocalDate.of(2026, 5, 1).atStartOfDay().toInstant(ZoneOffset.UTC),
+				LocalDate.of(2026, 5, 31).atTime(23, 59, 59, 999_000_000).toInstant(ZoneOffset.UTC),
+				null);
+
+		assertThat(result.nativeByAsset()).hasSize(1);
+		assertThat(result.nativeByAsset().getFirst().assetCode()).isEqualTo("CZK");
+		assertThat(result.nativeByAsset().getFirst().expectedExpenseAmount()).isEqualTo(5_000L);
+		assertThat(result.nativeByAsset().getFirst().expectedIncomeAmount()).isEqualTo(10_000L);
+	}
+
+	@Test
+	void categoryMovementSummary_shouldFallbackToProrataForCustomRange() {
+		UUID trackerId = UUID.randomUUID();
+		User user = User.builder().id(UUID.randomUUID()).email("tester@example.com").build();
+
+		Category expenseRoot = Category.builder()
+				.id(UUID.randomUUID())
+				.name("Housing")
+				.categoryKind(CategoryKind.EXPENSE)
+				.active(true)
+				.build();
+
+		BudgetPlan yearlyExpense = BudgetPlan.builder()
+				.id(UUID.randomUUID())
+				.category(expenseRoot)
+				.currencyCode("CZK")
+				.amount(60_000L)
+				.periodType(PeriodType.YEARLY)
+				.validFrom(LocalDate.of(2026, 1, 1))
+				.validTo(LocalDate.of(2026, 12, 31))
+				.active(true)
+				.build();
+
+		when(categoryRepository.findByExpenseTrackerIdAndActiveTrue(trackerId)).thenReturn(List.of(expenseRoot));
+		when(budgetPlanRepository.findAllActiveByExpenseTrackerIdWithCategoryInRange(
+				trackerId,
+				LocalDate.of(2026, 5, 5),
+				LocalDate.of(2026, 5, 20)))
+				.thenReturn(List.of(yearlyExpense));
+		when(transactionRepository.findCompletedByExpenseTrackerIdAndDateRange(
+				trackerId,
+				LocalDate.of(2026, 5, 5).atStartOfDay().toInstant(ZoneOffset.UTC),
+				LocalDate.of(2026, 5, 20).atTime(23, 59, 59, 999_000_000).toInstant(ZoneOffset.UTC)))
+				.thenReturn(List.of());
+
+		CategoryMovementSummaryResponseDto result = categoryService.categoryMovementSummary(
+				user,
+				trackerId,
+				LocalDate.of(2026, 5, 5).atStartOfDay().toInstant(ZoneOffset.UTC),
+				LocalDate.of(2026, 5, 20).atTime(23, 59, 59, 999_000_000).toInstant(ZoneOffset.UTC),
+				null);
+
+		assertThat(result.nativeByAsset()).hasSize(1);
+		assertThat(result.nativeByAsset().getFirst().expectedExpenseAmount()).isEqualTo(2_630L);
 	}
 }

@@ -18,9 +18,14 @@ import org.leoric.expensetracker.handler.exceptions.InvalidHabitCompletionExcept
 import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchException;
 import org.leoric.expensetracker.handler.exceptions.NotAuthorizedForThisExpenseTrackerException;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateTodoTagNameException;
+import org.leoric.expensetracker.handler.exceptions.DuplicateTodoTitleException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeAmountLessThanFeeException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSameAssetException;
 import org.leoric.expensetracker.handler.exceptions.AssetExchangeSettledAmountRequiredException;
+import org.leoric.expensetracker.handler.exceptions.InvalidTodoException;
+import org.leoric.expensetracker.handler.exceptions.TodoNotFoundException;
+import org.leoric.expensetracker.handler.exceptions.TodoTagNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountComputationException;
 import org.leoric.expensetracker.handler.exceptions.TransferAmountInputMissingException;
 import org.leoric.expensetracker.handler.exceptions.TransferExchangeRateInvalidException;
@@ -242,6 +247,36 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionResponse> handleInvalidHabitCompletionException(InvalidHabitCompletionException ex) {
 		log.warn("[{}] {}", INVALID_HABIT_COMPLETION.getCode(), ex.getMessage(), ex);
 		return build(INVALID_HABIT_COMPLETION, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateTodoTitleException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateTodoTitleException(DuplicateTodoTitleException ex) {
+		log.warn("[{}] {}", DUPLICATE_TODO_TITLE.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_TODO_TITLE, ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidTodoException.class)
+	public ResponseEntity<ExceptionResponse> handleInvalidTodoException(InvalidTodoException ex) {
+		log.warn("[{}] {}", INVALID_TODO.getCode(), ex.getMessage(), ex);
+		return build(INVALID_TODO, ex.getMessage());
+	}
+
+	@ExceptionHandler(TodoNotFoundException.class)
+	public ResponseEntity<ExceptionResponse> handleTodoNotFoundException(TodoNotFoundException ex) {
+		log.warn("[{}] {}", TODO_NOT_FOUND.getCode(), ex.getMessage(), ex);
+		return build(TODO_NOT_FOUND, ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateTodoTagNameException.class)
+	public ResponseEntity<ExceptionResponse> handleDuplicateTodoTagNameException(DuplicateTodoTagNameException ex) {
+		log.warn("[{}] {}", DUPLICATE_TODO_TAG_NAME.getCode(), ex.getMessage(), ex);
+		return build(DUPLICATE_TODO_TAG_NAME, ex.getMessage());
+	}
+
+	@ExceptionHandler(TodoTagNotFoundException.class)
+	public ResponseEntity<ExceptionResponse> handleTodoTagNotFoundException(TodoTagNotFoundException ex) {
+		log.warn("[{}] {}", TODO_TAG_NOT_FOUND.getCode(), ex.getMessage(), ex);
+		return build(TODO_TAG_NOT_FOUND, ex.getMessage());
 	}
 
 	@ExceptionHandler(TransferAmountInputMissingException.class)

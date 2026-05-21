@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record CreateTransactionRequestDto(
+
 		@NotNull(message = "Transaction type is required")
 		TransactionType transactionType,
 

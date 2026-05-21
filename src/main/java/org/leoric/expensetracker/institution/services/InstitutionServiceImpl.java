@@ -222,9 +222,13 @@ public class InstitutionServiceImpl implements InstitutionService {
 			nativeBalancesByAsset.merge(assetKey, summary.endBalance(), Long::sum);
 
 			if (displayAsset != null) {
-				HoldingSummaryResponseDto converted = enrichWithConversion(summary, holding.getAsset(), displayAsset, endDate, from);
-				if (converted.convertedEndBalance() != null) {
-					convertedTotal += converted.convertedEndBalance();
+				if (holding.getAsset().getCode().equalsIgnoreCase(displayAsset.getCode())) {
+					convertedTotal += summary.endBalance();
+				} else {
+					Long convertedEndBalance = convertEndBalance(summary, holding.getAsset(), displayAsset, endDate);
+					if (convertedEndBalance != null) {
+						convertedTotal += convertedEndBalance;
+					}
 				}
 			}
 		}
@@ -363,6 +367,15 @@ public class InstitutionServiceImpl implements InstitutionService {
 				summary.difference(), summary.incomeByCategory(), summary.expenseByCategory(),
 				convertedStart, convertedEnd, endRate
 		);
+	}
+
+	private Long convertEndBalance(HoldingSummaryResponseDto summary, Asset holdingAsset, Asset displayAsset, LocalDate endDate) {
+		BigDecimal endRate = exchangeRateService.getRate(holdingAsset, displayAsset, endDate);
+		if (endRate == null) {
+			return null;
+		}
+
+		return exchangeRateService.convertAmount(summary.endBalance(), holdingAsset, displayAsset, endDate);
 	}
 
 	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {

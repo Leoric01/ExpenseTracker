@@ -96,13 +96,14 @@ public class TransactionServiceImpl implements TransactionService {
 			case EXPENSE -> createIncomeOrExpense(currentUser, tracker, request, TransactionType.EXPENSE);
 			case TRANSFER -> createTransfer(currentUser, tracker, request);
 			case BALANCE_ADJUSTMENT -> createBalanceAdjustment(currentUser, tracker, request);
+			case TEST -> createTestTransaction(currentUser, tracker, request);
 		};
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public TransactionResponseDto transactionFindById(User currentUser, UUID trackerId, UUID transactionId) {
-		Transaction transaction = getTransactionOrThrow(transactionId);
+		Transaction transaction = getTransactionOrThrow(transactionId, trackerId);
 		assertTransactionBelongsToTracker(transaction, trackerId);
 		return enrichWithAssetScale(normalizeDisplayedExchangeRate(transactionMapper.toResponse(transaction)));
 	}
@@ -445,14 +446,15 @@ public class TransactionServiceImpl implements TransactionService {
 	@Override
 	@Transactional
 	public TransactionResponseDto transactionUpdate(User currentUser, UUID trackerId, UUID transactionId, UpdateTransactionRequestDto request) {
-		Transaction transaction = getTransactionOrThrow(transactionId);
-		assertTransactionBelongsToTracker(transaction, trackerId);
+		Transaction transaction = getTransactionOrThrow(transactionId, trackerId);
 		assertNotCancelled(transaction);
 
 		if (transaction.getTransactionType() == TransactionType.TRANSFER) {
 			patchTransferFinancialFields(transaction, trackerId, request);
 		} else if (transaction.getTransactionType() == TransactionType.BALANCE_ADJUSTMENT) {
 			patchBalanceAdjustmentFields(transaction, request);
+		} else if (transaction.getTransactionType() == TransactionType.TEST) {
+			patchTestFinancialFields(transaction, trackerId, request);
 		} else {
 			patchIncomeOrExpenseFinancialFields(transaction, trackerId, request);
 		}
@@ -710,19 +712,19 @@ public class TransactionServiceImpl implements TransactionService {
 		if (request.holdingId() != null
 				&& (transaction.getHolding() == null || !request.holdingId().equals(transaction.getHolding().getId()))) {
 			throw new OperationNotPermittedException("Holding cannot be changed on a %s transaction"
-					.formatted(transaction.getTransactionType()));
+					                                         .formatted(transaction.getTransactionType()));
 		}
 
 		if (request.currencyCode() != null
 				&& !request.currencyCode().equalsIgnoreCase(transaction.getCurrencyCode())) {
 			throw new OperationNotPermittedException("Currency cannot be changed on a %s transaction"
-					.formatted(transaction.getTransactionType()));
+					                                         .formatted(transaction.getTransactionType()));
 		}
 
 		if (request.feeAmount() != null
 				&& request.feeAmount() != transaction.getFeeAmount()) {
 			throw new OperationNotPermittedException("Fee amount cannot be changed on a %s transaction"
-					.formatted(transaction.getTransactionType()));
+					                                         .formatted(transaction.getTransactionType()));
 		}
 
 		if (request.amount() == null || request.amount().equals(transaction.getAmount())) {
@@ -742,11 +744,90 @@ public class TransactionServiceImpl implements TransactionService {
 		transaction.setAmount(request.amount());
 	}
 
+	private void patchTestFinancialFields(Transaction transaction, UUID trackerId, UpdateTransactionRequestDto request) {
+		boolean financialPatchRequested = request.holdingId() != null
+				|| request.amount() != null
+				|| request.currencyCode() != null
+				|| request.exchangeRate() != null
+				|| request.feeAmount() != null;
+		if (!financialPatchRequested) {
+			return;
+		}
+
+		Holding oldHolding = transaction.getHolding();
+		Holding newHolding = oldHolding;
+		if (request.holdingId() != null) {
+			newHolding = getHoldingOrThrow(request.holdingId());
+			assertHoldingBelongsToTracker(newHolding, trackerId);
+			assertHoldingActive(newHolding);
+		}
+
+		long oldEffect = transaction.getSettledAmount() != null
+				? transaction.getSettledAmount()
+				: Math.addExact(transaction.getAmount(), transaction.getFeeAmount());
+
+		long newAmount = request.amount() != null ? request.amount() : transaction.getAmount();
+		long newFeeAmount = request.feeAmount() != null ? request.feeAmount() : transaction.getFeeAmount();
+		String newCurrencyCode = request.currencyCode() != null
+				? request.currencyCode().toUpperCase()
+				: transaction.getCurrencyCode();
+		if (request.currencyCode() != null) {
+			assertAssetCodeExists(newCurrencyCode);
+		}
+
+		String holdingAssetCode = newHolding.getAsset().getCode();
+		boolean crossCurrency = !newCurrencyCode.equals(holdingAssetCode);
+		boolean currencyChanged = request.currencyCode() != null
+				&& !request.currencyCode().equalsIgnoreCase(transaction.getCurrencyCode());
+		boolean holdingChanged = request.holdingId() != null
+				&& !request.holdingId().equals(oldHolding.getId());
+
+		BigDecimal newExchangeRate = null;
+		Long newSettledAmount = null;
+		long newEffect;
+
+		if (crossCurrency) {
+			BigDecimal effectiveRate = request.exchangeRate();
+			if (effectiveRate == null && !currencyChanged && !holdingChanged) {
+				effectiveRate = transaction.getExchangeRate();
+			}
+			if (effectiveRate == null || effectiveRate.compareTo(BigDecimal.ZERO) <= 0) {
+				throw new OperationNotPermittedException(
+						"Exchange rate is required for cross-currency TEST transactions (transaction %s, holding %s)"
+								.formatted(newCurrencyCode, holdingAssetCode));
+			}
+			newExchangeRate = effectiveRate;
+			newSettledAmount = BigDecimal.valueOf(newAmount)
+					.multiply(newExchangeRate)
+					.setScale(0, RoundingMode.HALF_UP)
+					.longValueExact() + newFeeAmount;
+			newEffect = newSettledAmount;
+		} else {
+			newEffect = Math.addExact(newAmount, newFeeAmount);
+		}
+
+		oldHolding.setCurrentAmount(oldHolding.getCurrentAmount() + oldEffect);
+		newHolding.setCurrentAmount(newHolding.getCurrentAmount() - newEffect);
+
+		if (oldHolding.getId().equals(newHolding.getId())) {
+			holdingRepository.save(oldHolding);
+		} else {
+			holdingRepository.save(oldHolding);
+			holdingRepository.save(newHolding);
+		}
+
+		transaction.setHolding(newHolding);
+		transaction.setAmount(newAmount);
+		transaction.setCurrencyCode(newCurrencyCode);
+		transaction.setExchangeRate(newExchangeRate);
+		transaction.setFeeAmount(newFeeAmount);
+		transaction.setSettledAmount(newSettledAmount);
+	}
+
 	@Override
 	@Transactional
 	public TransactionResponseDto transactionCancel(User currentUser, UUID trackerId, UUID transactionId) {
-		Transaction transaction = getTransactionOrThrow(transactionId);
-		assertTransactionBelongsToTracker(transaction, trackerId);
+		Transaction transaction = getTransactionOrThrow(transactionId, trackerId);
 		assertNotCancelled(transaction);
 
 		reverseBalanceEffect(transaction);
@@ -1268,6 +1349,80 @@ public class TransactionServiceImpl implements TransactionService {
 		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
 	}
 
+	private TransactionResponseDto createTestTransaction(
+			User currentUser,
+			ExpenseTracker tracker,
+			CreateTransactionRequestDto request) {
+		if (request.holdingId() == null) {
+			throw new OperationNotPermittedException("Holding is required for %s transactions".formatted(TransactionType.TEST));
+		}
+		if (request.amount() == null || request.amount() <= 0) {
+			throw new OperationNotPermittedException("Amount must be a positive number");
+		}
+
+		Holding holding = getHoldingOrThrow(request.holdingId());
+		assertHoldingBelongsToTracker(holding, tracker.getId());
+		assertHoldingActive(holding);
+
+		Category category = null;
+		if (request.categoryId() != null) {
+			category = getCategoryOrThrow(request.categoryId());
+			assertCategoryBelongsToTracker(category, tracker.getId());
+			assertCategoryMatchesTransactionType(category, TransactionType.EXPENSE);
+		}
+
+		String holdingAssetCode = holding.getAsset().getCode();
+		String txnCurrency = request.currencyCode() != null ? request.currencyCode().toUpperCase() : holdingAssetCode;
+		boolean crossCurrency = !txnCurrency.equals(holdingAssetCode);
+
+		BigDecimal exchangeRate = null;
+		long feeAmount = request.feeAmount() != null ? request.feeAmount() : 0;
+		Long settledAmount = null;
+		long balanceEffect;
+
+		if (crossCurrency) {
+			if (request.exchangeRate() == null || request.exchangeRate().compareTo(BigDecimal.ZERO) <= 0) {
+				throw new OperationNotPermittedException(
+						"Exchange rate is required for cross-currency TEST transactions (transaction %s, holding %s)"
+								.formatted(txnCurrency, holdingAssetCode));
+			}
+			exchangeRate = request.exchangeRate();
+			settledAmount = BigDecimal.valueOf(request.amount())
+					.multiply(exchangeRate)
+					.setScale(0, RoundingMode.HALF_UP)
+					.longValueExact() + feeAmount;
+			balanceEffect = settledAmount;
+		} else {
+			balanceEffect = Math.addExact(request.amount(), feeAmount);
+		}
+
+		holding.setCurrentAmount(holding.getCurrentAmount() - balanceEffect);
+		holdingRepository.save(holding);
+
+		Transaction transaction = Transaction.builder()
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.TEST)
+				.status(TransactionStatus.COMPLETED)
+				.holding(holding)
+				.category(category)
+				.amount(request.amount())
+				.currencyCode(txnCurrency)
+				.exchangeRate(exchangeRate)
+				.feeAmount(feeAmount)
+				.settledAmount(settledAmount)
+				.transactionDate(request.transactionDate())
+				.description(request.description())
+				.note(request.note())
+				.externalRef(request.externalRef())
+				.build();
+
+		transaction = transactionRepository.save(transaction);
+		log.info("User {} created {} transaction '{}' ({} {}{}) in tracker '{}'",
+		         currentUser.getEmail(), TransactionType.TEST, transaction.getId(), request.amount(), txnCurrency,
+		         crossCurrency ? " → " + settledAmount + " " + holdingAssetCode : "", tracker.getName());
+		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
+	}
+
 	// ── TRANSFER ──
 
 	private TransactionResponseDto createTransfer(User currentUser, ExpenseTracker tracker, CreateTransactionRequestDto request) {
@@ -1291,14 +1446,13 @@ public class TransactionServiceImpl implements TransactionService {
 
 		String sourceAssetCode = source.getAsset().getCode();
 		String targetAssetCode = target.getAsset().getCode();
-		String txnCurrency = request.currencyCode() != null ? request.currencyCode().toUpperCase() : sourceAssetCode;
 		boolean crossCurrency = !sourceAssetCode.equals(targetAssetCode);
 
 		BigDecimal exchangeRate = null;
 		long feeAmount = request.feeAmount() != null ? request.feeAmount() : 0;
-		Long settledAmount = null;
+		long settledAmount;
 		long sourceDeduction = request.amount();
-		long targetAddition = request.amount();
+		long targetAddition;
 
 		if (crossCurrency) {
 			if (request.exchangeRate() == null || request.exchangeRate().compareTo(BigDecimal.ZERO) <= 0) {
@@ -1308,13 +1462,20 @@ public class TransactionServiceImpl implements TransactionService {
 			}
 			exchangeRate = request.exchangeRate();
 			// amount is in source currency, settledAmount is what target receives
-			settledAmount = BigDecimal.valueOf(request.amount())
+			settledAmount = BigDecimal.valueOf(request.amount() - feeAmount)
 					.multiply(exchangeRate)
 					.setScale(0, RoundingMode.HALF_UP)
 					.longValueExact();
-			sourceDeduction = request.amount() + feeAmount; // fee charged from source
-			targetAddition = settledAmount;
+		} else {
+			if (request.exchangeRate() != null) {
+				throw new OperationNotPermittedException("Exchange rate cannot be used on same-asset transfers");
+			}
+			if (feeAmount > request.amount()) {
+				throw new OperationNotPermittedException("Fee amount cannot be greater than transfer amount on same-asset transfer");
+			}
+			settledAmount = Math.subtractExact(request.amount(), feeAmount);
 		}
+		targetAddition = settledAmount;
 
 		source.setCurrentAmount(source.getCurrentAmount() - sourceDeduction);
 		target.setCurrentAmount(target.getCurrentAmount() + targetAddition);
@@ -1328,7 +1489,7 @@ public class TransactionServiceImpl implements TransactionService {
 				.sourceHolding(source)
 				.targetHolding(target)
 				.amount(request.amount())
-				.currencyCode(txnCurrency)
+				.currencyCode(sourceAssetCode)
 				.exchangeRate(exchangeRate)
 				.feeAmount(feeAmount)
 				.settledAmount(settledAmount)
@@ -1340,7 +1501,7 @@ public class TransactionServiceImpl implements TransactionService {
 
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created TRANSFER '{}' ({} {}{}) {} → {} in tracker '{}'",
-		         currentUser.getEmail(), transaction.getId(), request.amount(), txnCurrency,
+		         currentUser.getEmail(), transaction.getId(), request.amount(), sourceAssetCode,
 		         crossCurrency ? " @" + exchangeRate + " → " + settledAmount + " " + targetAssetCode : "",
 		         source.getAccount().getName(), target.getAccount().getName(), tracker.getName());
 		return enrichWithAssetScale(transactionMapper.toResponse(transaction));
@@ -1400,23 +1561,23 @@ public class TransactionServiceImpl implements TransactionService {
 		switch (transaction.getTransactionType()) {
 			case INCOME -> {
 				Holding holding = transaction.getHolding();
-							long effect = resolveIncomeExpenseBalanceEffect(
-									TransactionType.INCOME,
-									transaction.getAmount(),
-									transaction.getFeeAmount(),
-									transaction.getSettledAmount()
-							);
+				long effect = resolveIncomeExpenseBalanceEffect(
+						TransactionType.INCOME,
+						transaction.getAmount(),
+						transaction.getFeeAmount(),
+						transaction.getSettledAmount()
+				);
 				holding.setCurrentAmount(holding.getCurrentAmount() - effect);
 				holdingRepository.save(holding);
 			}
 			case EXPENSE -> {
 				Holding holding = transaction.getHolding();
-							long effect = resolveIncomeExpenseBalanceEffect(
-									TransactionType.EXPENSE,
-									transaction.getAmount(),
-									transaction.getFeeAmount(),
-									transaction.getSettledAmount()
-							);
+				long effect = resolveIncomeExpenseBalanceEffect(
+						TransactionType.EXPENSE,
+						transaction.getAmount(),
+						transaction.getFeeAmount(),
+						transaction.getSettledAmount()
+				);
 				holding.setCurrentAmount(holding.getCurrentAmount() + effect);
 				holdingRepository.save(holding);
 			}
@@ -1455,8 +1616,7 @@ public class TransactionServiceImpl implements TransactionService {
 	@Override
 	@Transactional
 	public TransactionAttachmentResponseDto transactionUploadAttachment(User currentUser, UUID trackerId, UUID transactionId, MultipartFile file) {
-		Transaction transaction = getTransactionOrThrow(transactionId);
-		assertTransactionBelongsToTracker(transaction, trackerId);
+		Transaction transaction = getTransactionOrThrow(transactionId, trackerId);
 
 		String contentType = file.getContentType();
 		if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
@@ -1484,8 +1644,9 @@ public class TransactionServiceImpl implements TransactionService {
 	@Override
 	@Transactional(readOnly = true)
 	public List<TransactionAttachmentResponseDto> transactionFindAttachments(User currentUser, UUID trackerId, UUID transactionId) {
-		Transaction transaction = getTransactionOrThrow(transactionId);
-		assertTransactionBelongsToTracker(transaction, trackerId);
+		if (!transactionRepository.existsByIdAndExpenseTrackerId(transactionId, trackerId)) {
+			throw new EntityNotFoundException("Transaction not found in this expense tracker");
+		}
 
 		return attachmentRepository.findByTransactionId(transactionId).stream()
 				.map(transactionMapper::toAttachmentResponse)
@@ -1495,19 +1656,16 @@ public class TransactionServiceImpl implements TransactionService {
 	@Override
 	@Transactional
 	public void transactionDeleteAttachment(User currentUser, UUID trackerId, UUID transactionId, UUID attachmentId) {
-		Transaction transaction = getTransactionOrThrow(transactionId);
-		assertTransactionBelongsToTracker(transaction, trackerId);
+		TransactionAttachment attachment = attachmentRepository
+				.findByIdAndTransactionIdAndTransactionExpenseTrackerId(attachmentId, transactionId, trackerId)
+				.orElseThrow(() -> new EntityNotFoundException("Attachment not found on this transaction"));
 
-		TransactionAttachment attachment = attachmentRepository.findById(attachmentId)
-				.orElseThrow(() -> new EntityNotFoundException("Attachment not found"));
-
-		if (!attachment.getTransaction().getId().equals(transactionId)) {
-			throw new EntityNotFoundException("Attachment not found on this transaction");
-		}
+		String fileName = attachment.getFileName();
 
 		attachmentRepository.delete(attachment);
+
 		log.info("User {} deleted attachment '{}' from transaction '{}' in tracker '{}'",
-		         currentUser.getEmail(), attachment.getFileName(), transactionId, trackerId);
+		         currentUser.getEmail(), fileName, transactionId, trackerId);
 	}
 
 	// ── Helpers ──
@@ -1544,9 +1702,9 @@ public class TransactionServiceImpl implements TransactionService {
 				.orElseThrow(() -> new EntityNotFoundException("Expense tracker not found"));
 	}
 
-	private Transaction getTransactionOrThrow(UUID transactionId) {
-		return transactionRepository.findById(transactionId)
-				.orElseThrow(() -> new EntityNotFoundException("Transaction not found"));
+	private Transaction getTransactionOrThrow(UUID transactionId, UUID trackerId) {
+		return transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)
+				.orElseThrow(() -> new EntityNotFoundException("Transaction not found in this expense tracker"));
 	}
 
 	private Holding getHoldingOrThrow(UUID holdingId) {
