@@ -13,6 +13,7 @@ public record TodoResponseDto(
 		UUID parentTodoId,
 		String title,
 		String description,
+		String imageUrl,
 		TodoStatus status,
 		TodoPriority priority,
 		LocalDate dueDate,

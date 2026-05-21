@@ -31,6 +31,7 @@ public interface TodoMapper {
 				todo.getParent() != null ? todo.getParent().getId() : null,
 				todo.getTitle(),
 				todo.getDescription(),
+				todo.getImageUrl(),
 				todo.getStatus(),
 				todo.getPriority(),
 				todo.getDueDate(),

@@ -44,6 +44,17 @@ public class TodoTagController {
 				.body(todoTagService.todoTagCreate(currentUser, trackerId, request));
 	}
 
+	@PostMapping("/{trackerId}/bulk")
+	public ResponseEntity<List<TodoTagResponseDto>> todoTagCreateBulk(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@RequestBody List<@Valid TodoTagUpsertRequestDto> request
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		return ResponseEntity.status(HttpStatus.CREATED)
+				.body(todoTagService.todoTagCreateBulk(currentUser, trackerId, request));
+	}
+
 	@GetMapping("/{trackerId}")
 	public ResponseEntity<List<TodoTagResponseDto>> todoTagFindAll(
 			@AuthenticationPrincipal User currentUser,

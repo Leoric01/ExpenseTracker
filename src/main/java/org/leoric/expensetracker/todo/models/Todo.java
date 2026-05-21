@@ -68,6 +68,9 @@ public class Todo {
 	@Column(length = 1000)
 	private String description;
 
+	@Column(length = 2000)
+	private String imageUrl;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 30)
 	private TodoStatus status;

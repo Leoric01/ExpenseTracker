@@ -55,6 +55,18 @@ public class TodoTagServiceImpl implements TodoTagService {
 	}
 
 	@Override
+	@Transactional
+	public List<TodoTagResponseDto> todoTagCreateBulk(User currentUser, UUID trackerId, List<TodoTagUpsertRequestDto> request) {
+		if (request == null || request.isEmpty()) {
+			throw new InvalidTodoException("Todo tag bulk payload must contain at least one item");
+		}
+
+		return request.stream()
+				.map(item -> todoTagCreate(currentUser, trackerId, item))
+				.toList();
+	}
+
+	@Override
 	@Transactional(readOnly = true)
 	public List<TodoTagResponseDto> todoTagFindAll(User currentUser, UUID trackerId) {
 		return todoTagRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByNameAsc(trackerId)

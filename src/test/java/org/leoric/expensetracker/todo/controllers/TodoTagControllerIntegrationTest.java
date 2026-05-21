@@ -97,6 +97,33 @@ class TodoTagControllerIntegrationTest {
 				.andExpect(jsonPath("$[0].name", is("home")));
 	}
 
+	@Test
+	void todoTagBulkCreate_shouldCreateMultipleTags() throws Exception {
+		mockMvc.perform(post("/api/todo-tag/{trackerId}/bulk", trackerId)
+						.header("Authorization", "Bearer " + jwtToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								[
+								  {"name":"urgent","color":"#ff00aa"},
+								  {"name":"home","color":"#00ff00"}
+								]
+								"""))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$", hasSize(2)))
+				.andExpect(jsonPath("$[0].name", is("urgent")))
+				.andExpect(jsonPath("$[1].name", is("home")));
+	}
+
+	@Test
+	void todoTagBulkCreate_shouldRejectEmptyPayload() throws Exception {
+		mockMvc.perform(post("/api/todo-tag/{trackerId}/bulk", trackerId)
+						.header("Authorization", "Bearer " + jwtToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("[]"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-5202")));
+	}
+
 	private String extractJsonString(String body, String key) {
 		java.util.regex.Matcher matcher = java.util.regex.Pattern
 				.compile("\"" + key + "\"\\s*:\\s*\"([^\"]+)\"")

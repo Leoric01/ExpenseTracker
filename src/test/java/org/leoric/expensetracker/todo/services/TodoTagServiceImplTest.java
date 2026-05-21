@@ -21,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class TodoTagServiceImplTest {
@@ -176,5 +178,41 @@ class TodoTagServiceImplTest {
 				.isInstanceOf(TodoTagNotFoundException.class)
 				.hasMessageContaining("does not belong");
 		verify(todoTagAssignmentRepository, never()).deleteByTagId(existing.getId());
+	}
+
+	@Test
+	void todoTagCreateBulk_shouldCreateAllItems() {
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(todoTagRepository.existsByExpenseTrackerIdAndNameIgnoreCaseAndIsDeletedFalse(trackerId, "urgent"))
+				.thenReturn(false);
+		when(todoTagRepository.existsByExpenseTrackerIdAndNameIgnoreCaseAndIsDeletedFalse(trackerId, "home"))
+				.thenReturn(false);
+		when(todoTagRepository.save(org.mockito.ArgumentMatchers.any(TodoTag.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+		when(todoMapper.toTagResponseDto(org.mockito.ArgumentMatchers.any(TodoTag.class)))
+				.thenAnswer(invocation -> {
+					TodoTag tag = invocation.getArgument(0);
+					return new TodoTagResponseDto(tag.getId(), tag.getName(), tag.getColor(), tag.isActive(), OffsetDateTime.now(), OffsetDateTime.now());
+				});
+
+		List<TodoTagResponseDto> result = todoTagService.todoTagCreateBulk(
+				user,
+				trackerId,
+				List.of(
+						new TodoTagUpsertRequestDto("urgent", "#ff00aa", true),
+						new TodoTagUpsertRequestDto("home", "#00ff00", null)
+				)
+		);
+
+		assertThat(result).hasSize(2);
+		assertThat(result.stream().map(TodoTagResponseDto::name).toList()).containsExactly("urgent", "home");
+		verify(todoTagRepository, times(2)).save(org.mockito.ArgumentMatchers.any(TodoTag.class));
+	}
+
+	@Test
+	void todoTagCreateBulk_shouldRejectEmptyPayload() {
+		assertThatThrownBy(() -> todoTagService.todoTagCreateBulk(user, trackerId, List.of()))
+				.isInstanceOf(InvalidTodoException.class)
+				.hasMessageContaining("at least one item");
 	}
 }

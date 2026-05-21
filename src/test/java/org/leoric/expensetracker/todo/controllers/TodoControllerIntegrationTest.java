@@ -121,6 +121,36 @@ class TodoControllerIntegrationTest {
 				.andExpect(jsonPath("$.businessErrorCode", is("B-5201")));
 	}
 
+	@Test
+	void todoCreate_shouldPersistCloudinaryImageUrl() throws Exception {
+		UUID todoId = createTodo(trackerId, """
+				{
+				  "title": "Task with image",
+				  "imageUrl": "https://res.cloudinary.com/demo/image/upload/v123456/sample.jpg"
+				}
+				""");
+
+		mockMvc.perform(get("/api/todo/{trackerId}/{todoId}", trackerId, todoId)
+						.header("Authorization", "Bearer " + jwtToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.imageUrl", is("https://res.cloudinary.com/demo/image/upload/v123456/sample.jpg")));
+	}
+
+	@Test
+	void todoCreate_shouldReturn400ForNonCloudinaryImageUrl() throws Exception {
+		mockMvc.perform(post("/api/todo/{trackerId}", trackerId)
+						.header("Authorization", "Bearer " + jwtToken)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "title": "Task",
+								  "imageUrl": "https://example.com/img.png"
+								}
+								"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.businessErrorCode", is("B-1201")));
+	}
+
 	private void registerAndLogin() throws Exception {
 		String email = "todo.integration@test.com";
 		String password = "password123";

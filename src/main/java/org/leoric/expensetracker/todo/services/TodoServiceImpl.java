@@ -73,6 +73,7 @@ public class TodoServiceImpl implements TodoService {
 				.parent(parent)
 				.title(normalizedTitle)
 				.description(normalizeNullable(request.description()))
+				.imageUrl(normalizeImageUrl(request.imageUrl()))
 				.status(request.status() != null ? request.status() : TodoStatus.TODO)
 				.priority(request.priority() != null ? request.priority() : TodoPriority.MEDIUM)
 				.dueDate(request.dueDate())
@@ -154,6 +155,7 @@ public class TodoServiceImpl implements TodoService {
 		todo.setParent(parent);
 		todo.setTitle(normalizedTitle);
 		todo.setDescription(normalizeNullable(request.description()));
+		todo.setImageUrl(normalizeImageUrl(request.imageUrl()));
 		todo.setStatus(request.status() != null ? request.status() : TodoStatus.TODO);
 		todo.setPriority(request.priority() != null ? request.priority() : TodoPriority.MEDIUM);
 		todo.setDueDate(request.dueDate());
@@ -470,6 +472,20 @@ public class TodoServiceImpl implements TodoService {
 
 	private String normalizeSearch(String search) {
 		return normalizeNullable(search);
+	}
+
+	private String normalizeImageUrl(String imageUrl) {
+		String normalized = normalizeNullable(imageUrl);
+		if (normalized == null) {
+			return null;
+		}
+
+		if (!normalized.startsWith("https://res.cloudinary.com/")
+				&& !normalized.startsWith("http://res.cloudinary.com/")) {
+			throw new InvalidTodoException("imageUrl must be a valid Cloudinary URL");
+		}
+
+		return normalized;
 	}
 
 	private Integer defaultIfNull(Integer value) {

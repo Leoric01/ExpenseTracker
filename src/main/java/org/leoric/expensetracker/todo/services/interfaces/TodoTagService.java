@@ -13,6 +13,8 @@ public interface TodoTagService {
 
 	TodoTagResponseDto todoTagCreate(User currentUser, UUID trackerId, TodoTagUpsertRequestDto request);
 
+	List<TodoTagResponseDto> todoTagCreateBulk(User currentUser, UUID trackerId, List<TodoTagUpsertRequestDto> request);
+
 	List<TodoTagResponseDto> todoTagFindAll(User currentUser, UUID trackerId);
 
 	TodoTagResponseDto todoTagUpdate(User currentUser, UUID trackerId, UUID tagId, TodoTagUpsertRequestDto request);

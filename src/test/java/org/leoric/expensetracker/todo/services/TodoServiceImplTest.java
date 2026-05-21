@@ -183,6 +183,7 @@ class TodoServiceImplTest {
 				targetParent.getId(),
 				"Moved",
 				null,
+				null,
 				TodoStatus.TODO,
 				TodoPriority.MEDIUM,
 				null,
@@ -206,6 +207,7 @@ class TodoServiceImplTest {
 		TodoUpsertRequestDto request = new TodoUpsertRequestDto(
 				current.getId(),
 				"Moved",
+				null,
 				null,
 				TodoStatus.TODO,
 				TodoPriority.MEDIUM,
@@ -233,6 +235,7 @@ class TodoServiceImplTest {
 		TodoUpsertRequestDto request = new TodoUpsertRequestDto(
 				child.getId(),
 				"Moved",
+				null,
 				null,
 				TodoStatus.TODO,
 				TodoPriority.MEDIUM,
