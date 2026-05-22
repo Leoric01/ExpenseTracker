@@ -60,6 +60,13 @@ public class KanbanStage {
 	@Column(nullable = false)
 	private boolean active = true;
 
+	@Column(length = 7)
+	private String color;
+
+	@Builder.Default
+	@Column(nullable = false)
+	private boolean finalStage = false;
+
 	@Builder.Default
 	@Column(name = "is_deleted", nullable = false)
 	private boolean isDeleted = false;

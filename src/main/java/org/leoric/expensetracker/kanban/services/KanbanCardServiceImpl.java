@@ -19,6 +19,7 @@ import org.leoric.expensetracker.kanban.dtos.KanbanTagResponseDto;
 import org.leoric.expensetracker.kanban.mapstruct.KanbanMapper;
 import org.leoric.expensetracker.kanban.models.KanbanBoard;
 import org.leoric.expensetracker.kanban.models.KanbanCard;
+import org.leoric.expensetracker.kanban.models.KanbanCardStageHistory;
 import org.leoric.expensetracker.kanban.models.KanbanCardTagAssignment;
 import org.leoric.expensetracker.kanban.models.KanbanStage;
 import org.leoric.expensetracker.kanban.models.KanbanTag;
@@ -32,6 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -67,6 +69,36 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	private final ImageService imageService;
 	private final KanbanMapper kanbanMapper;
 
+	// PRESUN KARTY MEZI STAGE MUSI BYT JEDNA TRANSAKCE
+	@Override
+	@Transactional
+	public KanbanCardResponseDto kanbanCardMove(User currentUser, UUID trackerId, UUID cardId, UUID targetStageId) {
+		KanbanCard card = getCardOrThrow(cardId);
+		KanbanStage fromStage = card.getStage();
+		KanbanStage toStage = getStageOrThrow(targetStageId);
+
+		assertStageBelongsToTracker(toStage, trackerId);
+		assertStageBelongsToTracker(fromStage, trackerId);
+		assertHasAccessToTracker(currentUser, trackerId);
+
+		card.setStage(toStage);
+
+		KanbanCardStageHistory history = KanbanCardStageHistory.builder()
+				.card(card)
+				.fromStage(fromStage)
+				.toStage(toStage)
+				.changedDate(Instant.now())
+				.build();
+
+		card.getStageHistory().add(history);
+
+		if (toStage.isFinalStage() && card.getCompletedDate() == null) {
+			card.setCompletedDate(Instant.now());
+		}
+
+		return mapper.toResponse(card);
+	}
+
 	@Override
 	@Transactional
 	public KanbanCardResponseDto kanbanCardCreate(User currentUser, UUID trackerId, UUID boardId, KanbanCardUpsertRequestDto request) {
@@ -77,7 +109,6 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		assertUniqueTitle(boardId, parent, request.title(), null);
 
 		KanbanCard card = KanbanCard.builder()
-				.board(board)
 				.stage(stage)
 				.parent(parent)
 				.title(normalizeTitle(request.title()))

@@ -5,10 +5,10 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -24,10 +24,10 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.UUID;
-
 @Entity
-@Table(name = "kanban_board", uniqueConstraints = {
-		@UniqueConstraint(columnNames = {"expense_tracker_id", "name", "is_deleted"})
+@Table(name = "kanban_board", indexes = {
+		@Index(name = "idx_kanban_board_tracker_order", columnList = "expense_tracker_id, board_order"),
+		@Index(name = "idx_kanban_board_tracker_deleted", columnList = "expense_tracker_id, is_deleted")
 })
 @Getter
 @Setter
@@ -54,11 +54,17 @@ public class KanbanBoard {
 
 	@Builder.Default
 	@Column(nullable = false)
+	private Integer boardOrder = 0;
+
+	@Builder.Default
+	@Column(nullable = false)
 	private boolean active = true;
 
 	@Builder.Default
 	@Column(name = "is_deleted", nullable = false)
 	private boolean isDeleted = false;
+
+	private Instant deletedDate;
 
 	@CreatedDate
 	@Column(updatable = false, nullable = false)
