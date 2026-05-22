@@ -12,7 +12,6 @@ import java.util.UUID;
 
 public record KanbanCardUpsertRequestDto(
 		UUID stageId,
-		UUID parentCardId,
 		@NotBlank(message = "Card title is required")
 		@Size(max = 180, message = "Card title length must be <= 180")
 		String title,
@@ -29,7 +28,6 @@ public record KanbanCardUpsertRequestDto(
 		LocalDate dueDate,
 		@PositiveOrZero(message = "Card order must be >= 0")
 		Integer cardOrder,
-		List<UUID> tagIds,
-		Boolean active
+		List<UUID> tagIds
 ) {
 }

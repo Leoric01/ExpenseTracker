@@ -12,21 +12,17 @@ import java.util.UUID;
 @Repository
 public interface KanbanCardRepository extends JpaRepository<KanbanCard, UUID> {
 
-	Optional<KanbanCard> findByIdAndIsDeletedFalse(UUID id);
+	Optional<KanbanCard> findById(UUID id);
 
-	boolean existsByBoardIdAndParentIsNullAndTitleIgnoreCaseAndIsDeletedFalse(UUID boardId, String title);
+	boolean existsByStageBoardIdAndTitleIgnoreCase(UUID boardId, String title);
 
-	boolean existsByBoardIdAndParentIsNullAndTitleIgnoreCaseAndIsDeletedFalseAndIdNot(UUID boardId, String title, UUID id);
+	boolean existsByStageBoardIdAndTitleIgnoreCaseAndIdNot(UUID boardId, String title, UUID id);
 
-	boolean existsByBoardIdAndParentIdAndTitleIgnoreCaseAndIsDeletedFalse(UUID boardId, UUID parentId, String title);
+	List<KanbanCard> findByStageBoardIdOrderByCardOrderAscTitleAsc(UUID boardId);
 
-	boolean existsByBoardIdAndParentIdAndTitleIgnoreCaseAndIsDeletedFalseAndIdNot(UUID boardId, UUID parentId, String title, UUID id);
+	boolean existsByStageBoardIdAndStageId(UUID boardId, UUID stageId);
 
-	List<KanbanCard> findByBoardIdAndIsDeletedFalse(UUID boardId);
+	List<KanbanCard> findByStageBoardIdAndStageId(UUID boardId, UUID stageId);
 
-	boolean existsByBoardIdAndStageIdAndIsDeletedFalse(UUID boardId, UUID stageId);
-
-	List<KanbanCard> findByBoardIdAndStageIdAndIsDeletedFalse(UUID boardId, UUID stageId);
-
-	List<KanbanCard> findByBoardIdAndParentIdInAndIsDeletedFalse(UUID boardId, Collection<UUID> parentIds);
+	List<KanbanCard> findByIdIn(Collection<UUID> ids);
 }

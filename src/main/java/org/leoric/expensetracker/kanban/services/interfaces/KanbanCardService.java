@@ -2,7 +2,6 @@ package org.leoric.expensetracker.kanban.services.interfaces;
 
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
-import org.leoric.expensetracker.kanban.dtos.KanbanCardMoveRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardUpsertRequestDto;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,6 @@ public interface KanbanCardService {
 
 	KanbanCardResponseDto kanbanCardUpdate(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanCardUpsertRequestDto request);
 
-	KanbanCardResponseDto kanbanCardMove(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanCardMoveRequestDto request);
 
 	KanbanCardResponseDto kanbanCardUploadImage(User currentUser, UUID trackerId, UUID boardId, UUID cardId, MultipartFile file);
 

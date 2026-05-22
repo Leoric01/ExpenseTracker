@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
-import org.leoric.expensetracker.kanban.dtos.KanbanCardMoveRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanCardMoveStageRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardUpsertRequestDto;
 import org.leoric.expensetracker.kanban.services.interfaces.KanbanCardService;
@@ -82,16 +82,15 @@ public class KanbanCardController {
 		return ResponseEntity.ok(kanbanCardService.kanbanCardUpdate(currentUser, trackerId, boardId, cardId, request));
 	}
 
-	@PatchMapping("/{trackerId}/{boardId}/{cardId}/move")
+	@PatchMapping("/{trackerId}/{cardId}/move")
 	public ResponseEntity<KanbanCardResponseDto> kanbanCardMove(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
-			@PathVariable UUID boardId,
 			@PathVariable UUID cardId,
-			@Valid @RequestBody KanbanCardMoveRequestDto request
+			@Valid @RequestBody KanbanCardMoveStageRequestDto request
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
-		return ResponseEntity.ok(kanbanCardService.kanbanCardMove(currentUser, trackerId, boardId, cardId, request));
+		return ResponseEntity.ok(kanbanCardService.kanbanCardMove(currentUser, trackerId, cardId, request.targetStageId()));
 	}
 
 	@DeleteMapping("/{trackerId}/{boardId}/{cardId}")

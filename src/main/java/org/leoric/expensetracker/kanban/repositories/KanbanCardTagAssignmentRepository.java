@@ -17,7 +17,6 @@ public interface KanbanCardTagAssignmentRepository extends JpaRepository<KanbanC
 			SELECT a FROM KanbanCardTagAssignment a
 			JOIN FETCH a.tag t
 			WHERE a.card.id IN :cardIds
-			AND a.card.isDeleted = false
 			AND t.isDeleted = false
 			ORDER BY t.name ASC
 			""")

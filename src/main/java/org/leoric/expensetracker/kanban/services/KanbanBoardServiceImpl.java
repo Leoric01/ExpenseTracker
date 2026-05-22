@@ -205,7 +205,7 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 		KanbanStage stage = getStageOrThrow(stageId);
 		assertStageBelongsToBoard(stage, boardId, trackerId);
 
-		boolean hasCards = kanbanCardRepository.existsByBoardIdAndStageIdAndIsDeletedFalse(boardId, stageId);
+		boolean hasCards = kanbanCardRepository.existsByStageBoardIdAndStageId(boardId, stageId);
 		if (hasCards) {
 			List<KanbanStage> alternativeStages = kanbanStageRepository
 					.findByBoardIdAndIsDeletedFalseOrderByStageOrderAscNameAsc(boardId)
@@ -227,7 +227,7 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 					.orElseThrow();
 
 			List<KanbanCard> cardsToMove =
-					kanbanCardRepository.findByBoardIdAndStageIdAndIsDeletedFalse(boardId, stageId);
+					kanbanCardRepository.findByStageBoardIdAndStageId(boardId, stageId);
 			for (KanbanCard card : cardsToMove) {
 				card.setStage(targetStage);
 			}

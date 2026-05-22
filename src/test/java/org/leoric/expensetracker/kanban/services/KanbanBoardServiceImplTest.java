@@ -57,13 +57,13 @@ class KanbanBoardServiceImplTest {
 		KanbanStage nearest = KanbanStage.builder().id(UUID.randomUUID()).board(board).name("Backlog").stageOrder(4).active(true).build();
 		KanbanStage farther = KanbanStage.builder().id(UUID.randomUUID()).board(board).name("Done").stageOrder(10).active(true).build();
 
-		KanbanCard card = KanbanCard.builder().id(UUID.randomUUID()).board(board).stage(targetDelete).title("Task").build();
+		KanbanCard card = KanbanCard.builder().id(UUID.randomUUID()).stage(targetDelete).title("Task").build();
 
 		when(kanbanStageRepository.findByIdAndIsDeletedFalse(stageId)).thenReturn(Optional.of(targetDelete));
-		when(kanbanCardRepository.existsByBoardIdAndStageIdAndIsDeletedFalse(boardId, stageId)).thenReturn(true);
+		when(kanbanCardRepository.existsByStageBoardIdAndStageId(boardId, stageId)).thenReturn(true);
 		when(kanbanStageRepository.findByBoardIdAndIsDeletedFalseOrderByStageOrderAscNameAsc(boardId))
 				.thenReturn(List.of(nearest, targetDelete, farther));
-		when(kanbanCardRepository.findByBoardIdAndStageIdAndIsDeletedFalse(boardId, stageId)).thenReturn(List.of(card));
+		when(kanbanCardRepository.findByStageBoardIdAndStageId(boardId, stageId)).thenReturn(List.of(card));
 
 		service.kanbanStageDelete(user, trackerId, boardId, stageId);
 
@@ -86,7 +86,7 @@ class KanbanBoardServiceImplTest {
 		KanbanStage targetDelete = KanbanStage.builder().id(stageId).board(board).name("Only stage").stageOrder(0).active(true).build();
 
 		when(kanbanStageRepository.findByIdAndIsDeletedFalse(stageId)).thenReturn(Optional.of(targetDelete));
-		when(kanbanCardRepository.existsByBoardIdAndStageIdAndIsDeletedFalse(boardId, stageId)).thenReturn(true);
+		when(kanbanCardRepository.existsByStageBoardIdAndStageId(boardId, stageId)).thenReturn(true);
 		when(kanbanStageRepository.findByBoardIdAndIsDeletedFalseOrderByStageOrderAscNameAsc(boardId))
 				.thenReturn(List.of(targetDelete));
 

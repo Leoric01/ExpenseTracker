@@ -3,15 +3,15 @@ package org.leoric.expensetracker.kanban.services;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.handler.exceptions.DuplicateKanbanNameException;
 import org.leoric.expensetracker.handler.exceptions.InvalidKanbanException;
-import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.handler.exceptions.KanbanBoardNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.KanbanCardNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.KanbanStageNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.KanbanTagNotFoundException;
+import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
-import org.leoric.expensetracker.kanban.dtos.KanbanCardMoveRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardUpsertRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanStageCardsResponseDto;
@@ -34,23 +34,22 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
+import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_OWNER;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class KanbanCardServiceImpl implements KanbanCardService {
 
-	private static final int MAX_SUBTASK_DEPTH = 3;
 	private static final Set<String> ALLOWED_IMAGE_CONTENT_TYPES = Set.of(
 			"image/jpeg",
 			"image/png",
@@ -67,12 +66,16 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	private final KanbanTagRepository kanbanTagRepository;
 	private final KanbanCardTagAssignmentRepository kanbanCardTagAssignmentRepository;
 	private final ImageService imageService;
+	private final ExpenseTrackerAccessService expenseTrackerAccessService;
 	private final KanbanMapper kanbanMapper;
 
-	// PRESUN KARTY MEZI STAGE MUSI BYT JEDNA TRANSAKCE
 	@Override
 	@Transactional
 	public KanbanCardResponseDto kanbanCardMove(User currentUser, UUID trackerId, UUID cardId, UUID targetStageId) {
+		if (targetStageId == null) {
+			throw new InvalidKanbanException("targetStageId is required");
+		}
+
 		KanbanCard card = getCardOrThrow(cardId);
 		KanbanStage fromStage = card.getStage();
 		KanbanStage toStage = getStageOrThrow(targetStageId);
@@ -81,22 +84,24 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		assertStageBelongsToTracker(fromStage, trackerId);
 		assertHasAccessToTracker(currentUser, trackerId);
 
-		card.setStage(toStage);
+		if (!fromStage.getId().equals(toStage.getId())) {
+			card.setStage(toStage);
 
-		KanbanCardStageHistory history = KanbanCardStageHistory.builder()
-				.card(card)
-				.fromStage(fromStage)
-				.toStage(toStage)
-				.changedDate(Instant.now())
-				.build();
+			KanbanCardStageHistory history = KanbanCardStageHistory.builder()
+					.card(card)
+					.fromStage(fromStage)
+					.toStage(toStage)
+					.changedDate(Instant.now())
+					.build();
+			card.getStageHistory().add(history);
 
-		card.getStageHistory().add(history);
-
-		if (toStage.isFinalStage() && card.getCompletedDate() == null) {
-			card.setCompletedDate(Instant.now());
+			if (toStage.isFinalStage() && card.getCompletedDate() == null) {
+				card.setCompletedDate(Instant.now());
+			}
+			kanbanCardRepository.save(card);
 		}
 
-		return mapper.toResponse(card);
+		return toCardResponse(card);
 	}
 
 	@Override
@@ -105,24 +110,21 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		KanbanBoard board = getBoardOrThrow(boardId);
 		assertBoardBelongsToTracker(board, trackerId);
 		KanbanStage stage = resolveStage(boardId, request.stageId());
-		KanbanCard parent = resolveParent(boardId, request.parentCardId(), null);
-		assertUniqueTitle(boardId, parent, request.title(), null);
+		assertUniqueTitle(boardId, request.title(), null);
 
 		KanbanCard card = KanbanCard.builder()
 				.stage(stage)
-				.parent(parent)
 				.title(normalizeTitle(request.title()))
 				.description(normalizeNullable(request.description()))
 				.imageUrl(normalizeImageUrl(request.imageUrl()))
 				.priority(validatePriority(request.priority()))
 				.dueDate(request.dueDate())
 				.cardOrder(defaultIfNull(request.cardOrder()))
-				.active(request.active() == null || request.active())
 				.build();
 
 		card = kanbanCardRepository.save(card);
 		replaceCardTags(boardId, card, request.tagIds());
-		return toCardTreeResponse(card);
+		return toCardResponse(card);
 	}
 
 	@Override
@@ -135,7 +137,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		List<KanbanStage> stages = kanbanStageRepository.findByBoardIdAndIsDeletedFalseOrderByStageOrderAscNameAsc(boardId).stream()
 				.filter(s -> !onlyVisible || s.isVisibleOnBoard())
 				.toList();
-		List<KanbanCard> allCards = kanbanCardRepository.findByBoardIdAndIsDeletedFalse(boardId);
+		List<KanbanCard> allCards = kanbanCardRepository.findByStageBoardIdOrderByCardOrderAscTitleAsc(boardId);
 		Map<UUID, List<KanbanCard>> cardsByStage = allCards.stream().collect(Collectors.groupingBy(c -> c.getStage().getId()));
 		Map<UUID, List<KanbanTag>> tagsByCardId = loadTagsByCardIds(allCards.stream().map(KanbanCard::getId).toList());
 
@@ -145,7 +147,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 						stage.getName(),
 						stage.getStageOrder(),
 						stage.isVisibleOnBoard(),
-						buildStageTree(cardsByStage.getOrDefault(stage.getId(), List.of()), tagsByCardId)
+						buildStageCards(cardsByStage.getOrDefault(stage.getId(), List.of()), tagsByCardId)
 				))
 				.toList();
 
@@ -157,7 +159,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	public KanbanCardResponseDto kanbanCardFindById(User currentUser, UUID trackerId, UUID boardId, UUID cardId) {
 		KanbanCard card = getCardOrThrow(cardId);
 		assertCardBelongsToBoard(card, boardId, trackerId);
-		return toCardTreeResponse(card);
+		return toCardResponse(card);
 	}
 
 	@Override
@@ -166,47 +168,19 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		KanbanCard card = getCardOrThrow(cardId);
 		assertCardBelongsToBoard(card, boardId, trackerId);
 		KanbanStage stage = resolveStage(boardId, request.stageId());
-		KanbanCard parent = resolveParent(boardId, request.parentCardId(), cardId);
-		assertMoveDepthAllowed(parent, card);
-		assertUniqueTitle(boardId, parent, request.title(), cardId);
+		assertUniqueTitle(boardId, request.title(), cardId);
 
 		card.setStage(stage);
-		card.setParent(parent);
 		card.setTitle(normalizeTitle(request.title()));
 		card.setDescription(normalizeNullable(request.description()));
 		card.setImageUrl(normalizeImageUrl(request.imageUrl()));
 		card.setPriority(validatePriority(request.priority()));
 		card.setDueDate(request.dueDate());
 		card.setCardOrder(defaultIfNull(request.cardOrder()));
-		if (request.active() != null) {
-			card.setActive(request.active());
-		}
 
 		card = kanbanCardRepository.save(card);
 		replaceCardTags(boardId, card, request.tagIds());
-		return toCardTreeResponse(card);
-	}
-
-	@Override
-	@Transactional
-	public KanbanCardResponseDto kanbanCardMove(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanCardMoveRequestDto request) {
-		KanbanCard card = getCardOrThrow(cardId);
-		assertCardBelongsToBoard(card, boardId, trackerId);
-
-		KanbanStage stage = request.stageId() != null ? resolveStage(boardId, request.stageId()) : card.getStage();
-		KanbanCard parent = resolveParent(boardId, request.parentCardId(), cardId);
-		assertMoveDepthAllowed(parent, card);
-
-		card.setStage(stage);
-		card.setParent(parent);
-		card.setCardOrder(defaultIfNull(request.cardOrder()));
-
-		List<KanbanCard> subtree = collectSubtree(card);
-		for (KanbanCard node : subtree) {
-			node.setStage(stage);
-		}
-		kanbanCardRepository.saveAll(subtree);
-		return toCardTreeResponse(card);
+		return toCardResponse(card);
 	}
 
 	@Override
@@ -229,7 +203,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		String imageUrl = imageService.uploadImage(file, "expense-tracker/kanban");
 		card.setImageUrl(imageUrl);
 		kanbanCardRepository.save(card);
-		return toCardTreeResponse(card);
+		return toCardResponse(card);
 	}
 
 	@Override
@@ -256,63 +230,33 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	public void kanbanCardDelete(User currentUser, UUID trackerId, UUID boardId, UUID cardId) {
 		KanbanCard card = getCardOrThrow(cardId);
 		assertCardBelongsToBoard(card, boardId, trackerId);
-		List<KanbanCard> subtree = collectSubtree(card);
-		for (KanbanCard node : subtree) {
-			node.setDeleted(true);
-			node.setActive(false);
-		}
-		kanbanCardRepository.saveAll(subtree);
+		kanbanCardRepository.delete(card);
 	}
 
-	private List<KanbanCardResponseDto> buildStageTree(List<KanbanCard> stageCards, Map<UUID, List<KanbanTag>> tagsByCardId) {
+	private List<KanbanCardResponseDto> buildStageCards(List<KanbanCard> stageCards, Map<UUID, List<KanbanTag>> tagsByCardId) {
 		if (stageCards.isEmpty()) {
 			return List.of();
 		}
 
-		Map<UUID, KanbanCard> byId = stageCards.stream().collect(Collectors.toMap(KanbanCard::getId, Function.identity()));
-		Map<UUID, List<KanbanCard>> childrenByParentId = new HashMap<>();
-		List<KanbanCard> roots = new ArrayList<>();
-
-		for (KanbanCard card : stageCards) {
-			KanbanCard parent = card.getParent();
-			if (parent == null || !byId.containsKey(parent.getId())) {
-				roots.add(card);
-			} else {
-				childrenByParentId.computeIfAbsent(parent.getId(), ignored -> new ArrayList<>()).add(card);
-			}
-		}
-
-		roots.sort(CARD_ORDER);
-		childrenByParentId.values().forEach(list -> list.sort(CARD_ORDER));
-		return roots.stream().map(root -> toDtoRecursive(root, childrenByParentId, tagsByCardId)).toList();
-	}
-
-	private KanbanCardResponseDto toCardTreeResponse(KanbanCard root) {
-		List<KanbanCard> subtree = collectSubtree(root);
-		Map<UUID, List<KanbanTag>> tagsByCardId = loadTagsByCardIds(subtree.stream().map(KanbanCard::getId).toList());
-		Map<UUID, List<KanbanCard>> childrenByParentId = subtree.stream()
-				.filter(c -> c.getParent() != null)
-				.collect(Collectors.groupingBy(c -> c.getParent().getId()));
-		childrenByParentId.values().forEach(list -> list.sort(CARD_ORDER));
-		return toDtoRecursive(root, childrenByParentId, tagsByCardId);
-	}
-
-	private KanbanCardResponseDto toDtoRecursive(
-			KanbanCard card,
-			Map<UUID, List<KanbanCard>> childrenByParentId,
-			Map<UUID, List<KanbanTag>> tagsByCardId
-	) {
-		List<KanbanCardResponseDto> children = childrenByParentId.getOrDefault(card.getId(), List.of())
-				.stream()
-				.map(child -> toDtoRecursive(child, childrenByParentId, tagsByCardId))
+		return stageCards.stream()
+				.sorted(CARD_ORDER)
+				.map(card -> {
+					List<KanbanTagResponseDto> tags = tagsByCardId.getOrDefault(card.getId(), List.of())
+							.stream()
+							.map(kanbanMapper::toTagResponse)
+							.toList();
+					return kanbanMapper.toCardResponse(card, tags);
+				})
 				.toList();
+	}
 
+	private KanbanCardResponseDto toCardResponse(KanbanCard card) {
+		Map<UUID, List<KanbanTag>> tagsByCardId = loadTagsByCardIds(List.of(card.getId()));
 		List<KanbanTagResponseDto> tags = tagsByCardId.getOrDefault(card.getId(), List.of())
 				.stream()
 				.map(kanbanMapper::toTagResponse)
 				.toList();
-
-		return kanbanMapper.toCardResponse(card, tags, children);
+		return kanbanMapper.toCardResponse(card, tags);
 	}
 
 	private void replaceCardTags(UUID boardId, KanbanCard card, List<UUID> tagIds) {
@@ -365,107 +309,22 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 			}
 			return stages.getFirst();
 		}
-		KanbanStage stage = kanbanStageRepository.findByIdAndIsDeletedFalse(stageId)
-				.orElseThrow(() -> new KanbanStageNotFoundException("Kanban stage not found with id: " + stageId));
+		KanbanStage stage = getStageOrThrow(stageId);
 		if (!stage.getBoard().getId().equals(boardId)) {
 			throw new KanbanStageNotFoundException("Kanban stage not found on this board");
 		}
 		return stage;
 	}
 
-	private KanbanCard resolveParent(UUID boardId, UUID parentCardId, UUID currentCardId) {
-		if (parentCardId == null) {
-			return null;
-		}
-		KanbanCard parent = getCardOrThrow(parentCardId);
-		if (!parent.getBoard().getId().equals(boardId)) {
-			throw new KanbanCardNotFoundException("Parent card not found on this board");
-		}
-
-		if (currentCardId != null) {
-			if (parent.getId().equals(currentCardId)) {
-				throw new InvalidKanbanException("Card cannot be a parent of itself");
-			}
-			KanbanCard cursor = parent;
-			while (cursor != null) {
-				if (cursor.getId().equals(currentCardId)) {
-					throw new InvalidKanbanException("Invalid card move. Circular relationship detected");
-				}
-				cursor = cursor.getParent();
-			}
-		}
-
-		int level = computeLevel(parent) + 1;
-		if (level > MAX_SUBTASK_DEPTH) {
-			throw new InvalidKanbanException("Card subtask depth limit exceeded. Maximum depth is %d".formatted(MAX_SUBTASK_DEPTH));
-		}
-		return parent;
-	}
-
-	private void assertMoveDepthAllowed(KanbanCard newParent, KanbanCard movingRoot) {
-		int parentLevel = newParent == null ? 0 : computeLevel(newParent);
-		int subtreeHeight = computeSubtreeHeight(movingRoot);
-		if (parentLevel + subtreeHeight > MAX_SUBTASK_DEPTH) {
-			throw new InvalidKanbanException("Card subtask depth limit exceeded. Maximum depth is %d".formatted(MAX_SUBTASK_DEPTH));
-		}
-	}
-
-	private int computeLevel(KanbanCard card) {
-		int level = 1;
-		KanbanCard cursor = card;
-		while (cursor.getParent() != null) {
-			level++;
-			cursor = cursor.getParent();
-		}
-		return level;
-	}
-
-	private int computeSubtreeHeight(KanbanCard root) {
-		int height = 1;
-		List<UUID> current = List.of(root.getId());
-		int level = 1;
-		while (!current.isEmpty()) {
-			List<KanbanCard> children = kanbanCardRepository.findByBoardIdAndParentIdInAndIsDeletedFalse(root.getBoard().getId(), current);
-			if (children.isEmpty()) {
-				break;
-			}
-			level++;
-			height = Math.max(height, level);
-			current = children.stream().map(KanbanCard::getId).toList();
-		}
-		return height;
-	}
-
-	private void assertUniqueTitle(UUID boardId, KanbanCard parent, String title, UUID currentCardId) {
+	private void assertUniqueTitle(UUID boardId, String title, UUID currentCardId) {
 		String normalized = normalizeTitle(title);
-		boolean exists;
-		if (parent == null) {
-			exists = currentCardId == null
-					? kanbanCardRepository.existsByBoardIdAndParentIsNullAndTitleIgnoreCaseAndIsDeletedFalse(boardId, normalized)
-					: kanbanCardRepository.existsByBoardIdAndParentIsNullAndTitleIgnoreCaseAndIsDeletedFalseAndIdNot(boardId, normalized, currentCardId);
-		} else {
-			exists = currentCardId == null
-					? kanbanCardRepository.existsByBoardIdAndParentIdAndTitleIgnoreCaseAndIsDeletedFalse(boardId, parent.getId(), normalized)
-					: kanbanCardRepository.existsByBoardIdAndParentIdAndTitleIgnoreCaseAndIsDeletedFalseAndIdNot(boardId, parent.getId(), normalized, currentCardId);
-		}
+		boolean exists = currentCardId == null
+				? kanbanCardRepository.existsByStageBoardIdAndTitleIgnoreCase(boardId, normalized)
+				: kanbanCardRepository.existsByStageBoardIdAndTitleIgnoreCaseAndIdNot(boardId, normalized, currentCardId);
 
 		if (exists) {
-			throw new DuplicateKanbanNameException("Card with title '%s' already exists under this parent".formatted(normalized));
+			throw new DuplicateKanbanNameException("Card with title '%s' already exists on this board".formatted(normalized));
 		}
-	}
-
-	private List<KanbanCard> collectSubtree(KanbanCard root) {
-		List<KanbanCard> result = new ArrayList<>();
-		List<KanbanCard> queue = new ArrayList<>();
-		queue.add(root);
-
-		for (int i = 0; i < queue.size(); i++) {
-			KanbanCard current = queue.get(i);
-			result.add(current);
-			List<KanbanCard> children = kanbanCardRepository.findByBoardIdAndParentIdInAndIsDeletedFalse(current.getBoard().getId(), List.of(current.getId()));
-			children.stream().sorted(CARD_ORDER).forEach(queue::add);
-		}
-		return result;
 	}
 
 	private KanbanBoard getBoardOrThrow(UUID boardId) {
@@ -474,8 +333,13 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	}
 
 	private KanbanCard getCardOrThrow(UUID cardId) {
-		return kanbanCardRepository.findByIdAndIsDeletedFalse(cardId)
+		return kanbanCardRepository.findById(cardId)
 				.orElseThrow(() -> new KanbanCardNotFoundException("Kanban card not found with id: " + cardId));
+	}
+
+	private KanbanStage getStageOrThrow(UUID stageId) {
+		return kanbanStageRepository.findByIdAndIsDeletedFalse(stageId)
+				.orElseThrow(() -> new KanbanStageNotFoundException("Kanban stage not found with id: " + stageId));
 	}
 
 	private void assertBoardBelongsToTracker(KanbanBoard board, UUID trackerId) {
@@ -485,9 +349,24 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	}
 
 	private void assertCardBelongsToBoard(KanbanCard card, UUID boardId, UUID trackerId) {
-		if (!card.getBoard().getId().equals(boardId) || !card.getBoard().getExpenseTracker().getId().equals(trackerId)) {
+		if (!card.getStage().getBoard().getId().equals(boardId)
+				|| !card.getStage().getBoard().getExpenseTracker().getId().equals(trackerId)) {
 			throw new KanbanCardNotFoundException("Kanban card not found on this board");
 		}
+	}
+
+	private void assertStageBelongsToTracker(KanbanStage stage, UUID trackerId) {
+		if (!stage.getBoard().getExpenseTracker().getId().equals(trackerId)) {
+			throw new KanbanStageNotFoundException("Kanban stage not found on this expense tracker");
+		}
+	}
+
+	private void assertHasAccessToTracker(User currentUser, UUID trackerId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(
+				trackerId,
+				currentUser,
+				EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER
+		);
 	}
 
 	private String normalizeTitle(String title) {

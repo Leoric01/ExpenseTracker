@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
+import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.handler.exceptions.InvalidKanbanException;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
@@ -50,6 +51,8 @@ class KanbanCardServiceImplTest {
 	@Mock
 	private ImageService imageService;
 	@Mock
+	private ExpenseTrackerAccessService expenseTrackerAccessService;
+	@Mock
 	private KanbanMapper kanbanMapper;
 
 	@InjectMocks
@@ -67,23 +70,20 @@ class KanbanCardServiceImplTest {
 		KanbanStage stage = KanbanStage.builder().id(UUID.randomUUID()).board(board).name("Todo").stageOrder(0).build();
 		KanbanCard card = KanbanCard.builder()
 				.id(cardId)
-				.board(board)
 				.stage(stage)
 				.title("Task")
 				.priority(3)
 				.dueDate(LocalDate.now())
 				.cardOrder(0)
-				.active(true)
 				.build();
 
-		when(kanbanCardRepository.findByIdAndIsDeletedFalse(cardId)).thenReturn(Optional.of(card));
+		when(kanbanCardRepository.findById(cardId)).thenReturn(Optional.of(card));
 		when(imageService.uploadImage(any(), eq("expense-tracker/kanban")))
 				.thenReturn("https://res.cloudinary.com/demo/image/upload/v1/kanban.png");
-		when(kanbanCardRepository.findByBoardIdAndParentIdInAndIsDeletedFalse(boardId, List.of(cardId))).thenReturn(List.of());
 		when(kanbanCardTagAssignmentRepository.findAllByCardIdsWithTag(List.of(cardId))).thenReturn(List.of());
-		when(kanbanMapper.toCardResponse(eq(card), eq(List.of()), eq(List.of()))).thenReturn(
-				new KanbanCardResponseDto(cardId, stage.getId(), null, "Task", null,
-						"https://res.cloudinary.com/demo/image/upload/v1/kanban.png", 3, card.getDueDate(), 0, true, List.of(), List.of(), null, null)
+		when(kanbanMapper.toCardResponse(eq(card), eq(List.of()))).thenReturn(
+				new KanbanCardResponseDto(cardId, stage.getId(), "Task", null,
+						"https://res.cloudinary.com/demo/image/upload/v1/kanban.png", 3, card.getDueDate(), 0, List.of(), null, null)
 		);
 
 		MockMultipartFile file = new MockMultipartFile("file", "kanban.png", "image/png", new byte[]{1, 2});
@@ -104,11 +104,11 @@ class KanbanCardServiceImplTest {
 		ExpenseTracker tracker = ExpenseTracker.builder().id(trackerId).build();
 		KanbanBoard board = KanbanBoard.builder().id(boardId).expenseTracker(tracker).build();
 		KanbanStage stage = KanbanStage.builder().id(UUID.randomUUID()).board(board).name("Todo").stageOrder(0).build();
-		KanbanCard card = KanbanCard.builder().id(cardId).board(board).stage(stage).title("Task")
+		KanbanCard card = KanbanCard.builder().id(cardId).stage(stage).title("Task")
 				.imageUrl("https://res.cloudinary.com/demo/image/upload/v1/kanban.png")
-				.priority(2).cardOrder(0).active(true).build();
+				.priority(2).cardOrder(0).build();
 
-		when(kanbanCardRepository.findByIdAndIsDeletedFalse(cardId)).thenReturn(Optional.of(card));
+		when(kanbanCardRepository.findById(cardId)).thenReturn(Optional.of(card));
 		when(imageService.deleteImageByUrl(card.getImageUrl())).thenReturn(false);
 
 		assertThatThrownBy(() -> service.kanbanCardDeleteImage(user, trackerId, boardId, cardId))

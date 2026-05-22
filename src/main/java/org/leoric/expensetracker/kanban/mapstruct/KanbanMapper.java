@@ -65,20 +65,17 @@ public interface KanbanMapper {
 		);
 	}
 
-	default KanbanCardResponseDto toCardResponse(KanbanCard card, List<KanbanTagResponseDto> tags, List<KanbanCardResponseDto> children) {
+	default KanbanCardResponseDto toCardResponse(KanbanCard card, List<KanbanTagResponseDto> tags) {
 		return new KanbanCardResponseDto(
 				card.getId(),
 				card.getStage().getId(),
-				card.getParent() != null ? card.getParent().getId() : null,
 				card.getTitle(),
 				card.getDescription(),
 				card.getImageUrl(),
 				card.getPriority(),
 				card.getDueDate(),
 				card.getCardOrder(),
-				card.isActive(),
 				tags,
-				children,
 				toOffsetDateTime(card.getCreatedDate()),
 				toOffsetDateTime(card.getLastModifiedDate())
 		);
