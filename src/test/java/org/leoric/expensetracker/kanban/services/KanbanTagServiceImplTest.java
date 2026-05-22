@@ -24,10 +24,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class KanbanTagServiceImplTest {
@@ -53,14 +50,15 @@ class KanbanTagServiceImplTest {
 		ExpenseTracker tracker = ExpenseTracker.builder().id(trackerId).build();
 		KanbanBoard board = KanbanBoard.builder().id(boardId).expenseTracker(tracker).build();
 		when(kanbanBoardRepository.findByIdAndIsDeletedFalse(boardId)).thenReturn(Optional.of(board));
+		when(kanbanTagRepository.findByBoardIdAndIsDeletedFalseOrderByTagOrderAscNameAsc(boardId)).thenReturn(List.of());
 
 		when(kanbanTagRepository.findByBoardIdAndNameIgnoreCaseAndIsDeletedFalse(boardId, "java")).thenReturn(Optional.empty());
 		when(kanbanTagRepository.findByBoardIdAndNameIgnoreCaseAndIsDeletedFalse(boardId, "devops")).thenReturn(Optional.empty());
-		when(kanbanTagRepository.save(any(KanbanTag.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(kanbanTagRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
 		when(kanbanMapper.toTagResponse(any(KanbanTag.class))).thenAnswer(invocation -> {
 			KanbanTag tag = invocation.getArgument(0);
-			return new KanbanTagResponseDto(tag.getId(), tag.getName(), tag.getColor(), tag.isActive(), null, null);
+			return new KanbanTagResponseDto(tag.getId(), tag.getName(), tag.getColor(), tag.getTagOrder(), tag.isActive(), null, null);
 		});
 
 		List<KanbanTagResponseDto> response = service.kanbanTagCreateBulk(
@@ -68,15 +66,15 @@ class KanbanTagServiceImplTest {
 				trackerId,
 				boardId,
 				List.of(
-						new KanbanTagUpsertRequestDto("java", "#00FF00", true),
-						new KanbanTagUpsertRequestDto("devops", "#112233", true)
+						new KanbanTagUpsertRequestDto("java", "#00FF00", null, true),
+						new KanbanTagUpsertRequestDto("devops", "#112233", null, true)
 				)
 		);
 
 		assertThat(response).hasSize(2);
 		assertThat(response.get(0).name()).isEqualTo("java");
 		assertThat(response.get(1).name()).isEqualTo("devops");
-		verify(kanbanTagRepository, times(2)).save(any(KanbanTag.class));
+		verify(kanbanTagRepository, times(2)).saveAll(any());
 	}
 
 	@Test

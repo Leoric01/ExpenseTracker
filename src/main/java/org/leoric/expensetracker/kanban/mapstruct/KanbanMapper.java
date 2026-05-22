@@ -47,6 +47,7 @@ public interface KanbanMapper {
 				stage.getId(),
 				stage.getName(),
 				stage.getStageOrder(),
+				stage.getColor(),
 				stage.isVisibleOnBoard(),
 				stage.isActive(),
 				toOffsetDateTime(stage.getCreatedDate()),
@@ -59,6 +60,7 @@ public interface KanbanMapper {
 				tag.getId(),
 				tag.getName(),
 				tag.getColor(),
+				tag.getTagOrder(),
 				tag.isActive(),
 				toOffsetDateTime(tag.getCreatedDate()),
 				toOffsetDateTime(tag.getLastModifiedDate())

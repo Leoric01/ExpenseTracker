@@ -18,7 +18,7 @@ public interface KanbanCardTagAssignmentRepository extends JpaRepository<KanbanC
 			JOIN FETCH a.tag t
 			WHERE a.card.id IN :cardIds
 			AND t.isDeleted = false
-			ORDER BY t.name ASC
+			ORDER BY t.tagOrder ASC, t.name ASC
 			""")
 	List<KanbanCardTagAssignment> findAllByCardIdsWithTag(@Param("cardIds") Collection<UUID> cardIds);
 

@@ -7,6 +7,7 @@ public record KanbanStageResponseDto(
 		UUID id,
 		String name,
 		Integer stageOrder,
+		String color,
 		boolean visibleOnBoard,
 		boolean active,
 		OffsetDateTime createdDate,

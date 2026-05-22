@@ -53,6 +53,10 @@ public class KanbanTag {
 
 	@Builder.Default
 	@Column(nullable = false)
+	private Integer tagOrder = 0;
+
+	@Builder.Default
+	@Column(nullable = false)
 	private boolean active = true;
 
 	@Builder.Default

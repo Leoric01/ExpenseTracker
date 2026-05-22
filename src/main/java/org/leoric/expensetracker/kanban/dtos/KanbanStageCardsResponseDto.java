@@ -7,6 +7,7 @@ public record KanbanStageCardsResponseDto(
 		UUID id,
 		String name,
 		Integer stageOrder,
+		String color,
 		boolean visibleOnBoard,
 		List<KanbanCardResponseDto> cards
 ) {

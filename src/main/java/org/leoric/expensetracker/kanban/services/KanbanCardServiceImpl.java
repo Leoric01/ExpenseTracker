@@ -146,6 +146,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 						stage.getId(),
 						stage.getName(),
 						stage.getStageOrder(),
+						stage.getColor(),
 						stage.isVisibleOnBoard(),
 						buildStageCards(cardsByStage.getOrDefault(stage.getId(), List.of()), tagsByCardId)
 				))

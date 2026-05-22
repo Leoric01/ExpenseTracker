@@ -16,9 +16,11 @@ import org.leoric.expensetracker.kanban.repositories.KanbanBoardRepository;
 import org.leoric.expensetracker.kanban.repositories.KanbanCardTagAssignmentRepository;
 import org.leoric.expensetracker.kanban.repositories.KanbanTagRepository;
 import org.leoric.expensetracker.kanban.services.interfaces.KanbanTagService;
+import org.leoric.expensetracker.utils.OrderSequenceUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -42,13 +44,22 @@ public class KanbanTagServiceImpl implements KanbanTagService {
 			throw new DuplicateKanbanTagNameException("Kanban tag with name '%s' already exists".formatted(normalizedName));
 		}
 
+		List<KanbanTag> existingTags = new ArrayList<>(
+				kanbanTagRepository.findByBoardIdAndIsDeletedFalseOrderByTagOrderAscNameAsc(boardId)
+		);
+		int targetOrder = OrderSequenceUtils.clampTargetOrder(request.tagOrder(), existingTags.size());
+
 		KanbanTag tag = KanbanTag.builder()
 				.board(board)
 				.name(normalizedName)
 				.color(normalizeColor(request.color()))
+				.tagOrder(targetOrder)
 				.active(request.active() == null || request.active())
 				.build();
-		tag = kanbanTagRepository.save(tag);
+
+		existingTags.add(targetOrder, tag);
+		OrderSequenceUtils.normalizeContiguous(existingTags, KanbanTag::getTagOrder, KanbanTag::setTagOrder);
+		kanbanTagRepository.saveAll(existingTags);
 		log.info("User {} created kanban tag '{}' on board '{}'", currentUser.getEmail(), tag.getName(), boardId);
 		return kanbanMapper.toTagResponse(tag);
 	}
@@ -70,7 +81,7 @@ public class KanbanTagServiceImpl implements KanbanTagService {
 	public List<KanbanTagResponseDto> kanbanTagFindAll(User currentUser, UUID trackerId, UUID boardId) {
 		KanbanBoard board = getBoardOrThrow(boardId);
 		assertBoardBelongsToTracker(board, trackerId);
-		return kanbanTagRepository.findByBoardIdAndIsDeletedFalseOrderByNameAsc(boardId)
+		return kanbanTagRepository.findByBoardIdAndIsDeletedFalseOrderByTagOrderAscNameAsc(boardId)
 				.stream()
 				.map(kanbanMapper::toTagResponse)
 				.toList();
@@ -93,7 +104,18 @@ public class KanbanTagServiceImpl implements KanbanTagService {
 		if (request.active() != null) {
 			tag.setActive(request.active());
 		}
-		tag = kanbanTagRepository.save(tag);
+
+		List<KanbanTag> tags = new ArrayList<>(
+				kanbanTagRepository.findByBoardIdAndIsDeletedFalseOrderByTagOrderAscNameAsc(boardId)
+		);
+		tags.removeIf(t -> t.getId().equals(tagId));
+		int targetOrder = OrderSequenceUtils.clampTargetOrder(
+				request.tagOrder() == null ? tag.getTagOrder() : request.tagOrder(),
+				tags.size()
+		);
+		tags.add(targetOrder, tag);
+		OrderSequenceUtils.normalizeContiguous(tags, KanbanTag::getTagOrder, KanbanTag::setTagOrder);
+		kanbanTagRepository.saveAll(tags);
 		return kanbanMapper.toTagResponse(tag);
 	}
 
@@ -106,6 +128,12 @@ public class KanbanTagServiceImpl implements KanbanTagService {
 		tag.setActive(false);
 		kanbanTagRepository.save(tag);
 		kanbanCardTagAssignmentRepository.deleteByTagId(tagId);
+
+		List<KanbanTag> remainingTags = new ArrayList<>(
+				kanbanTagRepository.findByBoardIdAndIsDeletedFalseOrderByTagOrderAscNameAsc(boardId)
+		);
+		OrderSequenceUtils.normalizeContiguous(remainingTags, KanbanTag::getTagOrder, KanbanTag::setTagOrder);
+		kanbanTagRepository.saveAll(remainingTags);
 	}
 
 	private KanbanBoard getBoardOrThrow(UUID boardId) {

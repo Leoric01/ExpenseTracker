@@ -18,5 +18,5 @@ public interface KanbanTagRepository extends JpaRepository<KanbanTag, UUID> {
 
 	List<KanbanTag> findByBoardIdAndIdInAndIsDeletedFalse(UUID boardId, Collection<UUID> ids);
 
-	List<KanbanTag> findByBoardIdAndIsDeletedFalseOrderByNameAsc(UUID boardId);
+	List<KanbanTag> findByBoardIdAndIsDeletedFalseOrderByTagOrderAscNameAsc(UUID boardId);
 }

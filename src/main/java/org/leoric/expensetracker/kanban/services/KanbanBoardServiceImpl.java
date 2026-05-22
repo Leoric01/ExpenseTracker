@@ -26,9 +26,11 @@ import org.leoric.expensetracker.kanban.repositories.KanbanBoardRepository;
 import org.leoric.expensetracker.kanban.repositories.KanbanCardRepository;
 import org.leoric.expensetracker.kanban.repositories.KanbanStageRepository;
 import org.leoric.expensetracker.kanban.services.interfaces.KanbanBoardService;
+import org.leoric.expensetracker.utils.OrderSequenceUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -129,14 +131,23 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 			throw new DuplicateKanbanStageNameException("Kanban stage with name '%s' already exists".formatted(normalizedName));
 		}
 
+		List<KanbanStage> existingStages = new ArrayList<>(
+				kanbanStageRepository.findByBoardIdAndIsDeletedFalseOrderByStageOrderAscNameAsc(boardId)
+		);
+		int targetOrder = OrderSequenceUtils.clampTargetOrder(request.stageOrder(), existingStages.size());
+
 		KanbanStage stage = KanbanStage.builder()
 				.board(board)
 				.name(normalizedName)
-				.stageOrder(defaultIfNull(request.stageOrder()))
+				.stageOrder(targetOrder)
+				.color(normalizeColor(request.color()))
 				.visibleOnBoard(request.visibleOnBoard() == null || request.visibleOnBoard())
 				.active(request.active() == null || request.active())
 				.build();
-		stage = kanbanStageRepository.save(stage);
+
+		existingStages.add(targetOrder, stage);
+		OrderSequenceUtils.normalizeContiguous(existingStages, KanbanStage::getStageOrder, KanbanStage::setStageOrder);
+		kanbanStageRepository.saveAll(existingStages);
 		return kanbanMapper.toStageResponse(stage);
 	}
 
@@ -162,14 +173,25 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 		}
 
 		stage.setName(normalizedName);
-		stage.setStageOrder(defaultIfNull(request.stageOrder()));
+		stage.setColor(normalizeColor(request.color()));
 		if (request.visibleOnBoard() != null) {
 			stage.setVisibleOnBoard(request.visibleOnBoard());
 		}
 		if (request.active() != null) {
 			stage.setActive(request.active());
 		}
-		stage = kanbanStageRepository.save(stage);
+
+		List<KanbanStage> stages = new ArrayList<>(
+				kanbanStageRepository.findByBoardIdAndIsDeletedFalseOrderByStageOrderAscNameAsc(boardId)
+		);
+		stages.removeIf(s -> s.getId().equals(stageId));
+		int targetOrder = OrderSequenceUtils.clampTargetOrder(
+				request.stageOrder() == null ? stage.getStageOrder() : request.stageOrder(),
+				stages.size()
+		);
+		stages.add(targetOrder, stage);
+		OrderSequenceUtils.normalizeContiguous(stages, KanbanStage::getStageOrder, KanbanStage::setStageOrder);
+		kanbanStageRepository.saveAll(stages);
 		return kanbanMapper.toStageResponse(stage);
 	}
 
@@ -191,10 +213,15 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 		if (stages.size() != ids.size()) {
 			throw new KanbanStageNotFoundException("Some stages were not found on this board");
 		}
+		int boardStageCount = kanbanStageRepository.findByBoardIdAndIsDeletedFalseOrderByStageOrderAscNameAsc(boardId).size();
+		if (ids.size() != boardStageCount) {
+			throw new InvalidKanbanException("Reorder payload must contain all stages on this board");
+		}
+		OrderSequenceUtils.validateContiguous(request.items(), KanbanStageReorderItemDto::stageOrder, "stageOrder");
 
 		Map<UUID, KanbanStage> byId = stages.stream().collect(Collectors.toMap(KanbanStage::getId, Function.identity()));
 		for (KanbanStageReorderItemDto item : request.items()) {
-			byId.get(item.stageId()).setStageOrder(defaultIfNull(item.stageOrder()));
+			byId.get(item.stageId()).setStageOrder(item.stageOrder());
 		}
 		kanbanStageRepository.saveAll(stages);
 	}
@@ -237,6 +264,10 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 		stage.setDeleted(true);
 		stage.setActive(false);
 		kanbanStageRepository.save(stage);
+
+		List<KanbanStage> remainingStages = kanbanStageRepository.findByBoardIdAndIsDeletedFalseOrderByStageOrderAscNameAsc(boardId);
+		OrderSequenceUtils.normalizeContiguous(remainingStages, KanbanStage::getStageOrder, KanbanStage::setStageOrder);
+		kanbanStageRepository.saveAll(remainingStages);
 	}
 
 	private ExpenseTracker getTrackerOrThrow(UUID trackerId) {
@@ -279,6 +310,13 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 		}
 		String trimmed = value.trim();
 		return trimmed.isEmpty() ? null : trimmed;
+	}
+
+	private String normalizeColor(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		return value.trim().toUpperCase();
 	}
 
 	private Integer defaultIfNull(Integer value) {
