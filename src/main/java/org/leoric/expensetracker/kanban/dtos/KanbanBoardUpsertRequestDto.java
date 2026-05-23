@@ -1,6 +1,7 @@
 package org.leoric.expensetracker.kanban.dtos;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 public record KanbanBoardUpsertRequestDto(
@@ -9,6 +10,8 @@ public record KanbanBoardUpsertRequestDto(
 		String name,
 		@Size(max = 500, message = "Description length must be <= 500")
 		String description,
+		@PositiveOrZero(message = "Board order must be >= 0")
+		Integer boardOrder,
 		Boolean active
 ) {
 }

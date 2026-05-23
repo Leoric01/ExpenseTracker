@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -17,5 +18,7 @@ public interface KanbanBoardRepository extends JpaRepository<KanbanBoard, UUID> 
 
 	boolean existsByExpenseTrackerIdAndNameIgnoreCaseAndIsDeletedFalseAndIdNot(UUID expenseTrackerId, String name, UUID id);
 
-	List<KanbanBoard> findByExpenseTrackerIdAndIsDeletedFalseOrderByNameAsc(UUID expenseTrackerId);
+	List<KanbanBoard> findByExpenseTrackerIdAndIsDeletedFalseOrderByBoardOrderAscNameAsc(UUID expenseTrackerId);
+
+	List<KanbanBoard> findByExpenseTrackerIdAndIdInAndIsDeletedFalse(UUID expenseTrackerId, Set<UUID> ids);
 }

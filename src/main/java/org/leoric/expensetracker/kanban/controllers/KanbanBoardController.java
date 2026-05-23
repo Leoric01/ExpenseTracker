@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardDetailResponseDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanBoardReorderRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardUpsertRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanStageReorderRequestDto;
@@ -76,6 +77,17 @@ public class KanbanBoardController {
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
 		return ResponseEntity.ok(kanbanBoardService.kanbanBoardUpdate(currentUser, trackerId, boardId, request));
+	}
+
+	@PatchMapping("/{trackerId}/reorder")
+	public ResponseEntity<Void> kanbanBoardReorder(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@Valid @RequestBody KanbanBoardReorderRequestDto request
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		kanbanBoardService.kanbanBoardReorder(currentUser, trackerId, request);
+		return ResponseEntity.noContent().build();
 	}
 
 	@DeleteMapping("/{trackerId}/{boardId}")

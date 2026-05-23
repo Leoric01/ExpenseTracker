@@ -12,6 +12,8 @@ import org.leoric.expensetracker.handler.exceptions.InvalidKanbanException;
 import org.leoric.expensetracker.handler.exceptions.KanbanBoardNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.KanbanStageNotFoundException;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardDetailResponseDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanBoardReorderItemDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanBoardReorderRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardUpsertRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanStageReorderItemDto;
@@ -59,13 +61,21 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 			throw new DuplicateKanbanNameException("Kanban board with name '%s' already exists".formatted(normalizedName));
 		}
 
+		List<KanbanBoard> existingBoards = new ArrayList<>(
+				kanbanBoardRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByBoardOrderAscNameAsc(trackerId)
+		);
+		int targetOrder = OrderSequenceUtils.clampTargetOrder(request.boardOrder(), existingBoards.size());
+
 		KanbanBoard board = KanbanBoard.builder()
 				.expenseTracker(tracker)
 				.name(normalizedName)
 				.description(normalizeNullable(request.description()))
+				.boardOrder(targetOrder)
 				.active(request.active() == null || request.active())
 				.build();
-		board = kanbanBoardRepository.save(board);
+		existingBoards.add(targetOrder, board);
+		OrderSequenceUtils.normalizeContiguous(existingBoards, KanbanBoard::getBoardOrder, KanbanBoard::setBoardOrder);
+		kanbanBoardRepository.saveAll(existingBoards);
 		log.info("User {} created kanban board '{}' in tracker '{}'", currentUser.getEmail(), board.getName(), trackerId);
 		return kanbanMapper.toBoardResponse(board);
 	}
@@ -73,7 +83,7 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 	@Override
 	@Transactional(readOnly = true)
 	public List<KanbanBoardResponseDto> kanbanBoardFindAll(User currentUser, UUID trackerId) {
-		return kanbanBoardRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByNameAsc(trackerId)
+		return kanbanBoardRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByBoardOrderAscNameAsc(trackerId)
 				.stream()
 				.map(kanbanMapper::toBoardResponse)
 				.toList();
@@ -107,8 +117,50 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 		if (request.active() != null) {
 			board.setActive(request.active());
 		}
-		board = kanbanBoardRepository.save(board);
+
+		List<KanbanBoard> boards = new ArrayList<>(
+				kanbanBoardRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByBoardOrderAscNameAsc(trackerId)
+		);
+		boards.removeIf(b -> b.getId().equals(boardId));
+		int targetOrder = OrderSequenceUtils.clampTargetOrder(
+				request.boardOrder() == null ? board.getBoardOrder() : request.boardOrder(),
+				boards.size()
+		);
+		boards.add(targetOrder, board);
+		OrderSequenceUtils.normalizeContiguous(boards, KanbanBoard::getBoardOrder, KanbanBoard::setBoardOrder);
+		kanbanBoardRepository.saveAll(boards);
 		return kanbanMapper.toBoardResponse(board);
+	}
+
+	@Override
+	@Transactional
+	public void kanbanBoardReorder(User currentUser, UUID trackerId, KanbanBoardReorderRequestDto request) {
+		if (request.items() == null || request.items().isEmpty()) {
+			throw new InvalidKanbanException("Reorder payload must contain at least one item");
+		}
+
+		Set<UUID> ids = request.items().stream().map(KanbanBoardReorderItemDto::boardId).collect(Collectors.toSet());
+		if (ids.size() != request.items().size()) {
+			throw new InvalidKanbanException("Reorder payload contains duplicate board ids");
+		}
+
+		List<KanbanBoard> boards = kanbanBoardRepository.findByExpenseTrackerIdAndIdInAndIsDeletedFalse(trackerId, ids);
+		if (boards.size() != ids.size()) {
+			throw new KanbanBoardNotFoundException("Some boards were not found on this expense tracker");
+		}
+
+		int trackerBoardCount = kanbanBoardRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByBoardOrderAscNameAsc(trackerId).size();
+		if (ids.size() != trackerBoardCount) {
+			throw new InvalidKanbanException("Reorder payload must contain all boards on this expense tracker");
+		}
+
+		OrderSequenceUtils.validateContiguous(request.items(), KanbanBoardReorderItemDto::boardOrder, "boardOrder");
+
+		Map<UUID, KanbanBoard> byId = boards.stream().collect(Collectors.toMap(KanbanBoard::getId, Function.identity()));
+		for (KanbanBoardReorderItemDto item : request.items()) {
+			byId.get(item.boardId()).setBoardOrder(item.boardOrder());
+		}
+		kanbanBoardRepository.saveAll(boards);
 	}
 
 	@Override
@@ -119,6 +171,10 @@ public class KanbanBoardServiceImpl implements KanbanBoardService {
 		board.setDeleted(true);
 		board.setActive(false);
 		kanbanBoardRepository.save(board);
+
+		List<KanbanBoard> remainingBoards = kanbanBoardRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByBoardOrderAscNameAsc(trackerId);
+		OrderSequenceUtils.normalizeContiguous(remainingBoards, KanbanBoard::getBoardOrder, KanbanBoard::setBoardOrder);
+		kanbanBoardRepository.saveAll(remainingBoards);
 	}
 
 	@Override

@@ -6,6 +6,8 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.InvalidKanbanException;
+import org.leoric.expensetracker.kanban.dtos.KanbanBoardResponseDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanBoardUpsertRequestDto;
 import org.leoric.expensetracker.kanban.mapstruct.KanbanMapper;
 import org.leoric.expensetracker.kanban.models.KanbanBoard;
 import org.leoric.expensetracker.kanban.models.KanbanCard;
@@ -17,12 +19,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -43,6 +47,57 @@ class KanbanBoardServiceImplTest {
 
 	@InjectMocks
 	private KanbanBoardServiceImpl service;
+
+	@Test
+	void kanbanBoardCreate_shouldInsertBoardAtRequestedOrderAndNormalizeSequence() {
+		UUID trackerId = UUID.randomUUID();
+		User user = User.builder().id(UUID.randomUUID()).email("kanban@test.com").build();
+		ExpenseTracker tracker = ExpenseTracker.builder().id(trackerId).build();
+
+		KanbanBoard first = KanbanBoard.builder().id(UUID.randomUUID()).expenseTracker(tracker).name("A").boardOrder(0).build();
+		KanbanBoard second = KanbanBoard.builder().id(UUID.randomUUID()).expenseTracker(tracker).name("B").boardOrder(1).build();
+
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(kanbanBoardRepository.existsByExpenseTrackerIdAndNameIgnoreCaseAndIsDeletedFalse(trackerId, "New"))
+				.thenReturn(false);
+		when(kanbanBoardRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByBoardOrderAscNameAsc(trackerId))
+				.thenReturn(List.of(first, second));
+		when(kanbanMapper.toBoardResponse(any(KanbanBoard.class))).thenReturn(
+				new KanbanBoardResponseDto(UUID.randomUUID(), "New", null, 1, true, OffsetDateTime.now(), OffsetDateTime.now())
+		);
+
+		service.kanbanBoardCreate(user, trackerId, new KanbanBoardUpsertRequestDto("New", null, 1, true));
+
+		assertThat(first.getBoardOrder()).isEqualTo(0);
+		assertThat(second.getBoardOrder()).isEqualTo(2);
+		verify(kanbanBoardRepository).saveAll(any());
+	}
+
+	@Test
+	void kanbanBoardDelete_shouldNormalizeRemainingBoardOrders() {
+		UUID trackerId = UUID.randomUUID();
+		UUID boardId = UUID.randomUUID();
+		User user = User.builder().id(UUID.randomUUID()).email("kanban@test.com").build();
+
+		ExpenseTracker tracker = ExpenseTracker.builder().id(trackerId).build();
+		KanbanBoard deleted = KanbanBoard.builder().id(boardId).expenseTracker(tracker).boardOrder(1).active(true).isDeleted(false).build();
+		KanbanBoard remainingA = KanbanBoard.builder().id(UUID.randomUUID()).expenseTracker(tracker).boardOrder(0).build();
+		KanbanBoard remainingB = KanbanBoard.builder().id(UUID.randomUUID()).expenseTracker(tracker).boardOrder(3).build();
+
+		when(kanbanBoardRepository.findByIdAndIsDeletedFalse(boardId)).thenReturn(Optional.of(deleted));
+		when(kanbanBoardRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByBoardOrderAscNameAsc(trackerId))
+				.thenReturn(List.of(remainingA, remainingB));
+
+		service.kanbanBoardDelete(user, trackerId, boardId);
+
+		assertThat(deleted.isDeleted()).isTrue();
+		assertThat(deleted.isActive()).isFalse();
+		assertThat(remainingA.getBoardOrder()).isEqualTo(0);
+		assertThat(remainingB.getBoardOrder()).isEqualTo(1);
+
+		verify(kanbanBoardRepository).save(deleted);
+		verify(kanbanBoardRepository).saveAll(List.of(remainingA, remainingB));
+	}
 
 	@Test
 	void kanbanStageDelete_shouldMoveCardsToNearestStageThenDeleteStage() {

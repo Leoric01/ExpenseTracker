@@ -2,6 +2,7 @@ package org.leoric.expensetracker.kanban.services.interfaces;
 
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardDetailResponseDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanBoardReorderRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardUpsertRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanStageReorderRequestDto;
@@ -22,6 +23,8 @@ public interface KanbanBoardService {
 	KanbanBoardDetailResponseDto kanbanBoardFindById(User currentUser, UUID trackerId, UUID boardId);
 
 	KanbanBoardResponseDto kanbanBoardUpdate(User currentUser, UUID trackerId, UUID boardId, KanbanBoardUpsertRequestDto request);
+
+	void kanbanBoardReorder(User currentUser, UUID trackerId, KanbanBoardReorderRequestDto request);
 
 	void kanbanBoardDelete(User currentUser, UUID trackerId, UUID boardId);
 

@@ -24,6 +24,7 @@ public interface KanbanMapper {
 				board.getId(),
 				board.getName(),
 				board.getDescription(),
+				board.getBoardOrder(),
 				board.isActive(),
 				toOffsetDateTime(board.getCreatedDate()),
 				toOffsetDateTime(board.getLastModifiedDate())
@@ -35,6 +36,7 @@ public interface KanbanMapper {
 				board.getId(),
 				board.getName(),
 				board.getDescription(),
+				board.getBoardOrder(),
 				board.isActive(),
 				stages,
 				toOffsetDateTime(board.getCreatedDate()),

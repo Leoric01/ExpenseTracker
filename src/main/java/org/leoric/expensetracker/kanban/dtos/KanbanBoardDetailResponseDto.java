@@ -8,6 +8,7 @@ public record KanbanBoardDetailResponseDto(
 		UUID id,
 		String name,
 		String description,
+		Integer boardOrder,
 		boolean active,
 		List<KanbanStageResponseDto> stages,
 		OffsetDateTime createdDate,

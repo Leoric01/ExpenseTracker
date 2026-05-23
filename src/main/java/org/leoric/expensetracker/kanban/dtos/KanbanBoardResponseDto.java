@@ -7,6 +7,7 @@ public record KanbanBoardResponseDto(
 		UUID id,
 		String name,
 		String description,
+		Integer boardOrder,
 		boolean active,
 		OffsetDateTime createdDate,
 		OffsetDateTime lastModifiedDate
