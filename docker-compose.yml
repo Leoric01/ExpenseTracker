@@ -28,6 +28,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8980
       DB_URL: jdbc:mariadb://mariadb:3306/expensetracker
       DB_USERNAME: expensetracker
       DB_PASSWORD: expensetracker
@@ -42,7 +43,7 @@ services:
       CLOUDINARY_API_SECRET: your-api-secret
       COINGECKO_API_KEY: ${COINGECKO_API_KEY:-}
     ports:
-      - "8080:8080"
+      - "8980:8980"
 
 
   frontend:
@@ -58,5 +59,5 @@ volumes:
   expensetracker_mariadb_data:
     name: expensetracker_mariadb_data
 
-#    docker build --build-arg VITE_API_URL=http://localhost:8080 -t leorickk/expense-tracker-fe:latest .
+#    docker build --build-arg VITE_API_URL=http://localhost:8980 -t leorickk/expense-tracker-fe:latest .
 #    docker push leorickk/expense-tracker-fe:latest

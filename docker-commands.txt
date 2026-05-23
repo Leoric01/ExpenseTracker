@@ -9,4 +9,6 @@ docker push leorickk/expense-tracker-be:latest
 docker compose up -d
 docker compose up -d --build
 
+# Backend bezi na http://localhost:8980
+
 docker compose pull frontend
