@@ -4,6 +4,9 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardUpsertRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemReorderRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemToggleRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemUpsertRequestDto;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,6 +22,16 @@ public interface KanbanCardService {
 	KanbanCardResponseDto kanbanCardFindById(User currentUser, UUID trackerId, UUID boardId, UUID cardId);
 
 	KanbanCardResponseDto kanbanCardUpdate(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanCardUpsertRequestDto request);
+
+	KanbanCardResponseDto kanbanChecklistItemCreate(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanChecklistItemUpsertRequestDto request);
+
+	KanbanCardResponseDto kanbanChecklistItemUpdate(User currentUser, UUID trackerId, UUID boardId, UUID cardId, UUID itemId, KanbanChecklistItemUpsertRequestDto request);
+
+	KanbanCardResponseDto kanbanChecklistItemToggle(User currentUser, UUID trackerId, UUID boardId, UUID cardId, UUID itemId, KanbanChecklistItemToggleRequestDto request);
+
+	KanbanCardResponseDto kanbanChecklistItemReorder(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanChecklistItemReorderRequestDto request);
+
+	void kanbanChecklistItemDelete(User currentUser, UUID trackerId, UUID boardId, UUID cardId, UUID itemId);
 
 
 	KanbanCardResponseDto kanbanCardUploadImage(User currentUser, UUID trackerId, UUID boardId, UUID cardId, MultipartFile file);

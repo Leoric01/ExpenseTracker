@@ -33,61 +33,56 @@ public class KanbanTagController {
 	private final KanbanTagService kanbanTagService;
 	private final ExpenseTrackerAccessService expenseTrackerAccessService;
 
-	@PostMapping("/{trackerId}/{boardId}")
+	@PostMapping("/{trackerId}")
 	public ResponseEntity<KanbanTagResponseDto> kanbanTagCreate(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
-			@PathVariable UUID boardId,
 			@Valid @RequestBody KanbanTagUpsertRequestDto request
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
 		return ResponseEntity.status(HttpStatus.CREATED)
-				.body(kanbanTagService.kanbanTagCreate(currentUser, trackerId, boardId, request));
+				.body(kanbanTagService.kanbanTagCreate(currentUser, trackerId, request));
 	}
 
-	@PostMapping("/{trackerId}/{boardId}/bulk")
+	@PostMapping("/{trackerId}/bulk")
 	public ResponseEntity<List<KanbanTagResponseDto>> kanbanTagCreateBulk(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
-			@PathVariable UUID boardId,
 			@RequestBody List<@Valid KanbanTagUpsertRequestDto> request
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
 		return ResponseEntity.status(HttpStatus.CREATED)
-				.body(kanbanTagService.kanbanTagCreateBulk(currentUser, trackerId, boardId, request));
+				.body(kanbanTagService.kanbanTagCreateBulk(currentUser, trackerId, request));
 	}
 
-	@GetMapping("/{trackerId}/{boardId}")
+	@GetMapping("/{trackerId}")
 	public ResponseEntity<List<KanbanTagResponseDto>> kanbanTagFindAll(
 			@AuthenticationPrincipal User currentUser,
-			@PathVariable UUID trackerId,
-			@PathVariable UUID boardId
+			@PathVariable UUID trackerId
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
-		return ResponseEntity.ok(kanbanTagService.kanbanTagFindAll(currentUser, trackerId, boardId));
+		return ResponseEntity.ok(kanbanTagService.kanbanTagFindAll(currentUser, trackerId));
 	}
 
-	@PatchMapping("/{trackerId}/{boardId}/{tagId}")
+	@PatchMapping("/{trackerId}/{tagId}")
 	public ResponseEntity<KanbanTagResponseDto> kanbanTagUpdate(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
-			@PathVariable UUID boardId,
 			@PathVariable UUID tagId,
 			@Valid @RequestBody KanbanTagUpsertRequestDto request
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
-		return ResponseEntity.ok(kanbanTagService.kanbanTagUpdate(currentUser, trackerId, boardId, tagId, request));
+		return ResponseEntity.ok(kanbanTagService.kanbanTagUpdate(currentUser, trackerId, tagId, request));
 	}
 
-	@DeleteMapping("/{trackerId}/{boardId}/{tagId}")
+	@DeleteMapping("/{trackerId}/{tagId}")
 	public ResponseEntity<Void> kanbanTagDelete(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
-			@PathVariable UUID boardId,
 			@PathVariable UUID tagId
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
-		kanbanTagService.kanbanTagDelete(currentUser, trackerId, boardId, tagId);
+		kanbanTagService.kanbanTagDelete(currentUser, trackerId, tagId);
 		return ResponseEntity.noContent().build();
 	}
 

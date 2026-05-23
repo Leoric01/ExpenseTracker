@@ -8,6 +8,9 @@ import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardMoveStageRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardUpsertRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemReorderRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemToggleRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemUpsertRequestDto;
 import org.leoric.expensetracker.kanban.services.interfaces.KanbanCardService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -102,6 +105,70 @@ public class KanbanCardController {
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
 		kanbanCardService.kanbanCardDelete(currentUser, trackerId, boardId, cardId);
+		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping("/{trackerId}/{boardId}/{cardId}/checklist")
+	public ResponseEntity<KanbanCardResponseDto> kanbanChecklistItemCreate(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID boardId,
+			@PathVariable UUID cardId,
+			@Valid @RequestBody KanbanChecklistItemUpsertRequestDto request
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		return ResponseEntity.status(HttpStatus.CREATED)
+				.body(kanbanCardService.kanbanChecklistItemCreate(currentUser, trackerId, boardId, cardId, request));
+	}
+
+	@PatchMapping("/{trackerId}/{boardId}/{cardId}/checklist/{itemId}")
+	public ResponseEntity<KanbanCardResponseDto> kanbanChecklistItemUpdate(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID boardId,
+			@PathVariable UUID cardId,
+			@PathVariable UUID itemId,
+			@Valid @RequestBody KanbanChecklistItemUpsertRequestDto request
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		return ResponseEntity.ok(kanbanCardService.kanbanChecklistItemUpdate(currentUser, trackerId, boardId, cardId, itemId, request));
+	}
+
+	@PatchMapping("/{trackerId}/{boardId}/{cardId}/checklist/{itemId}/toggle")
+	public ResponseEntity<KanbanCardResponseDto> kanbanChecklistItemToggle(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID boardId,
+			@PathVariable UUID cardId,
+			@PathVariable UUID itemId,
+			@Valid @RequestBody KanbanChecklistItemToggleRequestDto request
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		return ResponseEntity.ok(kanbanCardService.kanbanChecklistItemToggle(currentUser, trackerId, boardId, cardId, itemId, request));
+	}
+
+	@PatchMapping("/{trackerId}/{boardId}/{cardId}/checklist/reorder")
+	public ResponseEntity<KanbanCardResponseDto> kanbanChecklistItemReorder(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID boardId,
+			@PathVariable UUID cardId,
+			@Valid @RequestBody KanbanChecklistItemReorderRequestDto request
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		return ResponseEntity.ok(kanbanCardService.kanbanChecklistItemReorder(currentUser, trackerId, boardId, cardId, request));
+	}
+
+	@DeleteMapping("/{trackerId}/{boardId}/{cardId}/checklist/{itemId}")
+	public ResponseEntity<Void> kanbanChecklistItemDelete(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID boardId,
+			@PathVariable UUID cardId,
+			@PathVariable UUID itemId
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		kanbanCardService.kanbanChecklistItemDelete(currentUser, trackerId, boardId, cardId, itemId);
 		return ResponseEntity.noContent().build();
 	}
 

@@ -4,14 +4,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
+import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.InvalidKanbanException;
 import org.leoric.expensetracker.kanban.dtos.KanbanTagResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanTagUpsertRequestDto;
 import org.leoric.expensetracker.kanban.mapstruct.KanbanMapper;
-import org.leoric.expensetracker.kanban.models.KanbanBoard;
 import org.leoric.expensetracker.kanban.models.KanbanTag;
-import org.leoric.expensetracker.kanban.repositories.KanbanBoardRepository;
-import org.leoric.expensetracker.kanban.repositories.KanbanCardTagAssignmentRepository;
 import org.leoric.expensetracker.kanban.repositories.KanbanTagRepository;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -32,9 +30,7 @@ class KanbanTagServiceImplTest {
 	@Mock
 	private KanbanTagRepository kanbanTagRepository;
 	@Mock
-	private KanbanBoardRepository kanbanBoardRepository;
-	@Mock
-	private KanbanCardTagAssignmentRepository kanbanCardTagAssignmentRepository;
+	private ExpenseTrackerRepository expenseTrackerRepository;
 	@Mock
 	private KanbanMapper kanbanMapper;
 
@@ -44,16 +40,14 @@ class KanbanTagServiceImplTest {
 	@Test
 	void kanbanTagCreateBulk_shouldCreateAllItems() {
 		UUID trackerId = UUID.randomUUID();
-		UUID boardId = UUID.randomUUID();
 		User user = User.builder().id(UUID.randomUUID()).email("kanban.tag@test.com").build();
 
 		ExpenseTracker tracker = ExpenseTracker.builder().id(trackerId).build();
-		KanbanBoard board = KanbanBoard.builder().id(boardId).expenseTracker(tracker).build();
-		when(kanbanBoardRepository.findByIdAndIsDeletedFalse(boardId)).thenReturn(Optional.of(board));
-		when(kanbanTagRepository.findByBoardIdAndIsDeletedFalseOrderByTagOrderAscNameAsc(boardId)).thenReturn(List.of());
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(kanbanTagRepository.findByExpenseTrackerIdAndIsDeletedFalseOrderByTagOrderAscNameAsc(trackerId)).thenReturn(List.of());
 
-		when(kanbanTagRepository.findByBoardIdAndNameIgnoreCaseAndIsDeletedFalse(boardId, "java")).thenReturn(Optional.empty());
-		when(kanbanTagRepository.findByBoardIdAndNameIgnoreCaseAndIsDeletedFalse(boardId, "devops")).thenReturn(Optional.empty());
+		when(kanbanTagRepository.findByExpenseTrackerIdAndNameIgnoreCaseAndIsDeletedFalse(trackerId, "java")).thenReturn(Optional.empty());
+		when(kanbanTagRepository.findByExpenseTrackerIdAndNameIgnoreCaseAndIsDeletedFalse(trackerId, "devops")).thenReturn(Optional.empty());
 		when(kanbanTagRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
 		when(kanbanMapper.toTagResponse(any(KanbanTag.class))).thenAnswer(invocation -> {
@@ -64,7 +58,6 @@ class KanbanTagServiceImplTest {
 		List<KanbanTagResponseDto> response = service.kanbanTagCreateBulk(
 				user,
 				trackerId,
-				boardId,
 				List.of(
 						new KanbanTagUpsertRequestDto("java", "#00FF00", null, true),
 						new KanbanTagUpsertRequestDto("devops", "#112233", null, true)
@@ -81,9 +74,8 @@ class KanbanTagServiceImplTest {
 	void kanbanTagCreateBulk_shouldRejectEmptyPayload() {
 		User user = User.builder().id(UUID.randomUUID()).email("kanban.tag@test.com").build();
 		UUID trackerId = UUID.randomUUID();
-		UUID boardId = UUID.randomUUID();
 
-		assertThatThrownBy(() -> service.kanbanTagCreateBulk(user, trackerId, boardId, List.of()))
+		assertThatThrownBy(() -> service.kanbanTagCreateBulk(user, trackerId, List.of()))
 				.isInstanceOf(InvalidKanbanException.class)
 				.hasMessageContaining("at least one item");
 

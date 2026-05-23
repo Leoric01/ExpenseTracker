@@ -31,7 +31,6 @@ class KanbanTagControllerIntegrationTest {
 
 	private String jwtToken;
 	private UUID trackerId;
-	private UUID boardId;
 
 	@BeforeEach
 	void setUp() throws Exception {
@@ -57,26 +56,18 @@ class KanbanTagControllerIntegrationTest {
 				.andReturn();
 		trackerId = UUID.fromString(extractJsonString(tracker.getResponse().getContentAsString(), "id"));
 
-		MvcResult board = mockMvc.perform(post("/api/kanban-board/{trackerId}", trackerId)
-						.header("Authorization", "Bearer " + jwtToken)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"name\":\"Implementation Board\",\"description\":\"desc\"}"))
-				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.id", notNullValue()))
-				.andReturn();
-		boardId = UUID.fromString(extractJsonString(board.getResponse().getContentAsString(), "id"));
 	}
 
 	@Test
 	void kanbanTagList_shouldReturn401WhenNotAuthenticated() throws Exception {
-		mockMvc.perform(get("/api/kanban-tag/{trackerId}/{boardId}", trackerId, boardId))
+		mockMvc.perform(get("/api/kanban-tag/{trackerId}", trackerId))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.businessErrorCode", is("B-1001")));
 	}
 
 	@Test
 	void kanbanTagLifecycle_andDuplicate_shouldWork() throws Exception {
-		MvcResult create = mockMvc.perform(post("/api/kanban-tag/{trackerId}/{boardId}", trackerId, boardId)
+		MvcResult create = mockMvc.perform(post("/api/kanban-tag/{trackerId}", trackerId)
 						.header("Authorization", "Bearer " + jwtToken)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"name\":\"backend\",\"color\":\"#aa00ff\"}"))
@@ -86,21 +77,21 @@ class KanbanTagControllerIntegrationTest {
 				.andReturn();
 		UUID tagId = UUID.fromString(extractJsonString(create.getResponse().getContentAsString(), "id"));
 
-		mockMvc.perform(post("/api/kanban-tag/{trackerId}/{boardId}", trackerId, boardId)
+		mockMvc.perform(post("/api/kanban-tag/{trackerId}", trackerId)
 						.header("Authorization", "Bearer " + jwtToken)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"name\":\"backend\",\"color\":\"#00ff00\"}"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.businessErrorCode", is("B-5307")));
 
-		mockMvc.perform(patch("/api/kanban-tag/{trackerId}/{boardId}/{tagId}", trackerId, boardId, tagId)
+		mockMvc.perform(patch("/api/kanban-tag/{trackerId}/{tagId}", trackerId, tagId)
 						.header("Authorization", "Bearer " + jwtToken)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"name\":\"devops\",\"color\":\"#00cc11\",\"active\":true}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.name", is("devops")));
 
-		mockMvc.perform(get("/api/kanban-tag/{trackerId}/{boardId}", trackerId, boardId)
+		mockMvc.perform(get("/api/kanban-tag/{trackerId}", trackerId)
 						.header("Authorization", "Bearer " + jwtToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(1)))
@@ -109,13 +100,13 @@ class KanbanTagControllerIntegrationTest {
 
 	@Test
 	void kanbanTagBulkCreate_shouldCreateMultipleTags() throws Exception {
-		mockMvc.perform(post("/api/kanban-tag/{trackerId}/{boardId}/bulk", trackerId, boardId)
+		mockMvc.perform(post("/api/kanban-tag/{trackerId}/bulk", trackerId)
 						.header("Authorization", "Bearer " + jwtToken)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								[
-								  {\"name\":\"java\",\"color\":\"#ff00aa\"},
-								  {\"name\":\"python\",\"color\":\"#00ff00\"}
+								  {"name":"java","color":"#ff00aa"},
+								  {"name":"python","color":"#00ff00"}
 								]
 								"""))
 				.andExpect(status().isCreated())
@@ -126,7 +117,7 @@ class KanbanTagControllerIntegrationTest {
 
 	@Test
 	void kanbanTagBulkCreate_shouldRejectEmptyPayload() throws Exception {
-		mockMvc.perform(post("/api/kanban-tag/{trackerId}/{boardId}/bulk", trackerId, boardId)
+		mockMvc.perform(post("/api/kanban-tag/{trackerId}/bulk", trackerId)
 						.header("Authorization", "Bearer " + jwtToken)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("[]"))

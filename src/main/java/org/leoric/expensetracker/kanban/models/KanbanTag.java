@@ -8,13 +8,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.UuidGenerator;
+import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -25,9 +25,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "kanban_tag", uniqueConstraints = {
-		@UniqueConstraint(columnNames = {"kanban_board_id", "name", "is_deleted"})
-})
+@Table(name = "kanban_tag")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -42,8 +40,8 @@ public class KanbanTag {
 	private UUID id;
 
 	@ManyToOne(optional = false, fetch = FetchType.LAZY)
-	@JoinColumn(name = "kanban_board_id", nullable = false)
-	private KanbanBoard board;
+	@JoinColumn(nullable = false)
+	private ExpenseTracker expenseTracker;
 
 	@Column(nullable = false, length = 80)
 	private String name;

@@ -4,7 +4,6 @@ import org.leoric.expensetracker.kanban.models.KanbanCard;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,5 +23,5 @@ public interface KanbanCardRepository extends JpaRepository<KanbanCard, UUID> {
 
 	List<KanbanCard> findByStageBoardIdAndStageId(UUID boardId, UUID stageId);
 
-	List<KanbanCard> findByIdIn(Collection<UUID> ids);
+	List<KanbanCard> findByStageIdOrderByCardOrderAscTitleAsc(UUID stageId);
 }

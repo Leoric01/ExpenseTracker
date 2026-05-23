@@ -3,10 +3,12 @@ package org.leoric.expensetracker.kanban.mapstruct;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardDetailResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanStageResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanTagResponseDto;
 import org.leoric.expensetracker.kanban.models.KanbanBoard;
 import org.leoric.expensetracker.kanban.models.KanbanCard;
+import org.leoric.expensetracker.kanban.models.KanbanChecklistItem;
 import org.leoric.expensetracker.kanban.models.KanbanStage;
 import org.leoric.expensetracker.kanban.models.KanbanTag;
 import org.mapstruct.Mapper;
@@ -69,7 +71,23 @@ public interface KanbanMapper {
 		);
 	}
 
-	default KanbanCardResponseDto toCardResponse(KanbanCard card, List<KanbanTagResponseDto> tags) {
+	default KanbanChecklistItemResponseDto toChecklistItemResponse(KanbanChecklistItem item) {
+		return new KanbanChecklistItemResponseDto(
+				item.getId(),
+				item.getTitle(),
+				item.isCompleted(),
+				toOffsetDateTime(item.getCompletedDate()),
+				item.getItemOrder(),
+				toOffsetDateTime(item.getCreatedDate()),
+				toOffsetDateTime(item.getLastModifiedDate())
+		);
+	}
+
+	default KanbanCardResponseDto toCardResponse(
+			KanbanCard card,
+			List<KanbanTagResponseDto> tags,
+			List<KanbanChecklistItemResponseDto> checklistItems
+	) {
 		return new KanbanCardResponseDto(
 				card.getId(),
 				card.getStage().getId(),
@@ -80,6 +98,7 @@ public interface KanbanMapper {
 				card.getDueDate(),
 				card.getCardOrder(),
 				tags,
+				checklistItems,
 				toOffsetDateTime(card.getCreatedDate()),
 				toOffsetDateTime(card.getLastModifiedDate())
 		);

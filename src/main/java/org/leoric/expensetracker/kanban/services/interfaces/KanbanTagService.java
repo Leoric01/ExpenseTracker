@@ -11,13 +11,13 @@ import java.util.UUID;
 @Service
 public interface KanbanTagService {
 
-	KanbanTagResponseDto kanbanTagCreate(User currentUser, UUID trackerId, UUID boardId, KanbanTagUpsertRequestDto request);
+	KanbanTagResponseDto kanbanTagCreate(User currentUser, UUID trackerId, KanbanTagUpsertRequestDto request);
 
-	List<KanbanTagResponseDto> kanbanTagCreateBulk(User currentUser, UUID trackerId, UUID boardId, List<KanbanTagUpsertRequestDto> request);
+	List<KanbanTagResponseDto> kanbanTagCreateBulk(User currentUser, UUID trackerId, List<KanbanTagUpsertRequestDto> request);
 
-	List<KanbanTagResponseDto> kanbanTagFindAll(User currentUser, UUID trackerId, UUID boardId);
+	List<KanbanTagResponseDto> kanbanTagFindAll(User currentUser, UUID trackerId);
 
-	KanbanTagResponseDto kanbanTagUpdate(User currentUser, UUID trackerId, UUID boardId, UUID tagId, KanbanTagUpsertRequestDto request);
+	KanbanTagResponseDto kanbanTagUpdate(User currentUser, UUID trackerId, UUID tagId, KanbanTagUpsertRequestDto request);
 
-	void kanbanTagDelete(User currentUser, UUID trackerId, UUID boardId, UUID tagId);
+	void kanbanTagDelete(User currentUser, UUID trackerId, UUID tagId);
 }

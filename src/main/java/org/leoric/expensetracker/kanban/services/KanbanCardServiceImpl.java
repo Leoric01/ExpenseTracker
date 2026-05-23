@@ -14,21 +14,29 @@ import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardUpsertRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemReorderItemDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemReorderRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemResponseDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemToggleRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemUpsertRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanStageCardsResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanTagResponseDto;
 import org.leoric.expensetracker.kanban.mapstruct.KanbanMapper;
 import org.leoric.expensetracker.kanban.models.KanbanBoard;
 import org.leoric.expensetracker.kanban.models.KanbanCard;
+import org.leoric.expensetracker.kanban.models.KanbanChecklistItem;
 import org.leoric.expensetracker.kanban.models.KanbanCardStageHistory;
 import org.leoric.expensetracker.kanban.models.KanbanCardTagAssignment;
 import org.leoric.expensetracker.kanban.models.KanbanStage;
 import org.leoric.expensetracker.kanban.models.KanbanTag;
 import org.leoric.expensetracker.kanban.repositories.KanbanBoardRepository;
 import org.leoric.expensetracker.kanban.repositories.KanbanCardRepository;
+import org.leoric.expensetracker.kanban.repositories.KanbanChecklistItemRepository;
 import org.leoric.expensetracker.kanban.repositories.KanbanCardTagAssignmentRepository;
 import org.leoric.expensetracker.kanban.repositories.KanbanStageRepository;
 import org.leoric.expensetracker.kanban.repositories.KanbanTagRepository;
 import org.leoric.expensetracker.kanban.services.interfaces.KanbanCardService;
+import org.leoric.expensetracker.utils.OrderSequenceUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -64,6 +72,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	private final KanbanBoardRepository kanbanBoardRepository;
 	private final KanbanStageRepository kanbanStageRepository;
 	private final KanbanTagRepository kanbanTagRepository;
+	private final KanbanChecklistItemRepository kanbanChecklistItemRepository;
 	private final KanbanCardTagAssignmentRepository kanbanCardTagAssignmentRepository;
 	private final ImageService imageService;
 	private final ExpenseTrackerAccessService expenseTrackerAccessService;
@@ -85,7 +94,18 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		assertHasAccessToTracker(currentUser, trackerId);
 
 		if (!fromStage.getId().equals(toStage.getId())) {
+			List<KanbanCard> sourceCards = new java.util.ArrayList<>(
+					kanbanCardRepository.findByStageIdOrderByCardOrderAscTitleAsc(fromStage.getId())
+			);
+			sourceCards.removeIf(c -> c.getId().equals(card.getId()));
+
+			List<KanbanCard> targetCards = new java.util.ArrayList<>(
+					kanbanCardRepository.findByStageIdOrderByCardOrderAscTitleAsc(toStage.getId())
+			);
+			targetCards.forEach(c -> c.setCardOrder(defaultIfNull(c.getCardOrder()) + 1));
+
 			card.setStage(toStage);
+			card.setCardOrder(0);
 
 			KanbanCardStageHistory history = KanbanCardStageHistory.builder()
 					.card(card)
@@ -98,7 +118,15 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 			if (toStage.isFinalStage() && card.getCompletedDate() == null) {
 				card.setCompletedDate(Instant.now());
 			}
-			kanbanCardRepository.save(card);
+
+			OrderSequenceUtils.normalizeContiguous(sourceCards, KanbanCard::getCardOrder, KanbanCard::setCardOrder);
+			kanbanCardRepository.saveAll(sourceCards);
+
+			List<KanbanCard> targetWithMoved = new java.util.ArrayList<>();
+			targetWithMoved.add(card);
+			targetWithMoved.addAll(targetCards);
+			OrderSequenceUtils.normalizeContiguous(targetWithMoved, KanbanCard::getCardOrder, KanbanCard::setCardOrder);
+			kanbanCardRepository.saveAll(targetWithMoved);
 		}
 
 		return toCardResponse(card);
@@ -112,6 +140,11 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		KanbanStage stage = resolveStage(boardId, request.stageId());
 		assertUniqueTitle(boardId, request.title(), null);
 
+		List<KanbanCard> stageCards = new java.util.ArrayList<>(
+				kanbanCardRepository.findByStageIdOrderByCardOrderAscTitleAsc(stage.getId())
+		);
+		int targetOrder = OrderSequenceUtils.clampTargetOrder(request.cardOrder(), stageCards.size());
+
 		KanbanCard card = KanbanCard.builder()
 				.stage(stage)
 				.title(normalizeTitle(request.title()))
@@ -119,11 +152,12 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 				.imageUrl(normalizeImageUrl(request.imageUrl()))
 				.priority(validatePriority(request.priority()))
 				.dueDate(request.dueDate())
-				.cardOrder(defaultIfNull(request.cardOrder()))
+				.cardOrder(targetOrder)
 				.build();
-
-		card = kanbanCardRepository.save(card);
-		replaceCardTags(boardId, card, request.tagIds());
+		stageCards.add(targetOrder, card);
+		OrderSequenceUtils.normalizeContiguous(stageCards, KanbanCard::getCardOrder, KanbanCard::setCardOrder);
+		kanbanCardRepository.saveAll(stageCards);
+		replaceCardTags(trackerId, card, request.tagIds());
 		return toCardResponse(card);
 	}
 
@@ -171,17 +205,166 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		KanbanStage stage = resolveStage(boardId, request.stageId());
 		assertUniqueTitle(boardId, request.title(), cardId);
 
+		boolean stageChanged = !card.getStage().getId().equals(stage.getId());
+		KanbanStage previousStage = card.getStage();
 		card.setStage(stage);
 		card.setTitle(normalizeTitle(request.title()));
 		card.setDescription(normalizeNullable(request.description()));
 		card.setImageUrl(normalizeImageUrl(request.imageUrl()));
 		card.setPriority(validatePriority(request.priority()));
 		card.setDueDate(request.dueDate());
-		card.setCardOrder(defaultIfNull(request.cardOrder()));
+		if (stageChanged) {
+			List<KanbanCard> sourceCards = new java.util.ArrayList<>(
+					kanbanCardRepository.findByStageIdOrderByCardOrderAscTitleAsc(previousStage.getId())
+			);
+			sourceCards.removeIf(c -> c.getId().equals(card.getId()));
+			OrderSequenceUtils.normalizeContiguous(sourceCards, KanbanCard::getCardOrder, KanbanCard::setCardOrder);
+			kanbanCardRepository.saveAll(sourceCards);
 
-		card = kanbanCardRepository.save(card);
-		replaceCardTags(boardId, card, request.tagIds());
+			List<KanbanCard> targetCards = new java.util.ArrayList<>(
+					kanbanCardRepository.findByStageIdOrderByCardOrderAscTitleAsc(stage.getId())
+			);
+			targetCards.forEach(c -> c.setCardOrder(defaultIfNull(c.getCardOrder()) + 1));
+			card.setCardOrder(0);
+			List<KanbanCard> targetWithUpdated = new java.util.ArrayList<>();
+			targetWithUpdated.add(card);
+			targetWithUpdated.addAll(targetCards);
+			OrderSequenceUtils.normalizeContiguous(targetWithUpdated, KanbanCard::getCardOrder, KanbanCard::setCardOrder);
+			kanbanCardRepository.saveAll(targetWithUpdated);
+		} else {
+			List<KanbanCard> stageCards = new java.util.ArrayList<>(
+					kanbanCardRepository.findByStageIdOrderByCardOrderAscTitleAsc(stage.getId())
+			);
+			stageCards.removeIf(c -> c.getId().equals(card.getId()));
+			int targetOrder = OrderSequenceUtils.clampTargetOrder(
+					request.cardOrder() == null ? card.getCardOrder() : request.cardOrder(),
+					stageCards.size()
+			);
+			stageCards.add(targetOrder, card);
+			OrderSequenceUtils.normalizeContiguous(stageCards, KanbanCard::getCardOrder, KanbanCard::setCardOrder);
+			kanbanCardRepository.saveAll(stageCards);
+		}
+
+		replaceCardTags(trackerId, card, request.tagIds());
 		return toCardResponse(card);
+	}
+
+	@Override
+	@Transactional
+	public KanbanCardResponseDto kanbanChecklistItemCreate(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanChecklistItemUpsertRequestDto request) {
+		KanbanCard card = getCardOrThrow(cardId);
+		assertCardBelongsToBoard(card, boardId, trackerId);
+
+		List<KanbanChecklistItem> items = new java.util.ArrayList<>(
+				kanbanChecklistItemRepository.findByCardIdOrderByItemOrderAscTitleAsc(cardId)
+		);
+		int targetOrder = request.itemOrder() == null
+				? items.size()
+				: OrderSequenceUtils.clampTargetOrder(request.itemOrder(), items.size());
+
+		KanbanChecklistItem item = KanbanChecklistItem.builder()
+				.card(card)
+				.title(normalizeChecklistTitle(request.title()))
+				.itemOrder(targetOrder)
+				.completed(false)
+				.completedDate(null)
+				.build();
+
+		items.add(targetOrder, item);
+		OrderSequenceUtils.normalizeContiguous(items, KanbanChecklistItem::getItemOrder, KanbanChecklistItem::setItemOrder);
+		kanbanChecklistItemRepository.saveAll(items);
+		return toCardResponse(card);
+	}
+
+	@Override
+	@Transactional
+	public KanbanCardResponseDto kanbanChecklistItemUpdate(User currentUser, UUID trackerId, UUID boardId, UUID cardId, UUID itemId, KanbanChecklistItemUpsertRequestDto request) {
+		KanbanCard card = getCardOrThrow(cardId);
+		assertCardBelongsToBoard(card, boardId, trackerId);
+		KanbanChecklistItem item = getChecklistItemOrThrow(cardId, itemId);
+
+		item.setTitle(normalizeChecklistTitle(request.title()));
+
+		List<KanbanChecklistItem> items = new java.util.ArrayList<>(
+				kanbanChecklistItemRepository.findByCardIdOrderByItemOrderAscTitleAsc(cardId)
+		);
+		items.removeIf(i -> i.getId().equals(itemId));
+		int targetOrder = OrderSequenceUtils.clampTargetOrder(
+				request.itemOrder() == null ? item.getItemOrder() : request.itemOrder(),
+				items.size()
+		);
+		items.add(targetOrder, item);
+		OrderSequenceUtils.normalizeContiguous(items, KanbanChecklistItem::getItemOrder, KanbanChecklistItem::setItemOrder);
+		kanbanChecklistItemRepository.saveAll(items);
+		return toCardResponse(card);
+	}
+
+	@Override
+	@Transactional
+	public KanbanCardResponseDto kanbanChecklistItemToggle(User currentUser, UUID trackerId, UUID boardId, UUID cardId, UUID itemId, KanbanChecklistItemToggleRequestDto request) {
+		KanbanCard card = getCardOrThrow(cardId);
+		assertCardBelongsToBoard(card, boardId, trackerId);
+		KanbanChecklistItem item = getChecklistItemOrThrow(cardId, itemId);
+
+		if (Boolean.TRUE.equals(request.completed())) {
+			item.setCompleted(true);
+			item.setCompletedDate(Instant.now());
+		} else {
+			item.setCompleted(false);
+			item.setCompletedDate(null);
+		}
+		kanbanChecklistItemRepository.save(item);
+		return toCardResponse(card);
+	}
+
+	@Override
+	@Transactional
+	public KanbanCardResponseDto kanbanChecklistItemReorder(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanChecklistItemReorderRequestDto request) {
+		KanbanCard card = getCardOrThrow(cardId);
+		assertCardBelongsToBoard(card, boardId, trackerId);
+
+		if (request.items() == null || request.items().isEmpty()) {
+			throw new InvalidKanbanException("Reorder payload must contain at least one item");
+		}
+
+		Set<UUID> ids = request.items().stream().map(KanbanChecklistItemReorderItemDto::itemId).collect(Collectors.toSet());
+		if (ids.size() != request.items().size()) {
+			throw new InvalidKanbanException("Reorder payload contains duplicate checklist item ids");
+		}
+
+		List<KanbanChecklistItem> items = kanbanChecklistItemRepository.findByCardIdAndIdIn(cardId, ids);
+		if (items.size() != ids.size()) {
+			throw new InvalidKanbanException("Some checklist items were not found on this card");
+		}
+
+		int itemCount = kanbanChecklistItemRepository.findByCardIdOrderByItemOrderAscTitleAsc(cardId).size();
+		if (ids.size() != itemCount) {
+			throw new InvalidKanbanException("Reorder payload must contain all checklist items on this card");
+		}
+
+		OrderSequenceUtils.validateContiguous(request.items(), KanbanChecklistItemReorderItemDto::itemOrder, "itemOrder");
+
+		Map<UUID, KanbanChecklistItem> byId = items.stream().collect(Collectors.toMap(KanbanChecklistItem::getId, java.util.function.Function.identity()));
+		for (KanbanChecklistItemReorderItemDto reorderItem : request.items()) {
+			byId.get(reorderItem.itemId()).setItemOrder(reorderItem.itemOrder());
+		}
+		kanbanChecklistItemRepository.saveAll(items);
+		return toCardResponse(card);
+	}
+
+	@Override
+	@Transactional
+	public void kanbanChecklistItemDelete(User currentUser, UUID trackerId, UUID boardId, UUID cardId, UUID itemId) {
+		KanbanCard card = getCardOrThrow(cardId);
+		assertCardBelongsToBoard(card, boardId, trackerId);
+		KanbanChecklistItem item = getChecklistItemOrThrow(cardId, itemId);
+		kanbanChecklistItemRepository.delete(item);
+
+		List<KanbanChecklistItem> remaining = new java.util.ArrayList<>(
+				kanbanChecklistItemRepository.findByCardIdOrderByItemOrderAscTitleAsc(cardId)
+		);
+		OrderSequenceUtils.normalizeContiguous(remaining, KanbanChecklistItem::getItemOrder, KanbanChecklistItem::setItemOrder);
+		kanbanChecklistItemRepository.saveAll(remaining);
 	}
 
 	@Override
@@ -231,7 +414,14 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	public void kanbanCardDelete(User currentUser, UUID trackerId, UUID boardId, UUID cardId) {
 		KanbanCard card = getCardOrThrow(cardId);
 		assertCardBelongsToBoard(card, boardId, trackerId);
+		UUID stageId = card.getStage().getId();
 		kanbanCardRepository.delete(card);
+
+		List<KanbanCard> remaining = new java.util.ArrayList<>(
+				kanbanCardRepository.findByStageIdOrderByCardOrderAscTitleAsc(stageId)
+		);
+		OrderSequenceUtils.normalizeContiguous(remaining, KanbanCard::getCardOrder, KanbanCard::setCardOrder);
+		kanbanCardRepository.saveAll(remaining);
 	}
 
 	private List<KanbanCardResponseDto> buildStageCards(List<KanbanCard> stageCards, Map<UUID, List<KanbanTag>> tagsByCardId) {
@@ -246,7 +436,12 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 							.stream()
 							.map(kanbanMapper::toTagResponse)
 							.toList();
-					return kanbanMapper.toCardResponse(card, tags);
+					List<KanbanChecklistItemResponseDto> checklistItems = kanbanChecklistItemRepository
+							.findByCardIdOrderByItemOrderAscTitleAsc(card.getId())
+							.stream()
+							.map(kanbanMapper::toChecklistItemResponse)
+							.toList();
+					return kanbanMapper.toCardResponse(card, tags, checklistItems);
 				})
 				.toList();
 	}
@@ -257,23 +452,28 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 				.stream()
 				.map(kanbanMapper::toTagResponse)
 				.toList();
-		return kanbanMapper.toCardResponse(card, tags);
+		List<KanbanChecklistItemResponseDto> checklistItems = kanbanChecklistItemRepository
+				.findByCardIdOrderByItemOrderAscTitleAsc(card.getId())
+				.stream()
+				.map(kanbanMapper::toChecklistItemResponse)
+				.toList();
+		return kanbanMapper.toCardResponse(card, tags, checklistItems);
 	}
 
-	private void replaceCardTags(UUID boardId, KanbanCard card, List<UUID> tagIds) {
+	private void replaceCardTags(UUID trackerId, KanbanCard card, List<UUID> tagIds) {
 		kanbanCardTagAssignmentRepository.deleteByCardId(card.getId());
 		if (tagIds == null || tagIds.isEmpty()) {
 			return;
 		}
 
-		List<KanbanTag> tags = resolveExistingTags(boardId, tagIds);
+		List<KanbanTag> tags = resolveExistingTags(trackerId, tagIds);
 		List<KanbanCardTagAssignment> assignments = tags.stream()
 				.map(tag -> KanbanCardTagAssignment.builder().card(card).tag(tag).build())
 				.toList();
 		kanbanCardTagAssignmentRepository.saveAll(assignments);
 	}
 
-	private List<KanbanTag> resolveExistingTags(UUID boardId, List<UUID> tagIds) {
+	private List<KanbanTag> resolveExistingTags(UUID trackerId, List<UUID> tagIds) {
 		Set<UUID> uniqueTagIds = tagIds.stream()
 				.filter(java.util.Objects::nonNull)
 				.collect(Collectors.toCollection(HashSet::new));
@@ -282,9 +482,9 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 			throw new InvalidKanbanException("tagIds must contain at least one valid id");
 		}
 
-		List<KanbanTag> tags = kanbanTagRepository.findByBoardIdAndIdInAndIsDeletedFalse(boardId, uniqueTagIds);
+		List<KanbanTag> tags = kanbanTagRepository.findByExpenseTrackerIdAndIdInAndIsDeletedFalse(trackerId, uniqueTagIds);
 		if (tags.size() != uniqueTagIds.size()) {
-			throw new KanbanTagNotFoundException("Some kanban tags were not found on this board");
+			throw new KanbanTagNotFoundException("Some kanban tags were not found on this expense tracker");
 		}
 		return tags;
 	}
@@ -341,6 +541,11 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	private KanbanStage getStageOrThrow(UUID stageId) {
 		return kanbanStageRepository.findByIdAndIsDeletedFalse(stageId)
 				.orElseThrow(() -> new KanbanStageNotFoundException("Kanban stage not found with id: " + stageId));
+	}
+
+	private KanbanChecklistItem getChecklistItemOrThrow(UUID cardId, UUID itemId) {
+		return kanbanChecklistItemRepository.findByCardIdAndId(cardId, itemId)
+				.orElseThrow(() -> new InvalidKanbanException("Checklist item not found on this card"));
 	}
 
 	private void assertBoardBelongsToTracker(KanbanBoard board, UUID trackerId) {
@@ -406,5 +611,12 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 
 	private Integer defaultIfNull(Integer value) {
 		return value == null ? 0 : value;
+	}
+
+	private String normalizeChecklistTitle(String title) {
+		if (title == null || title.isBlank()) {
+			throw new InvalidKanbanException("Checklist item title is required");
+		}
+		return title.trim();
 	}
 }

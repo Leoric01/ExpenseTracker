@@ -15,6 +15,7 @@ public record KanbanCardResponseDto(
 		LocalDate dueDate,
 		Integer cardOrder,
 		List<KanbanTagResponseDto> tags,
+		List<KanbanChecklistItemResponseDto> checklistItems,
 		OffsetDateTime createdDate,
 		OffsetDateTime lastModifiedDate
 ) {
