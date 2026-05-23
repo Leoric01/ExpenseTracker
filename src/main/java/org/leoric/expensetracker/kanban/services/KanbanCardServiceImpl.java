@@ -12,6 +12,8 @@ import org.leoric.expensetracker.handler.exceptions.KanbanStageNotFoundException
 import org.leoric.expensetracker.handler.exceptions.KanbanTagNotFoundException;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanCardReorderItemDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanCardReorderRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardUpsertRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemReorderItemDto;
@@ -154,6 +156,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 				.dueDate(request.dueDate())
 				.cardOrder(targetOrder)
 				.build();
+		applyCardCompletion(card, request.completed());
 		stageCards.add(targetOrder, card);
 		OrderSequenceUtils.normalizeContiguous(stageCards, KanbanCard::getCardOrder, KanbanCard::setCardOrder);
 		kanbanCardRepository.saveAll(stageCards);
@@ -213,6 +216,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		card.setImageUrl(normalizeImageUrl(request.imageUrl()));
 		card.setPriority(validatePriority(request.priority()));
 		card.setDueDate(request.dueDate());
+		applyCardCompletion(card, request.completed());
 		if (stageChanged) {
 			List<KanbanCard> sourceCards = new java.util.ArrayList<>(
 					kanbanCardRepository.findByStageIdOrderByCardOrderAscTitleAsc(previousStage.getId())
@@ -247,6 +251,46 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 
 		replaceCardTags(trackerId, card, request.tagIds());
 		return toCardResponse(card);
+	}
+
+	@Override
+	@Transactional
+	public void kanbanCardReorder(User currentUser, UUID trackerId, UUID boardId, KanbanCardReorderRequestDto request) {
+		KanbanBoard board = getBoardOrThrow(boardId);
+		assertBoardBelongsToTracker(board, trackerId);
+		assertHasAccessToTracker(currentUser, trackerId);
+
+		if (request.items() == null || request.items().isEmpty()) {
+			throw new InvalidKanbanException("Reorder payload must contain at least one item");
+		}
+
+		KanbanStage stage = getStageOrThrow(request.stageId());
+		if (!stage.getBoard().getId().equals(boardId)) {
+			throw new KanbanStageNotFoundException("Kanban stage not found on this board");
+		}
+
+		Set<UUID> ids = request.items().stream().map(KanbanCardReorderItemDto::cardId).collect(Collectors.toSet());
+		if (ids.size() != request.items().size()) {
+			throw new InvalidKanbanException("Reorder payload contains duplicate card ids");
+		}
+
+		List<KanbanCard> cards = kanbanCardRepository.findByStageIdAndIdIn(stage.getId(), ids);
+		if (cards.size() != ids.size()) {
+			throw new KanbanCardNotFoundException("Some kanban cards were not found on this stage");
+		}
+
+		int stageCardCount = kanbanCardRepository.findByStageIdOrderByCardOrderAscTitleAsc(stage.getId()).size();
+		if (ids.size() != stageCardCount) {
+			throw new InvalidKanbanException("Reorder payload must contain all cards on this stage");
+		}
+
+		OrderSequenceUtils.validateContiguous(request.items(), KanbanCardReorderItemDto::cardOrder, "cardOrder");
+
+		Map<UUID, KanbanCard> byId = cards.stream().collect(Collectors.toMap(KanbanCard::getId, java.util.function.Function.identity()));
+		for (KanbanCardReorderItemDto item : request.items()) {
+			byId.get(item.cardId()).setCardOrder(item.cardOrder());
+		}
+		kanbanCardRepository.saveAll(cards);
 	}
 
 	@Override
@@ -618,5 +662,16 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 			throw new InvalidKanbanException("Checklist item title is required");
 		}
 		return title.trim();
+	}
+
+	private void applyCardCompletion(KanbanCard card, Boolean completed) {
+		if (completed == null) {
+			return;
+		}
+		if (completed) {
+			card.setCompletedDate(Instant.now());
+		} else {
+			card.setCompletedDate(null);
+		}
 	}
 }

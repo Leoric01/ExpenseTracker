@@ -2,6 +2,7 @@ package org.leoric.expensetracker.kanban.services.interfaces;
 
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanCardReorderRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardUpsertRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemReorderRequestDto;
@@ -22,6 +23,8 @@ public interface KanbanCardService {
 	KanbanCardResponseDto kanbanCardFindById(User currentUser, UUID trackerId, UUID boardId, UUID cardId);
 
 	KanbanCardResponseDto kanbanCardUpdate(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanCardUpsertRequestDto request);
+
+	void kanbanCardReorder(User currentUser, UUID trackerId, UUID boardId, KanbanCardReorderRequestDto request);
 
 	KanbanCardResponseDto kanbanChecklistItemCreate(User currentUser, UUID trackerId, UUID boardId, UUID cardId, KanbanChecklistItemUpsertRequestDto request);
 

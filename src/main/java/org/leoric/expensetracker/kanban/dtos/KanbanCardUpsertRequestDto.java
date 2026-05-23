@@ -26,6 +26,7 @@ public record KanbanCardUpsertRequestDto(
 		@Max(value = 10, message = "Priority must be <= 10")
 		Integer priority,
 		LocalDate dueDate,
+		Boolean completed,
 		@PositiveOrZero(message = "Card order must be >= 0")
 		Integer cardOrder,
 		List<UUID> tagIds

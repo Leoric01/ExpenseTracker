@@ -96,6 +96,7 @@ public interface KanbanMapper {
 				card.getImageUrl(),
 				card.getPriority(),
 				card.getDueDate(),
+				toOffsetDateTime(card.getCompletedDate()),
 				card.getCardOrder(),
 				tags,
 				checklistItems,

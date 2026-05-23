@@ -13,6 +13,7 @@ public record KanbanCardResponseDto(
 		String imageUrl,
 		Integer priority,
 		LocalDate dueDate,
+		OffsetDateTime completedDate,
 		Integer cardOrder,
 		List<KanbanTagResponseDto> tags,
 		List<KanbanChecklistItemResponseDto> checklistItems,

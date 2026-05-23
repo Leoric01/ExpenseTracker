@@ -2,6 +2,7 @@ package org.leoric.expensetracker.kanban.repositories;
 
 import org.leoric.expensetracker.kanban.models.KanbanCardTagAssignment;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -22,7 +23,11 @@ public interface KanbanCardTagAssignmentRepository extends JpaRepository<KanbanC
 			""")
 	List<KanbanCardTagAssignment> findAllByCardIdsWithTag(@Param("cardIds") Collection<UUID> cardIds);
 
-	void deleteByCardId(UUID cardId);
+	@Modifying(flushAutomatically = true)
+	@Query("DELETE FROM KanbanCardTagAssignment a WHERE a.card.id = :cardId")
+	void deleteByCardId(@Param("cardId") UUID cardId);
 
-	void deleteByTagId(UUID tagId);
+	@Modifying(flushAutomatically = true)
+	@Query("DELETE FROM KanbanCardTagAssignment a WHERE a.tag.id = :tagId")
+	void deleteByTagId(@Param("tagId") UUID tagId);
 }

@@ -6,6 +6,7 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardMoveStageRequestDto;
+import org.leoric.expensetracker.kanban.dtos.KanbanCardReorderRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardUpsertRequestDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanChecklistItemReorderRequestDto;
@@ -94,6 +95,18 @@ public class KanbanCardController {
 	) {
 		assertMemberOrOwner(trackerId, currentUser);
 		return ResponseEntity.ok(kanbanCardService.kanbanCardMove(currentUser, trackerId, cardId, request.targetStageId()));
+	}
+
+	@PatchMapping("/{trackerId}/{boardId}/reorder")
+	public ResponseEntity<Void> kanbanCardReorder(
+			@AuthenticationPrincipal User currentUser,
+			@PathVariable UUID trackerId,
+			@PathVariable UUID boardId,
+			@Valid @RequestBody KanbanCardReorderRequestDto request
+	) {
+		assertMemberOrOwner(trackerId, currentUser);
+		kanbanCardService.kanbanCardReorder(currentUser, trackerId, boardId, request);
+		return ResponseEntity.noContent().build();
 	}
 
 	@DeleteMapping("/{trackerId}/{boardId}/{cardId}")
