@@ -56,6 +56,7 @@ public enum BusinessErrorCodes {
 	KANBAN_CARD_NOT_FOUND("B-5306", NOT_FOUND, "Kanban card was not found"),
 	DUPLICATE_KANBAN_TAG_NAME("B-5307", CONFLICT, "A kanban tag with this name already exists in this board"),
 	KANBAN_TAG_NOT_FOUND("B-5308", NOT_FOUND, "Kanban tag was not found"),
+	INVALID_WORKOUT("B-5401", BAD_REQUEST, "Workout validation failed"),
 	DUPLICATE_WIDGET_ITEM_ENTITY_IDS("B-6001", BAD_REQUEST, "Widget reorder contains duplicate entity ids"),
 	WIDGET_ITEM_REORDER_MISMATCH("B-6002", BAD_REQUEST, "Widget reorder payload does not match existing widget items"),
 	TRANSFER_AMOUNT_INPUT_MISSING("B-7001", BAD_REQUEST, "Transfer V2 requires amount or settled amount input"),

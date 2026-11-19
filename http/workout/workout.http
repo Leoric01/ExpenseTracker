@@ -1,0 +1,42 @@
+### One plan per tracker. Replace the full plan with PUT; no plan is seeded automatically.
+### Requires a bearer token. Only the tracker owner can edit the plan.
+PUT {{host}}/api/workout/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "title": "Tréninkový checklist",
+  "weekLabel": "Aktuální plán",
+  "days": [
+    {
+      "id": "monday",
+      "label": "Po",
+      "name": "Push",
+      "focus": "Hrudník, ramena, triceps",
+      "exercises": [
+        {"id": "pushups", "name": "Kliky", "sets": "2 × 6–12", "description": "Klasické nebo s vyvýšenou oporou"},
+        {"id": "plank", "name": "Plank", "sets": "2 × 20–40 s"}
+      ]
+    }
+  ]
+}
+
+### Returns the plan with a completed boolean on each exercise. Owner and members may read it.
+GET {{host}}/api/workout/{{tracker_id}}
+Authorization: Bearer {{auth_token}}
+
+### Owner and members may set or unset a completion.
+PUT {{host}}/api/workout/{{tracker_id}}/days/monday/exercises/pushups/completion
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{"completed": true}
+
+### Reset all completions. There is no automatic weekly reset or history.
+DELETE {{host}}/api/workout/{{tracker_id}}/completion
+Authorization: Bearer {{auth_token}}
+
+### Day IDs must be unique in the plan; exercise IDs must be unique within their day.
+### IDs use lowercase letters, digits, underscores or hyphens and begin with a letter or digit.
+### A plan replacement preserves completion for unchanged day/exercise ID pairs.
+### Removing or changing an ID deletes its completion. Order follows the input arrays.

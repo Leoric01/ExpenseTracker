@@ -14,6 +14,7 @@ import org.leoric.expensetracker.handler.exceptions.DuplicateCategoryNameExcepti
 import org.leoric.expensetracker.handler.exceptions.IncorrectCurrentPasswordException;
 import org.leoric.expensetracker.handler.exceptions.InsufficientRoleException;
 import org.leoric.expensetracker.handler.exceptions.InvalidHabitException;
+import org.leoric.expensetracker.handler.exceptions.InvalidWorkoutException;
 import org.leoric.expensetracker.handler.exceptions.InvalidHabitCompletionException;
 import org.leoric.expensetracker.handler.exceptions.NewPasswordDoesNotMatchException;
 import org.leoric.expensetracker.handler.exceptions.NotAuthorizedForThisExpenseTrackerException;
@@ -243,6 +244,12 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ExceptionResponse> handleInvalidHabitException(InvalidHabitException ex) {
 		log.warn("[{}] {}", INVALID_HABIT.getCode(), ex.getMessage(), ex);
 		return build(INVALID_HABIT, ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidWorkoutException.class)
+	public ResponseEntity<ExceptionResponse> handleInvalidWorkoutException(InvalidWorkoutException ex) {
+		log.warn("[{}] {}", INVALID_WORKOUT.getCode(), ex.getMessage(), ex);
+		return build(INVALID_WORKOUT, ex.getMessage());
 	}
 
 	@ExceptionHandler(HabitNotFoundException.class)
