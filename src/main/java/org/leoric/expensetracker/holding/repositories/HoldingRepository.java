@@ -18,6 +18,12 @@ public interface HoldingRepository extends JpaRepository<Holding, UUID> {
 	@Query("""
 			SELECT h FROM Holding h
 			WHERE h.account.institution.expenseTracker.id = :trackerId
+			""")
+	List<Holding> findAllByExpenseTrackerId(@Param("trackerId") UUID trackerId);
+
+	@Query("""
+			SELECT h FROM Holding h
+			WHERE h.account.institution.expenseTracker.id = :trackerId
 			AND h.active = true
 			""")
 	List<Holding> findByExpenseTrackerIdAndActiveTrue(@Param("trackerId") UUID trackerId);

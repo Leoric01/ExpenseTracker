@@ -5,6 +5,7 @@ import org.leoric.expensetracker.holding.dto.CreateHoldingRequestDto;
 import org.leoric.expensetracker.holding.dto.HoldingLiteResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingSummaryResponseDto;
+import org.leoric.expensetracker.holding.dto.UpdateInitialValuationRequestDto;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,8 @@ import java.util.UUID;
 public interface HoldingService {
 
 	HoldingResponseDto holdingCreate(User currentUser, UUID trackerId, CreateHoldingRequestDto request);
+
+	HoldingResponseDto updateInitialValuation(User currentUser, UUID trackerId, UUID holdingId, UpdateInitialValuationRequestDto request);
 
 	HoldingResponseDto holdingFindById(User currentUser, UUID trackerId, UUID holdingId);
 

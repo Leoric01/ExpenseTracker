@@ -10,13 +10,17 @@ import org.leoric.expensetracker.transaction.dto.TransactionAmountRateMode;
 import org.leoric.expensetracker.transaction.dto.TransactionFilter;
 import org.leoric.expensetracker.transaction.dto.TransactionPageResponseDto;
 import org.leoric.expensetracker.transaction.dto.TransactionResponseDto;
+import org.leoric.expensetracker.transaction.dto.ManualTransactionValuationRequestDto;
+import org.leoric.expensetracker.transaction.dto.TransactionValuationResponseDto;
 import org.leoric.expensetracker.transaction.dto.UpdateTransactionRequestDto;
 import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
 import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.services.interfaces.TransactionService;
+import org.leoric.expensetracker.transaction.services.ManualTransactionValuationService;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -44,6 +48,22 @@ public class TransactionController {
 
 	private final TransactionService transactionService;
 	private final ExpenseTrackerAccessService expenseTrackerAccessService;
+	private final ManualTransactionValuationService manualValuations;
+
+	@GetMapping(value = "/{trackerId}/{transactionId}/valuation", produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<TransactionValuationResponseDto> transactionValuation(
+			@AuthenticationPrincipal User currentUser, @PathVariable UUID trackerId, @PathVariable UUID transactionId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(manualValuations.get(trackerId, transactionId));
+	}
+
+	@PatchMapping(value = "/{trackerId}/{transactionId}/valuation", produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<TransactionValuationResponseDto> updateTransactionValuation(
+			@AuthenticationPrincipal User currentUser, @PathVariable UUID trackerId, @PathVariable UUID transactionId,
+			@Valid @RequestBody ManualTransactionValuationRequestDto request) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(manualValuations.update(trackerId, transactionId, request));
+	}
 
 	@PostMapping("/{trackerId}")
 	public ResponseEntity<TransactionResponseDto> transactionCreate(

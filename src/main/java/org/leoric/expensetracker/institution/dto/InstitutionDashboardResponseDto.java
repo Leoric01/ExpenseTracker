@@ -1,6 +1,8 @@
 package org.leoric.expensetracker.institution.dto;
 
 import org.leoric.expensetracker.auth.dto.WidgetItemResponseDto;
+import org.leoric.expensetracker.holding.dto.InvestmentPerformanceDto;
+import org.leoric.expensetracker.holding.dto.HoldingPeriodPerformanceDto;
 
 import java.time.Instant;
 import java.util.List;
@@ -12,6 +14,8 @@ public record InstitutionDashboardResponseDto(
 		Integer displayAssetScale,
 		List<WidgetItemResponseDto> widgetOrder,
 		List<InstitutionSummaryResponseDto> institutions,
-		Long grandTotalConverted
+		Long grandTotalConverted,
+		InvestmentPerformanceDto investmentPerformance,
+		HoldingPeriodPerformanceDto periodPerformance
 ) {
 }

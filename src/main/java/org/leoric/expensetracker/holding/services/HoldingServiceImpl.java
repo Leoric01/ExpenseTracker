@@ -8,13 +8,16 @@ import org.leoric.expensetracker.account.repositories.AccountRepository;
 import org.leoric.expensetracker.asset.models.Asset;
 import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.auth.models.User;
+import org.leoric.expensetracker.exchangerate.services.interfaces.ExchangeRateService;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.holding.dto.CreateHoldingRequestDto;
 import org.leoric.expensetracker.holding.dto.HoldingLiteResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingSummaryResponseDto;
+import org.leoric.expensetracker.holding.dto.UpdateInitialValuationRequestDto;
 import org.leoric.expensetracker.holding.mapstruct.HoldingMapper;
 import org.leoric.expensetracker.holding.models.Holding;
+import org.leoric.expensetracker.holding.models.InitialValuationMode;
 import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.holding.services.interfaces.HoldingService;
 import org.leoric.expensetracker.holding.services.interfaces.HoldingSummaryBuilder;
@@ -37,6 +40,9 @@ public class HoldingServiceImpl implements HoldingService {
 	private final AssetRepository assetRepository;
 	private final HoldingSummaryBuilder holdingSummaryBuilder;
 	private final HoldingMapper holdingMapper;
+	private final ExchangeRateService exchangeRateService;
+	private final PortfolioPerformanceService portfolioPerformanceService;
+	private final HoldingSummaryConversionService summaryConversionService;
 
 	@Override
 	@Transactional
@@ -61,11 +67,74 @@ public class HoldingServiceImpl implements HoldingService {
 				.currentAmount(initialAmount)
 				.build();
 
+		if (request.initialValuationMode() != null) {
+			applyInitialValuation(holding, new UpdateInitialValuationRequestDto(request.initialValuationMode(),
+					request.initialValuationAmount(), request.initialValuationAssetId(), request.initialValuationAt()), Instant.now());
+		} else if (request.initialValuationAmount() != null || request.initialValuationAssetId() != null
+				|| request.initialValuationAt() != null) {
+			throw new OperationNotPermittedException("Initial valuation mode is required");
+		}
+
 		holding = holdingRepository.save(holding);
 		log.info("User {} created holding '{}/{}' in account '{}' (tracker '{}')",
 				currentUser.getEmail(), asset.getCode(), account.getName(),
 				account.getInstitution().getName(), account.getInstitution().getExpenseTracker().getName());
 		return holdingMapper.toResponse(holding);
+	}
+
+	@Override
+	@Transactional
+	public HoldingResponseDto updateInitialValuation(User currentUser, UUID trackerId, UUID holdingId,
+			UpdateInitialValuationRequestDto request) {
+		Holding holding = getHoldingOrThrow(holdingId);
+		assertHoldingBelongsToTracker(holding, trackerId);
+		applyInitialValuation(holding, request, holding.getCreatedDate());
+		return holdingMapper.toResponse(holdingRepository.save(holding));
+	}
+
+	private void applyInitialValuation(Holding holding, UpdateInitialValuationRequestDto request, Instant openingAt) {
+		if (openingAt == null) {
+			throw new OperationNotPermittedException("Holding creation time is unavailable");
+		}
+		if (holding.getInitialAmount() == 0) {
+			throw new OperationNotPermittedException("Initial valuation requires a nonzero initial amount");
+		}
+		Asset display = holding.getAccount().getInstitution().getExpenseTracker().getPreferredDisplayAsset();
+		Long marketValue = holding.getOpeningMarketValue();
+		Asset marketAsset = holding.getOpeningMarketValueAsset();
+		Instant observedAt = holding.getOpeningMarketValueObservedAt();
+		if (marketValue == null && display != null) {
+			marketValue = exchangeRateService.convertAmount(holding.getInitialAmount(), holding.getAsset(), display, openingAt);
+			if (marketValue != null) {
+				marketAsset = display;
+				observedAt = Instant.now();
+			} else {
+				log.warn("Opening market valuation unavailable for holding {}", holding.getId());
+			}
+		}
+		if (request.mode() == InitialValuationMode.MANUAL) {
+			if (request.amount() == null || request.amount() < 0 || request.assetId() == null || request.valuationAt() == null
+					|| request.valuationAt().isAfter(openingAt)) {
+				throw new OperationNotPermittedException("Manual initial valuation requires a nonnegative amount, asset and date not later than creation");
+			}
+			holding.setInitialValuationAmount(request.amount());
+			holding.setInitialValuationAsset(assetRepository.findById(request.assetId())
+					.orElseThrow(() -> new EntityNotFoundException("Initial valuation asset not found")));
+			holding.setInitialValuationAt(request.valuationAt());
+		} else if (request.mode() == InitialValuationMode.MARKET) {
+			if (marketValue == null || marketAsset == null) {
+				throw new OperationNotPermittedException("Opening market valuation is unavailable; set a display asset and try again");
+			}
+			holding.setInitialValuationAmount(Math.absExact(marketValue));
+			holding.setInitialValuationAsset(marketAsset);
+			holding.setInitialValuationAt(openingAt);
+		} else {
+			throw new OperationNotPermittedException("Initial valuation mode is required");
+		}
+		holding.setInitialValuationMode(request.mode());
+		holding.setOpeningMarketValue(marketValue);
+		holding.setOpeningMarketValueAsset(marketAsset);
+		holding.setOpeningMarketValueObservedAt(observedAt);
 	}
 
 	@Override
@@ -117,7 +186,11 @@ public class HoldingServiceImpl implements HoldingService {
 	public HoldingSummaryResponseDto holdingSummary(User currentUser, UUID trackerId, UUID holdingId, Instant from, Instant to) {
 		Holding holding = getHoldingOrThrow(holdingId);
 		assertHoldingBelongsToTracker(holding, trackerId);
-		return holdingSummaryBuilder.buildSummary(holding, from, to);
+		HoldingSummaryResponseDto summary = holdingSummaryBuilder.buildSummary(holding, from, to);
+		Asset display = holding.getAccount().getInstitution().getExpenseTracker().getPreferredDisplayAsset();
+		if (display == null) return summary;
+		PortfolioPerformanceService.Result performance = portfolioPerformanceService.calculate(trackerId, display, to);
+		return summaryConversionService.enrich(summary, holding, display, performance);
 	}
 
 	private Account getAccountOrThrow(UUID accountId) {

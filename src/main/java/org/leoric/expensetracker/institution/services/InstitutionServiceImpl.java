@@ -15,8 +15,12 @@ import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.holding.dto.HoldingSummaryResponseDto;
+import org.leoric.expensetracker.holding.dto.HoldingPeriodPerformanceDto;
+import org.leoric.expensetracker.holding.dto.InvestmentPerformanceDto;
 import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.holding.repositories.HoldingRepository;
+import org.leoric.expensetracker.holding.services.HoldingSummaryConversionService;
+import org.leoric.expensetracker.holding.services.PortfolioPerformanceService;
 import org.leoric.expensetracker.holding.services.interfaces.HoldingSummaryBuilder;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
 import org.leoric.expensetracker.institution.dto.AccountSummaryResponseDto;
@@ -61,6 +65,8 @@ public class InstitutionServiceImpl implements InstitutionService {
 	private final InstitutionMapper institutionMapper;
 	private final ImageService imageService;
 	private final ExchangeRateService exchangeRateService;
+	private final HoldingSummaryConversionService holdingSummaryConversionService;
+	private final PortfolioPerformanceService portfolioPerformanceService;
 
 	@Override
 	@Transactional
@@ -173,21 +179,21 @@ public class InstitutionServiceImpl implements InstitutionService {
 
 		List<Institution> institutions = institutionRepository.findByExpenseTrackerIdAndActiveTrue(trackerId);
 
-		LocalDate endDate = to.atZone(ZoneOffset.UTC).toLocalDate();
+		PortfolioPerformanceService.Result performance = displayAsset == null ? null
+				: portfolioPerformanceService.calculate(trackerId, displayAsset, to);
 
 		List<InstitutionSummaryResponseDto> institutionSummaries = institutions.stream()
-				.map(inst -> buildInstitutionSummary(inst, from, to, displayAsset, endDate))
+				.map(inst -> buildInstitutionSummary(inst, from, to, displayAsset, performance))
 				.toList();
 
 		List<WidgetItemResponseDto> widgetOrder = widgetItemService.widgetItemFindAll(currentUser, WidgetType.INSTITUTION);
 
 		Long grandTotalConverted = null;
-		if (displayAsset != null) {
+		if (displayAsset != null && institutionSummaries.stream().allMatch(inst -> inst.convertedTotalBalance() != null)) {
 			grandTotalConverted = institutionSummaries.stream()
 					.map(InstitutionSummaryResponseDto::convertedTotalBalance)
-					.filter(java.util.Objects::nonNull)
 					.mapToLong(Long::longValue)
-					.sum();
+					.reduce(0L, Math::addExact);
 		}
 
 		log.debug("Built institution dashboard for tracker '{}': {} institutions, period {}-{}, displayAsset={}",
@@ -200,7 +206,10 @@ public class InstitutionServiceImpl implements InstitutionService {
 				displayAsset != null ? displayAsset.getScale() : null,
 				widgetOrder,
 				institutionSummaries,
-				grandTotalConverted
+				grandTotalConverted,
+				performance != null ? performance.portfolio() : null,
+				displayAsset != null ? aggregatePeriod(institutionSummaries.stream()
+						.flatMap(inst -> inst.accounts().stream()).flatMap(account -> account.holdings().stream()).toList()) : null
 		);
 	}
 
@@ -209,25 +218,29 @@ public class InstitutionServiceImpl implements InstitutionService {
 	public FinanceHeaderBalancesResponse institutionHeaderBalances(User currentUser, UUID trackerId, Instant from, Instant to) {
 		ExpenseTracker tracker = getTrackerOrThrow(trackerId);
 		Asset displayAsset = tracker.getPreferredDisplayAsset();
-		LocalDate endDate = to.atZone(ZoneOffset.UTC).toLocalDate();
+		Instant now = Instant.now();
+		LocalDate endDate = (to.isBefore(now) ? to : now).atZone(ZoneOffset.UTC).toLocalDate();
 
 		List<Holding> holdings = holdingRepository.findByExpenseTrackerIdAndFullyActiveHierarchy(trackerId);
 		Map<AssetKey, Long> nativeBalancesByAsset = new HashMap<>();
 
 		long convertedTotal = 0L;
+		boolean conversionComplete = true;
 		for (Holding holding : holdings) {
 			HoldingSummaryResponseDto summary = holdingSummaryBuilder.buildSummary(holding, from, to);
 
 			AssetKey assetKey = new AssetKey(holding.getAsset().getCode(), holding.getAsset().getScale());
-			nativeBalancesByAsset.merge(assetKey, summary.endBalance(), Long::sum);
+			nativeBalancesByAsset.merge(assetKey, summary.endBalance(), Math::addExact);
 
 			if (displayAsset != null) {
 				if (holding.getAsset().getCode().equalsIgnoreCase(displayAsset.getCode())) {
-					convertedTotal += summary.endBalance();
+					convertedTotal = Math.addExact(convertedTotal, summary.endBalance());
 				} else {
 					Long convertedEndBalance = convertEndBalance(summary, holding.getAsset(), displayAsset, endDate);
 					if (convertedEndBalance != null) {
-						convertedTotal += convertedEndBalance;
+						convertedTotal = Math.addExact(convertedTotal, convertedEndBalance);
+					} else {
+						conversionComplete = false;
 					}
 				}
 			}
@@ -243,7 +256,7 @@ public class InstitutionServiceImpl implements InstitutionService {
 						entry.getValue()))
 				.toList();
 
-		Long grandTotalConverted = displayAsset != null ? convertedTotal : null;
+		Long grandTotalConverted = displayAsset != null && conversionComplete ? convertedTotal : null;
 
 		return new FinanceHeaderBalancesResponse(
 				from,
@@ -256,24 +269,24 @@ public class InstitutionServiceImpl implements InstitutionService {
 	}
 
 	private InstitutionSummaryResponseDto buildInstitutionSummary(Institution institution, Instant from, Instant to,
-	                                                               Asset displayAsset, LocalDate rateDate) {
+	                                                               Asset displayAsset,
+	                                                               PortfolioPerformanceService.Result performance) {
 		List<Account> accounts = accountRepository.findByInstitutionIdAndActiveTrue(institution.getId());
 
 		List<AccountSummaryResponseDto> accountSummaries = accounts.stream()
-				.map(account -> buildAccountSummary(account, from, to, displayAsset, rateDate))
+				.map(account -> buildAccountSummary(account, from, to, displayAsset, performance))
 				.toList();
 
 		long totalBalance = accountSummaries.stream()
 				.mapToLong(AccountSummaryResponseDto::totalBalance)
-				.sum();
+				.reduce(0L, Math::addExact);
 
 		Long convertedTotalBalance = null;
-		if (displayAsset != null) {
+		if (displayAsset != null && accountSummaries.stream().allMatch(account -> account.convertedTotalBalance() != null)) {
 			convertedTotalBalance = accountSummaries.stream()
 					.map(AccountSummaryResponseDto::convertedTotalBalance)
-					.filter(java.util.Objects::nonNull)
 					.mapToLong(Long::longValue)
-					.sum();
+					.reduce(0L, Math::addExact);
 		}
 
 		return new InstitutionSummaryResponseDto(
@@ -284,19 +297,22 @@ public class InstitutionServiceImpl implements InstitutionService {
 				institution.getIconColor(),
 				accountSummaries,
 				totalBalance,
-				convertedTotalBalance
+				convertedTotalBalance,
+				displayAsset != null ? aggregatePeriod(accountSummaries.stream().flatMap(account -> account.holdings().stream()).toList()) : null,
+				displayAsset != null ? aggregateInvestment(accountSummaries.stream().flatMap(account -> account.holdings().stream()).toList(), performance.portfolio().asOf()) : null
 		);
 	}
 
 	private AccountSummaryResponseDto buildAccountSummary(Account account, Instant from, Instant to,
-	                                                       Asset displayAsset, LocalDate rateDate) {
+	                                                       Asset displayAsset,
+	                                                       PortfolioPerformanceService.Result performance) {
 		List<Holding> holdings = holdingRepository.findByAccountIdAndActiveTrue(account.getId());
 
 		List<HoldingSummaryResponseDto> holdingSummaries = holdings.stream()
 				.map(holding -> {
 					HoldingSummaryResponseDto summary = holdingSummaryBuilder.buildSummary(holding, from, to);
 					if (displayAsset != null) {
-						return enrichWithConversion(summary, holding.getAsset(), displayAsset, rateDate, from);
+						return holdingSummaryConversionService.enrich(summary, holding, displayAsset, performance);
 					}
 					return summary;
 				})
@@ -304,15 +320,14 @@ public class InstitutionServiceImpl implements InstitutionService {
 
 		long totalBalance = holdingSummaries.stream()
 				.mapToLong(HoldingSummaryResponseDto::endBalance)
-				.sum();
+				.reduce(0L, Math::addExact);
 
 		Long convertedTotalBalance = null;
-		if (displayAsset != null) {
+		if (displayAsset != null && holdingSummaries.stream().allMatch(holding -> holding.convertedEndBalance() != null)) {
 			convertedTotalBalance = holdingSummaries.stream()
 					.map(HoldingSummaryResponseDto::convertedEndBalance)
-					.filter(java.util.Objects::nonNull)
 					.mapToLong(Long::longValue)
-					.sum();
+					.reduce(0L, Math::addExact);
 		}
 
 		return new AccountSummaryResponseDto(
@@ -323,53 +338,50 @@ public class InstitutionServiceImpl implements InstitutionService {
 				account.getIconColor(),
 				holdingSummaries,
 				totalBalance,
-				convertedTotalBalance
+				convertedTotalBalance,
+				displayAsset != null ? aggregatePeriod(holdingSummaries) : null,
+				displayAsset != null ? aggregateInvestment(holdingSummaries, performance.portfolio().asOf()) : null
 		);
 	}
 
-	/**
-	 * Enrich a holding summary with converted balances in the display asset.
-	 * Uses the end-of-period rate for endBalance and start-of-period rate for startBalance.
-	 */
-	private HoldingSummaryResponseDto enrichWithConversion(HoldingSummaryResponseDto summary,
-	                                                       Asset holdingAsset, Asset displayAsset,
-	                                                       LocalDate endDate, Instant from) {
-		if (holdingAsset.getCode().equalsIgnoreCase(displayAsset.getCode())) {
-			// Same currency — converted = native
-			return new HoldingSummaryResponseDto(
-					summary.holdingId(), summary.accountName(), summary.institutionName(),
-					summary.assetCode(), summary.assetScale(), summary.periodFrom(), summary.periodTo(),
-					summary.startBalance(), summary.endBalance(),
-					summary.totalIncome(), summary.totalExpense(),
-					summary.totalTransferIn(), summary.totalTransferOut(),
-					summary.difference(), summary.incomeByCategory(), summary.expenseByCategory(),
-					summary.startBalance(), summary.endBalance(), BigDecimal.ONE
-			);
+	private HoldingPeriodPerformanceDto aggregatePeriod(List<HoldingSummaryResponseDto> holdings) {
+		long income = 0, expense = 0, result = 0;
+		boolean estimated = false;
+		for (HoldingSummaryResponseDto holding : holdings) {
+			HoldingPeriodPerformanceDto item = holding.periodPerformance();
+			if (item == null || item.convertedIncome() == null || item.convertedExpense() == null || item.result() == null) {
+				return new HoldingPeriodPerformanceDto(null, null, null, true,
+						item != null && item.unavailableReason() != null ? item.unavailableReason() : "Výsledek některé pozice není dostupný.");
+			}
+			income = Math.addExact(income, item.convertedIncome());
+			expense = Math.addExact(expense, item.convertedExpense());
+			result = Math.addExact(result, item.result());
+			estimated |= item.estimated();
 		}
+		return new HoldingPeriodPerformanceDto(income, expense, result, estimated, null);
+	}
 
-		BigDecimal endRate = exchangeRateService.getRate(holdingAsset, displayAsset, endDate);
-		if (endRate == null) {
-			return summary; // can't convert, return as-is with nulls
+	private InvestmentPerformanceDto aggregateInvestment(List<HoldingSummaryResponseDto> holdings, Instant asOf) {
+		long realized = 0, unrealized = 0;
+		boolean estimated = false, artificial = false;
+		for (HoldingSummaryResponseDto holding : holdings) {
+			InvestmentPerformanceDto item = holding.investmentPerformance();
+			if (item == null || item.realized() == null || item.unrealized() == null) {
+				return new InvestmentPerformanceDto(null, null, null, true, artificial,
+						item != null && item.unavailableReason() != null ? item.unavailableReason() : "Výsledek některé pozice není dostupný.", asOf);
+			}
+			realized = Math.addExact(realized, item.realized());
+			unrealized = Math.addExact(unrealized, item.unrealized());
+			estimated |= item.estimated();
+			artificial |= item.artificialAllocation();
 		}
-
-		Long convertedEnd = exchangeRateService.convertAmount(summary.endBalance(), holdingAsset, displayAsset, endDate);
-
-		// For start balance, use the rate at the start of the period
-		LocalDate startDate = from.atZone(ZoneOffset.UTC).toLocalDate();
-		Long convertedStart = exchangeRateService.convertAmount(summary.startBalance(), holdingAsset, displayAsset, startDate);
-
-		return new HoldingSummaryResponseDto(
-				summary.holdingId(), summary.accountName(), summary.institutionName(),
-				summary.assetCode(), summary.assetScale(), summary.periodFrom(), summary.periodTo(),
-				summary.startBalance(), summary.endBalance(),
-				summary.totalIncome(), summary.totalExpense(),
-				summary.totalTransferIn(), summary.totalTransferOut(),
-				summary.difference(), summary.incomeByCategory(), summary.expenseByCategory(),
-				convertedStart, convertedEnd, endRate
-		);
+		return new InvestmentPerformanceDto(realized, unrealized, Math.addExact(realized, unrealized), estimated, artificial, null, asOf);
 	}
 
 	private Long convertEndBalance(HoldingSummaryResponseDto summary, Asset holdingAsset, Asset displayAsset, LocalDate endDate) {
+		if (summary.endBalance() == 0) {
+			return 0L;
+		}
 		BigDecimal endRate = exchangeRateService.getRate(holdingAsset, displayAsset, endDate);
 		if (endRate == null) {
 			return null;

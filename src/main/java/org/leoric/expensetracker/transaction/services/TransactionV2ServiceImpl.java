@@ -49,6 +49,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final HoldingRepository holdingRepository;
 	private final ExchangeRateService exchangeRateService;
+	private final TransactionValuationService transactionValuationService;
 
 	@Override
 	@Transactional
@@ -176,6 +177,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				.externalRef(externalRef)
 				.build();
 
+		transactionValuationService.capture(transaction);
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created {} V2 transfer '{}' in tracker '{}'", currentUser.getEmail(), TransactionV2OperationType.WALLET_TRANSFER, transaction.getId(), tracker.getName());
 
@@ -294,6 +296,7 @@ public class TransactionV2ServiceImpl implements TransactionV2Service {
 				.externalRef(externalRef)
 				.build();
 
+		transactionValuationService.capture(transaction);
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created {} V2 transfer '{}' with holding assets exchange in tracker '{}'", currentUser.getEmail(), TransactionV2OperationType.ASSET_EXCHANGE, transaction.getId(), tracker.getName());
 

@@ -24,6 +24,8 @@ public interface HoldingMapper {
 	@Mapping(source = "asset.name", target = "assetName")
 	@Mapping(source = "asset.assetType", target = "assetType")
 	@Mapping(source = "asset.scale", target = "assetScale")
+	@Mapping(source = "initialValuationAsset.id", target = "initialValuationAssetId")
+	@Mapping(source = "openingMarketValueAsset.id", target = "openingMarketValueAssetId")
 	HoldingResponseDto toResponse(Holding entity);
 
 	@Mapping(source = "account.institution.name", target = "institutionName")

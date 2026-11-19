@@ -20,6 +20,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.UuidGenerator;
 import org.leoric.expensetracker.category.models.Category;
+import org.leoric.expensetracker.asset.models.Asset;
+import org.leoric.expensetracker.asset.models.constants.MarketDataSource;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.transaction.models.constants.BalanceAdjustmentDirection;
 import org.leoric.expensetracker.transaction.models.constants.TransactionStatus;
@@ -95,6 +97,31 @@ public class Transaction {
 	private long feeAmount = 0;
 
 	private Long settledAmount;
+
+	private Long settledFeeAmount;
+
+	private Integer balanceEffectVersion;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	private Asset marketRateBaseAsset;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	private Asset marketRateQuoteAsset;
+
+	@Column(precision = 24, scale = 12)
+	private BigDecimal marketRate;
+
+	private Instant marketRateObservedAt;
+
+	private Instant marketRateTransactionDate;
+
+	@Enumerated(EnumType.STRING)
+	@Column(length = 20)
+	private MarketDataSource marketRateSource;
+
+	private Instant marketRateFetchedAt;
+
+	private Boolean marketRateDailyHistorical;
 
 	@Enumerated(EnumType.STRING)
 	@Column(length = 20)

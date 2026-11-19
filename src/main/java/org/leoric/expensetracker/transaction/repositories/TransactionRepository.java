@@ -59,6 +59,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 
 	void deleteByExpenseTrackerId(UUID expenseTrackerId);
 
+	@EntityGraph(attributePaths = {"holding", "holding.asset", "sourceHolding", "sourceHolding.asset",
+			"targetHolding", "targetHolding.asset", "marketRateBaseAsset", "marketRateQuoteAsset"})
 	@Query("""
 			SELECT t FROM Transaction t
 			WHERE t.status = org.leoric.expensetracker.transaction.models.constants.TransactionStatus.COMPLETED
@@ -70,6 +72,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 			@Param("holdingId") UUID holdingId,
 			@Param("from") Instant from,
 			@Param("to") Instant to);
+
+	@EntityGraph(attributePaths = {"holding", "holding.asset", "sourceHolding", "sourceHolding.asset",
+			"targetHolding", "targetHolding.asset", "category"})
+	@Query("""
+			SELECT t FROM Transaction t
+			WHERE t.status = org.leoric.expensetracker.transaction.models.constants.TransactionStatus.COMPLETED
+			AND t.transactionDate >= :from
+			AND (t.holding.id = :holdingId OR t.sourceHolding.id = :holdingId OR t.targetHolding.id = :holdingId)
+			""")
+	List<Transaction> findCompletedByHoldingFrom(
+			@Param("holdingId") UUID holdingId,
+			@Param("from") Instant from);
 
 	@Query("""
 			SELECT t FROM Transaction t
@@ -105,4 +119,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 			@Param("to") Instant to);
 
 	boolean existsByIdAndExpenseTrackerId(UUID transactionId, UUID trackerId);
+
+	@EntityGraph(attributePaths = {"holding", "holding.asset", "sourceHolding", "sourceHolding.asset",
+			"targetHolding", "targetHolding.asset", "marketRateBaseAsset", "marketRateQuoteAsset"})
+	@Query("""
+			SELECT t FROM Transaction t
+			WHERE t.expenseTracker.id = :trackerId
+			AND t.status = org.leoric.expensetracker.transaction.models.constants.TransactionStatus.COMPLETED
+			AND t.transactionDate < :to
+			""")
+	List<Transaction> findCompletedBefore(@Param("trackerId") UUID trackerId, @Param("to") Instant to);
 }

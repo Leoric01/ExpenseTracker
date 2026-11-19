@@ -60,6 +60,19 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 	}
 
 	@Override
+	@Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+	public ExchangeRateMetadata getRateMetadata(Asset fromAsset, Asset toAsset, LocalDate date) {
+		if (fromAsset.getCode().equalsIgnoreCase(toAsset.getCode())) {
+			return null;
+		}
+		return cacheRepository.findByBaseAssetCodeAndQuoteAssetCodeAndRateDate(fromAsset.getCode(), toAsset.getCode(), date)
+				.filter(cached -> isCacheValid(cached, date))
+				.map(cached -> new ExchangeRateMetadata(cached.getSource(), date, cached.getFetchedAt(),
+						date.isBefore(LocalDate.now(ZoneOffset.UTC))))
+				.orElse(null);
+	}
+
+	@Override
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public Long convertAmount(long amountMinorUnits, Asset fromAsset, Asset toAsset, LocalDate date) {
 		if (fromAsset.getCode().equalsIgnoreCase(toAsset.getCode())) {
@@ -88,14 +101,14 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 
 		BigDecimal rounded = result.setScale(0, RoundingMode.HALF_UP);
 		if (rounded.compareTo(LONG_MAX) > 0) {
-			log.warn("Conversion clipped to Long.MAX_VALUE for {} -> {} on {} (amountMinorUnits={}, scaleDiff={}, rate={}, rounded={})",
+			log.warn("Conversion exceeds Long.MAX_VALUE for {} -> {} on {} (amountMinorUnits={}, scaleDiff={}, rate={}, rounded={})",
 					fromAsset.getCode(), toAsset.getCode(), date, amountMinorUnits, scaleDiff, rate, rounded);
-			return Long.MAX_VALUE;
+			return null;
 		}
 		if (rounded.compareTo(LONG_MIN) < 0) {
-			log.warn("Conversion clipped to Long.MIN_VALUE for {} -> {} on {} (amountMinorUnits={}, scaleDiff={}, rate={}, rounded={})",
+			log.warn("Conversion exceeds Long.MIN_VALUE for {} -> {} on {} (amountMinorUnits={}, scaleDiff={}, rate={}, rounded={})",
 					fromAsset.getCode(), toAsset.getCode(), date, amountMinorUnits, scaleDiff, rate, rounded);
-			return Long.MIN_VALUE;
+			return null;
 		}
 
 		return rounded.longValue();
@@ -187,9 +200,9 @@ public class ExchangeRateServiceImpl implements ExchangeRateService {
 	private boolean isCacheValid(ExchangeRateCache cached, LocalDate date) {
 		LocalDate today = LocalDate.now(ZoneOffset.UTC);
 
-		// Historical rates never expire
+		// A live quote cached on the requested day is not a historical daily quote.
 		if (date.isBefore(today)) {
-			return true;
+			return cached.getFetchedAt().atZone(ZoneOffset.UTC).toLocalDate().isAfter(date);
 		}
 
 		// Today's rates expire after configured hours

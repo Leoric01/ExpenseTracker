@@ -1,6 +1,7 @@
 package org.leoric.expensetracker.exchangerate.services.interfaces;
 
 import org.leoric.expensetracker.asset.models.Asset;
+import org.leoric.expensetracker.exchangerate.services.ExchangeRateMetadata;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -26,6 +27,8 @@ public interface ExchangeRateService {
 	 * @return exchange rate, or null if unavailable
 	 */
 	BigDecimal getRate(Asset fromAsset, Asset toAsset, LocalDate date);
+
+	ExchangeRateMetadata getRateMetadata(Asset fromAsset, Asset toAsset, LocalDate date);
 
 	/**
 	 * Convert a minor-unit amount from one asset to another.

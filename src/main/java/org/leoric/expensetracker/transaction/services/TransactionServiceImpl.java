@@ -76,6 +76,7 @@ public class TransactionServiceImpl implements TransactionService {
 	private final TransactionMapper transactionMapper;
 	private final ImageService imageService;
 	private final ExchangeRateService exchangeRateService;
+	private final TransactionValuationService transactionValuationService;
 
 	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
 			"application/pdf",
@@ -483,6 +484,7 @@ public class TransactionServiceImpl implements TransactionService {
 			transaction.setExternalRef(request.externalRef());
 		}
 
+		transactionValuationService.capture(transaction);
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} updated transaction '{}' in tracker '{}'",
 		         currentUser.getEmail(), transaction.getId(), transaction.getExpenseTracker().getName());
@@ -490,11 +492,7 @@ public class TransactionServiceImpl implements TransactionService {
 	}
 
 	private void patchIncomeOrExpenseFinancialFields(Transaction transaction, UUID trackerId, UpdateTransactionRequestDto request) {
-		boolean financialPatchRequested = request.holdingId() != null
-				|| request.amount() != null
-				|| request.currencyCode() != null
-				|| request.exchangeRate() != null
-				|| request.feeAmount() != null;
+		boolean financialPatchRequested = hasNonTransferFinancialChange(transaction, request);
 		if (!financialPatchRequested) {
 			return;
 		}
@@ -545,13 +543,12 @@ public class TransactionServiceImpl implements TransactionService {
 								.formatted(newCurrencyCode, holdingAssetCode));
 			}
 			newExchangeRate = effectiveRate;
-			newSettledAmount = BigDecimal.valueOf(newAmount)
-					.multiply(newExchangeRate)
-					.setScale(0, RoundingMode.HALF_UP)
-					.longValueExact() + newFeeAmount;
-			newEffect = newSettledAmount;
-		} else {
-			newEffect = resolveIncomeExpenseBalanceEffect(transaction.getTransactionType(), newAmount, newFeeAmount, null);
+		}
+		NonTransferAmounts computed = computeNonTransferAmounts(transaction.getTransactionType(), newAmount, newFeeAmount,
+				newCurrencyCode, newHolding.getAsset(), newExchangeRate);
+		newEffect = computed.balanceEffect();
+		if (crossCurrency || (transaction.getTransactionType() == TransactionType.INCOME && newFeeAmount != 0)) {
+			newSettledAmount = newEffect;
 		}
 
 		if (transaction.getTransactionType() == TransactionType.INCOME) {
@@ -575,6 +572,8 @@ public class TransactionServiceImpl implements TransactionService {
 		transaction.setExchangeRate(newExchangeRate);
 		transaction.setFeeAmount(newFeeAmount);
 		transaction.setSettledAmount(newSettledAmount);
+		transaction.setSettledFeeAmount(computed.settledFee());
+		transaction.setBalanceEffectVersion(1);
 	}
 
 	private void patchTransferFinancialFields(Transaction transaction, UUID trackerId, UpdateTransactionRequestDto request) {
@@ -623,9 +622,7 @@ public class TransactionServiceImpl implements TransactionService {
 			throw new OperationNotPermittedException("Exchange rate cannot be patched on same-asset transfers");
 		}
 
-		long oldSourceDeduction = isInternalSameAssetTransfer(transaction)
-				? transaction.getAmount()
-				: transaction.getAmount() + transaction.getFeeAmount();
+		long oldSourceDeduction = transaction.getAmount();
 		long oldTargetAddition = isInternalSameAssetTransfer(transaction)
 				? resolveTransferSettledAmount(transaction)
 				: (transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount());
@@ -633,6 +630,9 @@ public class TransactionServiceImpl implements TransactionService {
 		long newAmount = request.amount() != null ? request.amount() : transaction.getAmount();
 		long newFee = request.feeAmount() != null ? request.feeAmount() : transaction.getFeeAmount();
 		Long requestedSettled = request.settledAmount();
+		if (newAmount < 0 || newFee < 0 || newFee > newAmount) {
+			throw new OperationNotPermittedException("Transfer fee must be nonnegative and not greater than amount");
+		}
 
 		long newSettled;
 		BigDecimal effectiveNewExchangeRate;
@@ -657,11 +657,9 @@ public class TransactionServiceImpl implements TransactionService {
 
 			if (requestedSettled != null) {
 				newSettled = requestedSettled;
-			} else if (request.amount() != null || request.exchangeRate() != null) {
-				newSettled = BigDecimal.valueOf(newAmount)
-						.multiply(effectiveRate)
-						.setScale(0, RoundingMode.HALF_UP)
-						.longValueExact();
+			} else if (request.amount() != null || request.exchangeRate() != null || request.feeAmount() != null) {
+				newSettled = TransferAmounts.convert(newAmount, newFee, effectiveRate,
+						newSource.getAsset().getScale(), newTarget.getAsset().getScale());
 			} else {
 				newSettled = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
 			}
@@ -671,7 +669,7 @@ public class TransactionServiceImpl implements TransactionService {
 		oldSource.setCurrentAmount(oldSource.getCurrentAmount() + oldSourceDeduction);
 		oldTarget.setCurrentAmount(oldTarget.getCurrentAmount() - oldTargetAddition);
 
-		long newSourceDeduction = sameAssetTransfer ? newAmount : Math.addExact(newAmount, newFee);
+		long newSourceDeduction = newAmount;
 		long newTargetAddition = newSettled;
 
 		newSource.setCurrentAmount(newSource.getCurrentAmount() - newSourceDeduction);
@@ -745,11 +743,7 @@ public class TransactionServiceImpl implements TransactionService {
 	}
 
 	private void patchTestFinancialFields(Transaction transaction, UUID trackerId, UpdateTransactionRequestDto request) {
-		boolean financialPatchRequested = request.holdingId() != null
-				|| request.amount() != null
-				|| request.currencyCode() != null
-				|| request.exchangeRate() != null
-				|| request.feeAmount() != null;
+		boolean financialPatchRequested = hasNonTransferFinancialChange(transaction, request);
 		if (!financialPatchRequested) {
 			return;
 		}
@@ -797,14 +791,11 @@ public class TransactionServiceImpl implements TransactionService {
 								.formatted(newCurrencyCode, holdingAssetCode));
 			}
 			newExchangeRate = effectiveRate;
-			newSettledAmount = BigDecimal.valueOf(newAmount)
-					.multiply(newExchangeRate)
-					.setScale(0, RoundingMode.HALF_UP)
-					.longValueExact() + newFeeAmount;
-			newEffect = newSettledAmount;
-		} else {
-			newEffect = Math.addExact(newAmount, newFeeAmount);
 		}
+		NonTransferAmounts computed = computeNonTransferAmounts(TransactionType.TEST, newAmount, newFeeAmount,
+				newCurrencyCode, newHolding.getAsset(), newExchangeRate);
+		newEffect = computed.balanceEffect();
+		if (crossCurrency) newSettledAmount = newEffect;
 
 		oldHolding.setCurrentAmount(oldHolding.getCurrentAmount() + oldEffect);
 		newHolding.setCurrentAmount(newHolding.getCurrentAmount() - newEffect);
@@ -822,6 +813,8 @@ public class TransactionServiceImpl implements TransactionService {
 		transaction.setExchangeRate(newExchangeRate);
 		transaction.setFeeAmount(newFeeAmount);
 		transaction.setSettledAmount(newSettledAmount);
+		transaction.setSettledFeeAmount(computed.settledFee());
+		transaction.setBalanceEffectVersion(1);
 	}
 
 	@Override
@@ -1309,14 +1302,11 @@ public class TransactionServiceImpl implements TransactionService {
 								.formatted(txnCurrency, holdingAssetCode));
 			}
 			exchangeRate = request.exchangeRate();
-			settledAmount = BigDecimal.valueOf(request.amount())
-					.multiply(exchangeRate)
-					.setScale(0, RoundingMode.HALF_UP)
-					.longValueExact() + feeAmount;
-			balanceEffect = settledAmount;
-		} else {
-			balanceEffect = resolveIncomeExpenseBalanceEffect(type, request.amount(), feeAmount, null);
 		}
+		NonTransferAmounts computed = computeNonTransferAmounts(type, request.amount(), feeAmount,
+				txnCurrency, holding.getAsset(), exchangeRate);
+		balanceEffect = computed.balanceEffect();
+		if (crossCurrency || (type == TransactionType.INCOME && feeAmount != 0)) settledAmount = balanceEffect;
 
 		if (type == TransactionType.INCOME) {
 			holding.setCurrentAmount(holding.getCurrentAmount() + balanceEffect);
@@ -1336,12 +1326,15 @@ public class TransactionServiceImpl implements TransactionService {
 				.exchangeRate(exchangeRate)
 				.feeAmount(feeAmount)
 				.settledAmount(settledAmount)
+				.settledFeeAmount(computed.settledFee())
+				.balanceEffectVersion(1)
 				.transactionDate(request.transactionDate())
 				.description(request.description())
 				.note(request.note())
 				.externalRef(request.externalRef())
 				.build();
 
+		transactionValuationService.capture(transaction);
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created {} transaction '{}' ({} {}{}) in tracker '{}'",
 		         currentUser.getEmail(), type, transaction.getId(), request.amount(), txnCurrency,
@@ -1387,14 +1380,11 @@ public class TransactionServiceImpl implements TransactionService {
 								.formatted(txnCurrency, holdingAssetCode));
 			}
 			exchangeRate = request.exchangeRate();
-			settledAmount = BigDecimal.valueOf(request.amount())
-					.multiply(exchangeRate)
-					.setScale(0, RoundingMode.HALF_UP)
-					.longValueExact() + feeAmount;
-			balanceEffect = settledAmount;
-		} else {
-			balanceEffect = Math.addExact(request.amount(), feeAmount);
 		}
+		NonTransferAmounts computed = computeNonTransferAmounts(TransactionType.TEST, request.amount(), feeAmount,
+				txnCurrency, holding.getAsset(), exchangeRate);
+		balanceEffect = computed.balanceEffect();
+		if (crossCurrency) settledAmount = balanceEffect;
 
 		holding.setCurrentAmount(holding.getCurrentAmount() - balanceEffect);
 		holdingRepository.save(holding);
@@ -1410,12 +1400,15 @@ public class TransactionServiceImpl implements TransactionService {
 				.exchangeRate(exchangeRate)
 				.feeAmount(feeAmount)
 				.settledAmount(settledAmount)
+				.settledFeeAmount(computed.settledFee())
+				.balanceEffectVersion(1)
 				.transactionDate(request.transactionDate())
 				.description(request.description())
 				.note(request.note())
 				.externalRef(request.externalRef())
 				.build();
 
+		transactionValuationService.capture(transaction);
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created {} transaction '{}' ({} {}{}) in tracker '{}'",
 		         currentUser.getEmail(), TransactionType.TEST, transaction.getId(), request.amount(), txnCurrency,
@@ -1446,10 +1439,19 @@ public class TransactionServiceImpl implements TransactionService {
 
 		String sourceAssetCode = source.getAsset().getCode();
 		String targetAssetCode = target.getAsset().getCode();
+		if (request.currencyCode() != null) {
+			assertAssetCodeExists(request.currencyCode().toUpperCase());
+			if (!request.currencyCode().equalsIgnoreCase(sourceAssetCode)) {
+				throw new OperationNotPermittedException("Currency code on transfer must match source holding asset code");
+			}
+		}
 		boolean crossCurrency = !sourceAssetCode.equals(targetAssetCode);
 
 		BigDecimal exchangeRate = null;
 		long feeAmount = request.feeAmount() != null ? request.feeAmount() : 0;
+		if (feeAmount < 0 || feeAmount > request.amount()) {
+			throw new OperationNotPermittedException("Transfer fee must be nonnegative and not greater than amount");
+		}
 		long settledAmount;
 		long sourceDeduction = request.amount();
 		long targetAddition;
@@ -1462,10 +1464,8 @@ public class TransactionServiceImpl implements TransactionService {
 			}
 			exchangeRate = request.exchangeRate();
 			// amount is in source currency, settledAmount is what target receives
-			settledAmount = BigDecimal.valueOf(request.amount() - feeAmount)
-					.multiply(exchangeRate)
-					.setScale(0, RoundingMode.HALF_UP)
-					.longValueExact();
+			settledAmount = TransferAmounts.convert(request.amount(), feeAmount, exchangeRate,
+					source.getAsset().getScale(), target.getAsset().getScale());
 		} else {
 			if (request.exchangeRate() != null) {
 				throw new OperationNotPermittedException("Exchange rate cannot be used on same-asset transfers");
@@ -1499,6 +1499,7 @@ public class TransactionServiceImpl implements TransactionService {
 				.externalRef(request.externalRef())
 				.build();
 
+		transactionValuationService.capture(transaction);
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created TRANSFER '{}' ({} {}{}) {} → {} in tracker '{}'",
 		         currentUser.getEmail(), transaction.getId(), request.amount(), sourceAssetCode,
@@ -1548,6 +1549,7 @@ public class TransactionServiceImpl implements TransactionService {
 				.externalRef(request.externalRef())
 				.build();
 
+		transactionValuationService.capture(transaction);
 		transaction = transactionRepository.save(transaction);
 		log.info("User {} created BALANCE_ADJUSTMENT '{}' ({} {} {}) on holding '{}' in tracker '{}'",
 		         currentUser.getEmail(), transaction.getId(), direction, absAmount,
@@ -1570,7 +1572,7 @@ public class TransactionServiceImpl implements TransactionService {
 				holding.setCurrentAmount(holding.getCurrentAmount() - effect);
 				holdingRepository.save(holding);
 			}
-			case EXPENSE -> {
+			case EXPENSE, TEST -> {
 				Holding holding = transaction.getHolding();
 				long effect = resolveIncomeExpenseBalanceEffect(
 						TransactionType.EXPENSE,
@@ -1584,16 +1586,8 @@ public class TransactionServiceImpl implements TransactionService {
 			case TRANSFER -> {
 				Holding source = transaction.getSourceHolding();
 				Holding target = transaction.getTargetHolding();
-				long sourceReversal;
-				long targetReversal;
-
-				if (isInternalSameAssetTransfer(transaction)) {
-					sourceReversal = transaction.getAmount();
-					targetReversal = resolveTransferSettledAmount(transaction);
-				} else {
-					sourceReversal = transaction.getAmount() + transaction.getFeeAmount();
-					targetReversal = transaction.getSettledAmount() != null ? transaction.getSettledAmount() : transaction.getAmount();
-				}
+				long sourceReversal = transaction.getAmount();
+				long targetReversal = resolveTransferSettledAmount(transaction);
 
 				source.setCurrentAmount(source.getCurrentAmount() + sourceReversal);
 				target.setCurrentAmount(target.getCurrentAmount() - targetReversal);
@@ -1776,6 +1770,36 @@ public class TransactionServiceImpl implements TransactionService {
 		}
 		return amount;
 	}
+
+	private boolean hasNonTransferFinancialChange(Transaction transaction, UpdateTransactionRequestDto request) {
+		return Boolean.TRUE.equals(request.recalculateBalanceEffect())
+				|| (request.holdingId() != null && !request.holdingId().equals(transaction.getHolding().getId()))
+				|| (request.amount() != null && request.amount() != transaction.getAmount())
+				|| (request.feeAmount() != null && request.feeAmount() != transaction.getFeeAmount())
+				|| (request.currencyCode() != null && !request.currencyCode().equalsIgnoreCase(transaction.getCurrencyCode()))
+				|| (request.exchangeRate() != null && (transaction.getExchangeRate() == null
+						|| request.exchangeRate().compareTo(transaction.getExchangeRate()) != 0));
+	}
+
+	private NonTransferAmounts computeNonTransferAmounts(TransactionType type, long amount, long fee,
+			String currencyCode, Asset holdingAsset, BigDecimal rate) {
+		if (amount <= 0 || fee < 0 || (type == TransactionType.INCOME && fee > amount)) {
+			throw new OperationNotPermittedException("Amount must be positive and income fee cannot exceed amount");
+		}
+		long gross = amount;
+		long settledFee = fee;
+		if (!currencyCode.equalsIgnoreCase(holdingAsset.getCode())) {
+			Asset source = assetRepository.findByCodeIgnoreCase(currencyCode)
+					.orElseThrow(() -> new OperationNotPermittedException("Asset code '%s' does not exist".formatted(currencyCode)));
+			gross = TransferAmounts.convert(amount, 0, rate, source.getScale(), holdingAsset.getScale());
+			settledFee = TransferAmounts.convert(fee, 0, rate, source.getScale(), holdingAsset.getScale());
+		}
+		long effect = type == TransactionType.INCOME
+				? Math.subtractExact(gross, settledFee) : Math.addExact(gross, settledFee);
+		return new NonTransferAmounts(effect, settledFee);
+	}
+
+	private record NonTransferAmounts(long balanceEffect, long settledFee) {}
 
 	private static final class MutableAssetTotals {
 		private long income;

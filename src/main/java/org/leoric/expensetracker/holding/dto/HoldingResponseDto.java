@@ -3,6 +3,7 @@ package org.leoric.expensetracker.holding.dto;
 import org.leoric.expensetracker.account.models.constants.AccountType;
 import org.leoric.expensetracker.asset.models.constants.AssetType;
 import org.leoric.expensetracker.institution.models.constants.InstitutionType;
+import org.leoric.expensetracker.holding.models.InitialValuationMode;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -22,6 +23,13 @@ public record HoldingResponseDto(
 		int assetScale,
 		long initialAmount,
 		long currentAmount,
+		InitialValuationMode initialValuationMode,
+		Long initialValuationAmount,
+		UUID initialValuationAssetId,
+		OffsetDateTime initialValuationAt,
+		Long openingMarketValue,
+		UUID openingMarketValueAssetId,
+		OffsetDateTime openingMarketValueObservedAt,
 		boolean active,
 		OffsetDateTime createdDate,
 		OffsetDateTime lastModifiedDate

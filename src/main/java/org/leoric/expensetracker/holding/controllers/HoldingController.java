@@ -8,16 +8,19 @@ import org.leoric.expensetracker.holding.dto.CreateHoldingRequestDto;
 import org.leoric.expensetracker.holding.dto.HoldingLiteResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingResponseDto;
 import org.leoric.expensetracker.holding.dto.HoldingSummaryResponseDto;
+import org.leoric.expensetracker.holding.dto.UpdateInitialValuationRequestDto;
 import org.leoric.expensetracker.holding.services.interfaces.HoldingService;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -49,6 +52,14 @@ public class HoldingController {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(holdingService.holdingCreate(currentUser, trackerId, request));
+	}
+
+	@PatchMapping(value = "/{trackerId}/{holdingId}/initial-valuation", produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<HoldingResponseDto> updateInitialValuation(
+			@AuthenticationPrincipal User currentUser, @PathVariable UUID trackerId,
+			@PathVariable UUID holdingId, @Valid @RequestBody UpdateInitialValuationRequestDto request) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
+		return ResponseEntity.ok(holdingService.updateInitialValuation(currentUser, trackerId, holdingId, request));
 	}
 
 

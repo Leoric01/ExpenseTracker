@@ -8,6 +8,8 @@ import org.leoric.expensetracker.asset.models.Asset;
 import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.category.repositories.CategoryRepository;
+import org.leoric.expensetracker.category.models.Category;
+import org.leoric.expensetracker.category.models.constants.CategoryKind;
 import org.leoric.expensetracker.exchangerate.services.interfaces.ExchangeRateService;
 import org.leoric.expensetracker.expensetracker.models.ExpenseTracker;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
@@ -61,6 +63,8 @@ class TransactionServiceImplTest {
 	private ExpenseTrackerRepository expenseTrackerRepository;
 	@Mock
 	private ExchangeRateService exchangeRateService;
+	@Mock
+	private TransactionValuationService transactionValuationService;
 	@Mock
 	private TransactionMapper transactionMapper;
 
@@ -132,7 +136,7 @@ class TransactionServiceImplTest {
 				null
 		);
 
-		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(transaction));
 		when(holdingRepository.findById(holdingB.getId())).thenReturn(Optional.of(holdingB));
 		when(assetRepository.existsByCodeIgnoreCase("CZK")).thenReturn(true);
 		when(assetRepository.findByCodeIgnoreCase("CZK"))
@@ -215,7 +219,7 @@ class TransactionServiceImplTest {
 				null
 		);
 
-		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(transaction));
 
 		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
 		when(transactionMapper.toResponse(any(Transaction.class))).thenReturn(minimalResponse(transaction));
@@ -259,7 +263,7 @@ class TransactionServiceImplTest {
 				null
 		);
 
-		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(transaction));
 
 		assertThatThrownBy(() -> service.transactionUpdate(user, trackerId, transactionId, request))
 				.isInstanceOf(OperationNotPermittedException.class)
@@ -300,7 +304,7 @@ class TransactionServiceImplTest {
 				null
 		);
 
-		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(transaction));
 		when(holdingRepository.findById(holdingA.getId())).thenReturn(Optional.of(holdingA));
 		when(holdingRepository.findById(holdingB.getId())).thenReturn(Optional.of(holdingB));
 		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -350,7 +354,7 @@ class TransactionServiceImplTest {
 				null
 		);
 
-		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(transaction));
 		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
 		when(transactionMapper.toResponse(any(Transaction.class))).thenReturn(minimalResponse(transaction));
 
@@ -405,7 +409,7 @@ class TransactionServiceImplTest {
 				null
 		);
 
-		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(transaction));
 		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
 		when(transactionMapper.toResponse(any(Transaction.class))).thenReturn(minimalResponse(transaction));
 
@@ -415,8 +419,72 @@ class TransactionServiceImplTest {
 		assertThat(transaction.getFeeAmount()).isEqualTo(3L);
 		assertThat(transaction.getSettledAmount()).isEqualTo(70L);
 		assertThat(transaction.getExchangeRate()).isEqualByComparingTo("0.58000000");
-		assertThat(holdingA.getCurrentAmount()).isEqualTo(9_979L);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(9_980L);
 		assertThat(eurHolding.getCurrentAmount()).isEqualTo(5_020L);
+	}
+
+	@Test
+	void transactionCancel_crossAssetTransferWithFeeRestoresOriginalBalances() {
+		Holding target = Holding.builder()
+				.id(UUID.randomUUID())
+				.account(holdingB.getAccount())
+				.asset(Asset.builder().code("EUR").build())
+				.currentAmount(5_050)
+				.active(true)
+				.build();
+		holdingA.setCurrentAmount(9_900);
+		UUID transactionId = UUID.randomUUID();
+		Transaction transaction = Transaction.builder()
+				.id(transactionId)
+				.expenseTracker(tracker)
+				.transactionType(TransactionType.TRANSFER)
+				.status(TransactionStatus.COMPLETED)
+				.sourceHolding(holdingA)
+				.targetHolding(target)
+				.amount(100)
+				.feeAmount(2)
+				.settledAmount(50L)
+				.currencyCode("CZK")
+				.transactionDate(Instant.now())
+				.build();
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.save(transaction)).thenReturn(transaction);
+		when(transactionMapper.toResponse(transaction)).thenReturn(minimalResponse(transaction));
+		when(assetRepository.findByCodeIgnoreCase("CZK"))
+				.thenReturn(Optional.of(Asset.builder().code("CZK").scale(2).build()));
+
+		service.transactionCancel(user, trackerId, transactionId);
+
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(10_000);
+		assertThat(target.getCurrentAmount()).isEqualTo(5_000);
+		assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.CANCELLED);
+	}
+
+	@Test
+	void transactionUpdate_crossAssetFeeRecalculatesSettledWithAssetScales() {
+		Asset btc = Asset.builder().code("BTC").scale(8).build();
+		Asset czk = Asset.builder().code("CZK").scale(2).build();
+		holdingA.setAsset(btc);
+		holdingB.setAsset(czk);
+		UUID transactionId = UUID.randomUUID();
+		Transaction transaction = Transaction.builder().id(transactionId).expenseTracker(tracker)
+				.transactionType(TransactionType.TRANSFER).status(TransactionStatus.COMPLETED)
+				.sourceHolding(holdingA).targetHolding(holdingB).amount(10_000_000L)
+				.feeAmount(0).settledAmount(20_000_000L).currencyCode("BTC")
+				.exchangeRate(new java.math.BigDecimal("2000000"))
+				.transactionDate(Instant.now()).build();
+		UpdateTransactionRequestDto request = new UpdateTransactionRequestDto(
+				null, null, null, null, null, null, 1_000L, null, null, null, null, null, null);
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(transaction));
+		when(transactionRepository.save(transaction)).thenReturn(transaction);
+		when(transactionMapper.toResponse(transaction)).thenReturn(minimalResponse(transaction));
+		when(assetRepository.findByCodeIgnoreCase("BTC")).thenReturn(Optional.of(btc));
+
+		service.transactionUpdate(user, trackerId, transactionId, request);
+
+		assertThat(transaction.getSettledAmount()).isEqualTo(19_998_000L);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(10_000);
+		assertThat(holdingB.getCurrentAmount()).isEqualTo(18_000);
 	}
 
 	@Test
@@ -858,7 +926,7 @@ class TransactionServiceImplTest {
 		assertThat(holdingB.getCurrentAmount()).isEqualTo(20_098L);
 		assertThat(created.assetCode()).isEqualTo("CZK");
 
-		when(transactionRepository.findById(transactionId)).thenReturn(Optional.of(saved));
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(saved));
 		service.transactionCancel(user, trackerId, transactionId);
 
 		assertThat(holdingA.getCurrentAmount()).isEqualTo(10_000L);
@@ -892,6 +960,111 @@ class TransactionServiceImplTest {
 		assertThatThrownBy(() -> service.transactionCreate(user, trackerId, request))
 				.isInstanceOf(OperationNotPermittedException.class)
 				.hasMessageContaining("Currency code on transfer must match source holding asset code");
+	}
+
+	@Test
+	void crossCurrencyTestConvertsAmountAndFeeWithScalesAndRemainsReversible() {
+		UUID transactionId = UUID.randomUUID();
+		Asset btc = Asset.builder().code("BTC").scale(8).build();
+		Asset czk = Asset.builder().code("CZK").scale(2).build();
+		holdingA.setAsset(btc);
+		holdingA.setCurrentAmount(100_000_000L);
+		CreateTransactionRequestDto request = new CreateTransactionRequestDto(
+				TransactionType.TEST, holdingA.getId(), null, null, null, 10_000L, null, "CZK",
+				new java.math.BigDecimal("0.0000005"), 1_000L, Instant.now(), null, null, null);
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(holdingA.getId())).thenReturn(Optional.of(holdingA));
+		when(assetRepository.findByCodeIgnoreCase("CZK")).thenReturn(Optional.of(czk));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> {
+			Transaction transaction = inv.getArgument(0);
+			transaction.setId(transactionId);
+			return transaction;
+		});
+		when(transactionMapper.toResponse(any(Transaction.class))).thenAnswer(inv -> minimalResponse(inv.getArgument(0)));
+
+		service.transactionCreate(user, trackerId, request);
+		var captor = org.mockito.ArgumentCaptor.forClass(Transaction.class);
+		verify(transactionRepository).save(captor.capture());
+		Transaction saved = captor.getValue();
+		assertThat(saved.getSettledAmount()).isEqualTo(5_500L);
+		assertThat(saved.getSettledFeeAmount()).isEqualTo(500L);
+		assertThat(saved.getBalanceEffectVersion()).isEqualTo(1);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(99_994_500L);
+
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(saved));
+		service.transactionUpdate(user, trackerId, transactionId,
+				new UpdateTransactionRequestDto(null, null, null, 20_000L, null, null, null, null,
+						null, null, null, null, null));
+		assertThat(saved.getSettledAmount()).isEqualTo(10_500L);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(99_989_500L);
+
+		service.transactionCancel(user, trackerId, transactionId);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(100_000_000L);
+	}
+
+	@Test
+	void crossCurrencyIncomeSubtractsFeeInTransactionCurrency() {
+		UUID transactionId = UUID.randomUUID();
+		UUID categoryId = UUID.randomUUID();
+		holdingA.setAsset(Asset.builder().code("BTC").scale(8).build());
+		holdingA.setCurrentAmount(0);
+		Asset czk = Asset.builder().code("CZK").scale(2).build();
+		Category category = Category.builder().id(categoryId).expenseTracker(tracker).categoryKind(CategoryKind.INCOME).build();
+		CreateTransactionRequestDto request = new CreateTransactionRequestDto(
+				TransactionType.INCOME, holdingA.getId(), null, null, categoryId, 10_000L, null, "CZK",
+				new java.math.BigDecimal("0.0000005"), 1_000L, Instant.now(), null, null, null);
+		when(expenseTrackerRepository.findById(trackerId)).thenReturn(Optional.of(tracker));
+		when(holdingRepository.findById(holdingA.getId())).thenReturn(Optional.of(holdingA));
+		when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+		when(assetRepository.findByCodeIgnoreCase("CZK")).thenReturn(Optional.of(czk));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> {
+			Transaction transaction = inv.getArgument(0);
+			transaction.setId(transactionId);
+			return transaction;
+		});
+		when(transactionMapper.toResponse(any(Transaction.class))).thenAnswer(inv -> minimalResponse(inv.getArgument(0)));
+
+		service.transactionCreate(user, trackerId, request);
+		var captor = org.mockito.ArgumentCaptor.forClass(Transaction.class);
+		verify(transactionRepository).save(captor.capture());
+		Transaction saved = captor.getValue();
+		assertThat(saved.getSettledAmount()).isEqualTo(4_500L);
+		assertThat(saved.getSettledFeeAmount()).isEqualTo(500L);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(4_500L);
+
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(saved));
+		service.transactionCancel(user, trackerId, transactionId);
+		assertThat(holdingA.getCurrentAmount()).isZero();
+	}
+
+	@Test
+	void unchangedLegacyFinancialFieldsAreNotRecalculatedWithoutExplicitConfirmation() {
+		UUID transactionId = UUID.randomUUID();
+		holdingA.setAsset(Asset.builder().code("BTC").scale(8).build());
+		holdingA.setCurrentAmount(99_999_000L);
+		Transaction legacy = Transaction.builder().id(transactionId).expenseTracker(tracker)
+				.transactionType(TransactionType.TEST).status(TransactionStatus.COMPLETED).holding(holdingA)
+				.amount(10_000).currencyCode("CZK").feeAmount(1000).settledAmount(1000L)
+				.exchangeRate(new java.math.BigDecimal("0.00000050")).transactionDate(Instant.now()).build();
+		when(transactionRepository.findByIdAndExpenseTrackerId(transactionId, trackerId)).thenReturn(Optional.of(legacy));
+		when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+		when(transactionMapper.toResponse(any(Transaction.class))).thenAnswer(inv -> minimalResponse(inv.getArgument(0)));
+		when(assetRepository.findByCodeIgnoreCase("CZK"))
+				.thenReturn(Optional.of(Asset.builder().code("CZK").scale(2).build()));
+
+		service.transactionUpdate(user, trackerId, transactionId,
+				new UpdateTransactionRequestDto(holdingA.getId(), null, null, 10_000L, "CZK",
+						new java.math.BigDecimal("0.0000005"), 1000L, null, null, null, "note", null, null));
+		assertThat(legacy.getSettledAmount()).isEqualTo(1000L);
+		assertThat(legacy.getBalanceEffectVersion()).isNull();
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(99_999_000L);
+
+		service.transactionUpdate(user, trackerId, transactionId,
+				new UpdateTransactionRequestDto(null, null, null, null, null, null, null, null, null,
+						null, null, null, null, true));
+		assertThat(legacy.getSettledAmount()).isEqualTo(5500L);
+		assertThat(legacy.getBalanceEffectVersion()).isEqualTo(1);
+		assertThat(holdingA.getCurrentAmount()).isEqualTo(99_994_500L);
 	}
 
 	private TransactionResponseDto minimalResponse(Transaction transaction) {

@@ -3,6 +3,8 @@ package org.leoric.expensetracker.holding.models;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -55,6 +57,26 @@ public class Holding {
 	@Builder.Default
 	@Column(nullable = false)
 	private long currentAmount = 0;
+
+	@Enumerated(EnumType.STRING)
+	@Column(length = 20)
+	private InitialValuationMode initialValuationMode;
+
+	private Long initialValuationAmount;
+
+	@ManyToOne
+	@JoinColumn(name = "initial_valuation_asset_id")
+	private Asset initialValuationAsset;
+
+	private Instant initialValuationAt;
+
+	private Long openingMarketValue;
+
+	@ManyToOne
+	@JoinColumn(name = "opening_market_value_asset_id")
+	private Asset openingMarketValueAsset;
+
+	private Instant openingMarketValueObservedAt;
 
 	@Builder.Default
 	@Column(nullable = false)

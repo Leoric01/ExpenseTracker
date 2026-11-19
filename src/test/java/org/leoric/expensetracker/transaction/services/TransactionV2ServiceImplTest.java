@@ -50,6 +50,8 @@ class TransactionV2ServiceImplTest {
 	private HoldingRepository holdingRepository;
 	@Mock
 	private ExchangeRateService exchangeRateService;
+	@Mock
+	private TransactionValuationService transactionValuationService;
 
 	@InjectMocks
 	private TransactionV2ServiceImpl service;

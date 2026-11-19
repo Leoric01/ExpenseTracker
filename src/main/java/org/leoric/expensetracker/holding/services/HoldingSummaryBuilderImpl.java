@@ -1,13 +1,14 @@
 package org.leoric.expensetracker.holding.services;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
 import org.leoric.expensetracker.holding.dto.CategoryBreakdownDto;
 import org.leoric.expensetracker.holding.dto.HoldingSummaryResponseDto;
 import org.leoric.expensetracker.holding.models.Holding;
 import org.leoric.expensetracker.holding.services.interfaces.HoldingSummaryBuilder;
 import org.leoric.expensetracker.transaction.models.Transaction;
 import org.leoric.expensetracker.transaction.models.constants.BalanceAdjustmentDirection;
+import org.leoric.expensetracker.transaction.models.constants.TransactionType;
 import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.springframework.stereotype.Service;
 
@@ -20,7 +21,6 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
-@Slf4j
 @RequiredArgsConstructor
 public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 
@@ -31,13 +31,18 @@ public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 		UUID holdingId = holding.getId();
 		Instant now = Instant.now();
 
-		List<Transaction> allFromStartToNow = transactionRepository.findCompletedByHoldingAndDateRange(holdingId, from, now);
+		List<Transaction> allFromStart = transactionRepository.findCompletedByHoldingFrom(holdingId, from);
 
-		long netFromStartToNow = computeNetEffect(allFromStartToNow, holdingId);
-		long startBalance = holding.getCurrentAmount() - netFromStartToNow;
+		long netFromStart = computeNetEffect(allFromStart, holdingId);
+		long startBalance = Math.subtractExact(holding.getCurrentAmount(), netFromStart);
+		Instant createdDate = holding.getCreatedDate();
+		boolean createdAfterStart = createdDate != null && !createdDate.isBefore(from) && createdDate.isBefore(now);
+		if (createdAfterStart) {
+			startBalance = Math.subtractExact(startBalance, holding.getInitialAmount());
+		}
 
-		List<Transaction> periodTxns = allFromStartToNow.stream()
-				.filter(t -> t.getTransactionDate().isBefore(to))
+		List<Transaction> periodTxns = allFromStart.stream()
+				.filter(t -> t.getTransactionDate().isBefore(to) && t.getTransactionDate().isBefore(now))
 				.toList();
 
 		long totalIncome = 0;
@@ -48,47 +53,57 @@ public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 		Map<UUID, CategoryBucket> incomeBuckets = new HashMap<>();
 		Map<UUID, CategoryBucket> expenseBuckets = new HashMap<>();
 
+		long initialEffect = createdAfterStart && createdDate.isBefore(to) ? holding.getInitialAmount() : 0;
+		if (initialEffect > 0) {
+			totalIncome = Math.addExact(totalIncome, initialEffect);
+		} else if (initialEffect < 0) {
+			totalExpense = Math.subtractExact(totalExpense, initialEffect);
+		}
+
 		for (Transaction t : periodTxns) {
 			switch (t.getTransactionType()) {
 				case INCOME -> {
-					totalIncome += t.getAmount();
+					long amount = resolveIncomeExpenseBalanceEffect(t);
+					totalIncome = Math.addExact(totalIncome, amount);
 					if (t.getCategory() != null) {
-						incomeBuckets.computeIfAbsent(t.getCategory().getId(),
-								_ -> new CategoryBucket(t.getCategory().getId(), t.getCategory().getName())).total += t.getAmount();
+						CategoryBucket bucket = incomeBuckets.computeIfAbsent(t.getCategory().getId(),
+								_ -> new CategoryBucket(t.getCategory().getId(), t.getCategory().getName()));
+						bucket.total = Math.addExact(bucket.total, amount);
 					}
 				}
-				case EXPENSE -> {
-					totalExpense += t.getAmount();
+				case EXPENSE, TEST -> {
+					long amount = resolveIncomeExpenseBalanceEffect(t);
+					totalExpense = Math.addExact(totalExpense, amount);
 					if (t.getCategory() != null) {
-						expenseBuckets.computeIfAbsent(t.getCategory().getId(),
-								_ -> new CategoryBucket(t.getCategory().getId(), t.getCategory().getName())).total += t.getAmount();
+						CategoryBucket bucket = expenseBuckets.computeIfAbsent(t.getCategory().getId(),
+								_ -> new CategoryBucket(t.getCategory().getId(), t.getCategory().getName()));
+						bucket.total = Math.addExact(bucket.total, amount);
 					}
 				}
 				case TRANSFER -> {
-					boolean internalSameAssetTransfer = isInternalSameAssetTransfer(t);
 					if (t.getSourceHolding() != null && t.getSourceHolding().getId().equals(holdingId)) {
-						totalTransferOut += t.getAmount();
-						totalExpense += t.getAmount();
+						totalTransferOut = Math.addExact(totalTransferOut, t.getAmount());
+						totalExpense = Math.addExact(totalExpense, t.getAmount());
 					}
 					if (t.getTargetHolding() != null && t.getTargetHolding().getId().equals(holdingId)) {
-						long transferInAmount = internalSameAssetTransfer ? resolveTransferSettledAmount(t) : t.getAmount();
-						totalTransferIn += transferInAmount;
-						totalIncome += transferInAmount;
+						long transferInAmount = resolveTransferSettledAmount(t);
+						totalTransferIn = Math.addExact(totalTransferIn, transferInAmount);
+						totalIncome = Math.addExact(totalIncome, transferInAmount);
 					}
 				}
 				case BALANCE_ADJUSTMENT -> {
 					if (t.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION) {
-						totalIncome += t.getAmount();
+						totalIncome = Math.addExact(totalIncome, t.getAmount());
 					} else {
-						totalExpense += t.getAmount();
+						totalExpense = Math.addExact(totalExpense, t.getAmount());
 					}
 				}
 			}
 		}
 
-		long difference = totalIncome - totalExpense;
-		long netPeriod = computeNetEffect(periodTxns, holdingId);
-		long endBalance = startBalance + netPeriod;
+		long difference = Math.subtractExact(totalIncome, totalExpense);
+		long netPeriod = Math.addExact(computeNetEffect(periodTxns, holdingId), initialEffect);
+		long endBalance = Math.addExact(startBalance, netPeriod);
 
 		List<CategoryBreakdownDto> incomeByCategory = incomeBuckets.values().stream()
 				.sorted(Comparator.comparingLong(CategoryBucket::total).reversed())
@@ -120,27 +135,35 @@ public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 		long net = 0;
 		for (Transaction t : transactions) {
 			switch (t.getTransactionType()) {
-				case INCOME -> net += t.getAmount();
-				case EXPENSE -> net -= t.getAmount();
+				case INCOME -> net = Math.addExact(net, resolveIncomeExpenseBalanceEffect(t));
+				case EXPENSE, TEST -> net = Math.subtractExact(net, resolveIncomeExpenseBalanceEffect(t));
 				case TRANSFER -> {
-					boolean internalSameAssetTransfer = isInternalSameAssetTransfer(t);
 					if (t.getSourceHolding() != null && t.getSourceHolding().getId().equals(holdingId)) {
-						net -= t.getAmount();
+						net = Math.subtractExact(net, t.getAmount());
 					}
 					if (t.getTargetHolding() != null && t.getTargetHolding().getId().equals(holdingId)) {
-						net += internalSameAssetTransfer ? resolveTransferSettledAmount(t) : t.getAmount();
+						net = Math.addExact(net, resolveTransferSettledAmount(t));
 					}
 				}
 				case BALANCE_ADJUSTMENT -> {
 					if (t.getBalanceAdjustmentDirection() == BalanceAdjustmentDirection.ADDITION) {
-						net += t.getAmount();
+						net = Math.addExact(net, t.getAmount());
 					} else {
-						net -= t.getAmount();
+						net = Math.subtractExact(net, t.getAmount());
 					}
 				}
 			}
 		}
 		return net;
+	}
+
+	private long resolveIncomeExpenseBalanceEffect(Transaction transaction) {
+		if (transaction.getSettledAmount() != null) {
+			return transaction.getSettledAmount();
+		}
+		return transaction.getTransactionType() == TransactionType.INCOME
+				? transaction.getAmount()
+				: Math.addExact(transaction.getAmount(), transaction.getFeeAmount());
 	}
 
 	private boolean isInternalSameAssetTransfer(Transaction transaction) {
@@ -165,15 +188,14 @@ public class HoldingSummaryBuilderImpl implements HoldingSummaryBuilder {
 			return transaction.getSettledAmount();
 		}
 
-		if (isInternalSameAssetTransfer(transaction) && transaction.getFeeAmount() != 0) {
-			try {
-				return Math.subtractExact(transaction.getAmount(), transaction.getFeeAmount());
-			} catch (ArithmeticException ex) {
-				log.warn("Overflow while deriving settledAmount for transfer '{}'", transaction.getId());
-			}
+		if (!isInternalSameAssetTransfer(transaction)) {
+			throw new OperationNotPermittedException("Převod '%s' nemá zadanou přijatou částku; opravte jej v historii transakcí"
+					.formatted(transaction.getId()));
 		}
-
-		return transaction.getAmount();
+		if (transaction.getFeeAmount() < 0 || transaction.getFeeAmount() > transaction.getAmount()) {
+			throw new OperationNotPermittedException("Převod '%s' má neplatný poplatek".formatted(transaction.getId()));
+		}
+		return Math.subtractExact(transaction.getAmount(), transaction.getFeeAmount());
 	}
 
 	private static class CategoryBucket {

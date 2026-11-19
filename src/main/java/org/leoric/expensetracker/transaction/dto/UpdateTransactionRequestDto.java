@@ -33,6 +33,13 @@ public record UpdateTransactionRequestDto(
 
 		String note,
 
-		String externalRef
+		String externalRef,
+		Boolean recalculateBalanceEffect
 ) {
+	public UpdateTransactionRequestDto(UUID holdingId, UUID sourceHoldingId, UUID targetHoldingId, Long amount,
+			String currencyCode, BigDecimal exchangeRate, Long feeAmount, Long settledAmount, UUID categoryId,
+			Instant transactionDate, String description, String note, String externalRef) {
+		this(holdingId, sourceHoldingId, targetHoldingId, amount, currencyCode, exchangeRate, feeAmount,
+				settledAmount, categoryId, transactionDate, description, note, externalRef, null);
+	}
 }
