@@ -27,6 +27,7 @@ import org.leoric.expensetracker.transaction.repositories.TransactionRepository;
 import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.account.repositories.AccountRepository;
 import org.leoric.expensetracker.institution.repositories.InstitutionRepository;
+import org.leoric.expensetracker.restaurant.services.interfaces.RestaurantOperations;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -56,6 +57,7 @@ public class UserServiceImpl implements UserService {
 	private final BudgetPlanRepository budgetPlanRepository;
 	private final RecurringBudgetTemplateRepository recurringBudgetTemplateRepository;
 	private final RecurringTransactionTemplateRepository recurringTransactionTemplateRepository;
+	private final RestaurantOperations restaurantService;
 
 	@Override
 	@Transactional(readOnly = true)
@@ -170,6 +172,7 @@ public class UserServiceImpl implements UserService {
 	 * budget plans, recurring templates, access requests, role assignments.
 	 */
 	private void deleteExpenseTrackerCascade(UUID trackerId) {
+		restaurantService.deleteAllForTracker(trackerId);
 		transactionRepository.deleteByExpenseTrackerId(trackerId);
 		recurringTransactionTemplateRepository.deleteByExpenseTrackerId(trackerId);
 		recurringBudgetTemplateRepository.deleteByExpenseTrackerId(trackerId);
@@ -179,11 +182,14 @@ public class UserServiceImpl implements UserService {
 		institutionRepository.deleteByExpenseTrackerId(trackerId);
 		categoryRepository.deleteByExpenseTrackerId(trackerId);
 		accessRequestRepository.deleteByExpenseTrackerId(trackerId);
-		userExpenseTrackerRoleRepository.deleteByExpenseTrackerId(trackerId);
 
 		// Remove all users from the join table before deleting the tracker
 		ExpenseTracker tracker = expenseTrackerRepository.findById(trackerId).orElse(null);
 		if (tracker != null) {
+			tracker.getUserExpenseTrackerRoles().forEach(assignment ->
+					assignment.getUser().getUserExpenseTrackerRoles().remove(assignment));
+			tracker.getUserExpenseTrackerRoles().clear();
+			userExpenseTrackerRoleRepository.deleteByExpenseTrackerId(trackerId);
 			tracker.getUsers().forEach(u -> u.getExpenseTrackers().remove(tracker));
 			tracker.getUsers().clear();
 			expenseTrackerRepository.delete(tracker);

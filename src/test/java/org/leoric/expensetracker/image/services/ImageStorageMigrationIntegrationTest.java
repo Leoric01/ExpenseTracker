@@ -7,6 +7,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
 import org.leoric.expensetracker.auth.repositories.UserRepository;
+import org.leoric.expensetracker.asset.models.Asset;
+import org.leoric.expensetracker.asset.models.constants.AssetType;
+import org.leoric.expensetracker.asset.models.constants.MarketDataSource;
+import org.leoric.expensetracker.asset.repositories.AssetRepository;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.image.repositories.ImageStorageSettingRepository;
 import org.leoric.expensetracker.image.repositories.PendingImageCleanupRepository;
@@ -67,6 +71,7 @@ class ImageStorageMigrationIntegrationTest {
 	@Autowired private TransactionRepository transactions;
 	@Autowired private TransactionAttachmentRepository attachments;
 	@Autowired private LocalFileStorage local;
+	@Autowired private AssetRepository assets;
 	@MockitoBean private Cloudinary cloudinary;
 	@MockitoBean private CloudinaryFileAccess cloud;
 	private Uploader uploader;
@@ -116,6 +121,56 @@ class ImageStorageMigrationIntegrationTest {
 						.contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Storage tracker\"}"))
 				.andExpect(status().isCreated()).andReturn();
 		trackerId = UUID.fromString(field(tracker, "id"));
+	}
+
+	@Test
+	void migratesBothRestaurantAndVisitItemPhotosInBothDirections() throws Exception {
+		if (!assets.existsByCodeIgnoreCase("CZK")) {
+			assets.saveAndFlush(Asset.builder().code("CZK").name("Czech koruna").assetType(AssetType.FIAT)
+					.scale(2).marketDataSource(MarketDataSource.NONE).build());
+		}
+		String base = "/api/restaurants/" + trackerId;
+		String restaurantId = field(mvc.perform(post(base).header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Bistro\",\"recommendation\":\"NORMAL\",\"services\":[]}"))
+				.andExpect(status().isCreated()).andReturn(), "id");
+		String restaurant = base + "/" + restaurantId;
+		String dishId = field(mvc.perform(post(restaurant + "/dishes").header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Meal\",\"recommendation\":\"NORMAL\"}"))
+				.andExpect(status().isCreated()).andReturn(), "id");
+		String visitId = field(mvc.perform(post(restaurant + "/visits").header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON).content("{\"currencyCode\":\"CZK\"}"))
+				.andExpect(status().isCreated()).andReturn(), "id");
+		String itemId = field(mvc.perform(post(restaurant + "/visits/" + visitId + "/items")
+				.header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"dishId\":\"" + dishId + "\"}")).andExpect(status().isCreated()).andReturn(), "id");
+		String first = field(mvc.perform(multipart(restaurant + "/photos")
+				.file(new MockMultipartFile("file", "a.png", "image/png", PNG)).header("Authorization", "Bearer " + token))
+				.andExpect(status().isCreated()).andReturn(), "imageUrl");
+		String second = field(mvc.perform(multipart(restaurant + "/visits/" + visitId + "/items/" + itemId + "/photos")
+				.file(new MockMultipartFile("file", "b.png", "image/png", PNG)).header("Authorization", "Bearer " + token))
+				.andExpect(status().isCreated()).andReturn(), "imageUrl");
+		String cloudRestaurant = "https://res.cloudinary.com/test/image/upload/v123/expense-tracker/restaurants/one.png";
+		String cloudItem = "https://res.cloudinary.com/test/image/upload/v123/expense-tracker/restaurants/two.png";
+		when(uploader.upload(any(byte[].class), any(Map.class)))
+				.thenReturn(Map.of("secure_url", cloudRestaurant), Map.of("secure_url", cloudItem));
+		when(cloud.download(cloudRestaurant)).thenReturn(new StoredFileData("image/png", PNG));
+		when(cloud.download(cloudItem)).thenReturn(new StoredFileData("image/png", PNG));
+		when(cloud.delete(cloudRestaurant)).thenReturn(true);
+		when(cloud.delete(cloudItem)).thenReturn(true);
+		change("CLOUDINARY", true).andExpect(status().isOk()).andExpect(jsonPath("$.migrated", is(2)));
+		mvc.perform(get(first)).andExpect(status().isNotFound());
+		mvc.perform(get(second)).andExpect(status().isNotFound());
+		mvc.perform(get(restaurant).header("Authorization", "Bearer " + token))
+				.andExpect(jsonPath("$.restaurant.photos[0].imageUrl", is(cloudRestaurant)))
+				.andExpect(jsonPath("$.visits[0].items[0].photos[0].imageUrl", is(cloudItem)));
+		change("LOCAL", true).andExpect(status().isOk()).andExpect(jsonPath("$.migrated", is(2)));
+		MvcResult detail = mvc.perform(get(restaurant).header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk()).andReturn();
+		String localUrl = field(detail, "imageUrl");
+		assertThat(localUrl).startsWith("/images/expense-tracker/restaurants/");
+		mvc.perform(get(localUrl)).andExpect(status().isOk()).andExpect(content().bytes(PNG));
+		verify(cloud).delete(cloudRestaurant);
+		verify(cloud).delete(cloudItem);
 	}
 
 	@Test

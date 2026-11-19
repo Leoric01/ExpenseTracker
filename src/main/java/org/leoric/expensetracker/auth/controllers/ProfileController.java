@@ -7,6 +7,7 @@ import org.leoric.expensetracker.auth.dto.UserProfileUpdateDto;
 import org.leoric.expensetracker.auth.dto.UserResponseFullDto;
 import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.auth.services.interfaces.UserService;
+import org.leoric.expensetracker.restaurant.services.RestaurantFileCleanupService;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProfileController {
 
 	private final UserService userService;
+	private final RestaurantFileCleanupService restaurantFileCleanupService;
 
 	@GetMapping("/me")
 	public ResponseEntity<UserInfoResponseDto> profileMe(@AuthenticationPrincipal User currentUser) {
@@ -57,6 +59,7 @@ public class ProfileController {
 	@DeleteMapping("/me")
 	public ResponseEntity<Void> profileDeleteMe(@AuthenticationPrincipal User currentUser) {
 		userService.profileDeleteMe(currentUser);
-		return ResponseEntity.noContent().build();
+		long pendingCleanup = restaurantFileCleanupService.process();
+		return ResponseEntity.noContent().header("X-Restaurant-Pending-Cleanup", Long.toString(pendingCleanup)).build();
 	}
 }

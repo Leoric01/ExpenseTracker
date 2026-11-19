@@ -30,6 +30,8 @@ public class ImageStorageMigrationService {
 			new Reference("Todo", "imageUrl", "todo", true),
 			new Reference("KanbanCard", "imageUrl", "kanban", true),
 			new Reference("WorkoutExercise", "imageUrl", "workout", true),
+			new Reference("RestaurantPhoto", "imageUrl", "restaurants", true),
+			new Reference("RestaurantItemPhoto", "imageUrl", "restaurants", true),
 			new Reference("TransactionAttachment", "fileUrl", "attachments", false));
 
 	private final EntityManager entityManager;
@@ -126,7 +128,7 @@ public class ImageStorageMigrationService {
 		}
 	}
 
-	private boolean stillReferenced(String source) {
+	public boolean stillReferenced(String source) {
 		for (String reference : findReferences().keySet()) {
 			if (source.equals(reference)) return true;
 			if (isCloudinary(source) && isCloudinary(reference)) {

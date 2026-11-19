@@ -1,0 +1,135 @@
+### Owner and tracker members can read and modify this module.
+### Ratings are nullable integers 0–10; zero is a rating, not "unrated".
+### Money is nullable, nonnegative and expressed in the currency's smallest units.
+
+### List: search matches restaurant or catalog dish; filters and sorting are optional.
+GET {{host}}/api/restaurants/{{tracker_id}}?search=burger&recommendation=AVOID&minRating=0&maxRating=10&order=rating&page=0&size=20
+Authorization: Bearer {{token}}
+
+### Available service tags (Wolt, Bolt, Osobní návštěva plus tracker-specific tags).
+GET {{host}}/api/restaurants/{{tracker_id}}/services
+Authorization: Bearer {{token}}
+
+### Create a tracker-specific service tag.
+POST {{host}}/api/restaurants/{{tracker_id}}/services
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name":"Vlastní rozvoz"}
+
+### Delete a custom tag; visit history retains its recorded name.
+DELETE {{host}}/api/restaurants/{{tracker_id}}/services/{{service_id}}
+Authorization: Bearer {{token}}
+
+### Create a restaurant. Duplicate names are allowed.
+POST {{host}}/api/restaurants/{{tracker_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name":"Bistro","note":"Osobní poznámka","priceLevel":"MEDIUM","recommendation":"NORMAL","services":["Wolt"]}
+
+### Detail includes catalog dishes, visits, items, photos and aggregate ratings.
+GET {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}
+Authorization: Bearer {{token}}
+
+### Replace restaurant properties.
+PUT {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name":"Bistro","note":"Další poznámka","priceLevel":"HIGH","recommendation":"AVOID","services":["Wolt","Bolt"]}
+
+### Create a catalog dish.
+POST {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/dishes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name":"Burger","recommendation":"FAVORITE"}
+
+### Edit a dish. Existing visit items retain their recorded names.
+PUT {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/dishes/{{dish_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name":"Burger s hranolky","recommendation":"AVOID"}
+
+### Delete a catalog dish; previous visit items remain as historical snapshots.
+DELETE {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/dishes/{{dish_id}}
+Authorization: Bearer {{token}}
+
+### Create a visit. Both total and delivery are separate; no transaction is created.
+POST {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/visits
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"visitedOn":"2026-01-01","serviceName":"Wolt","rating":0,"note":"Studené jídlo","currencyCode":"CZK","totalMinor":24900,"deliveryMinor":3900}
+
+### Update a visit. Remove its existing prices before changing currency.
+PUT {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/visits/{{visit_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"visitedOn":"2026-01-01","serviceName":"Wolt","rating":8,"currencyCode":"CZK","totalMinor":24900,"deliveryMinor":3900}
+
+### Add an item; repeat to add more dishes to the same visit.
+POST {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/visits/{{visit_id}}/items
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"dishId":"{{dish_id}}","rating":9,"priceMinor":21000,"note":"Chutnalo mi"}
+
+### Edit an item. For a deleted catalog dish retain dishId: null.
+PUT {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/visits/{{visit_id}}/items/{{item_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"dishId":"{{dish_id}}","rating":0,"priceMinor":21000,"note":"Změna zkušenosti"}
+
+### Attach a restaurant photo. JPEG, PNG, WebP, HEIC, GIF or AVIF; max 10 MB.
+POST {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/photos
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=restaurant-image
+
+--restaurant-image
+Content-Disposition: form-data; name="file"; filename="example.png"
+Content-Type: image/png
+
+< ./example.png
+--restaurant-image--
+
+### Photos for a specific meal in a visit use the same multipart body.
+POST {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/visits/{{visit_id}}/items/{{item_id}}/photos
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=restaurant-image
+
+--restaurant-image
+Content-Disposition: form-data; name="file"; filename="example.png"
+Content-Type: image/png
+
+< ./example.png
+--restaurant-image--
+
+### Delete photo, item, visit or restaurant. Responses report pendingCleanup;
+### retry failed/deferred file deletions with POST /cleanup.
+DELETE {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/photos/{{photo_id}}
+Authorization: Bearer {{token}}
+
+###
+DELETE {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/visits/{{visit_id}}/items/{{item_id}}/photos/{{photo_id}}
+Authorization: Bearer {{token}}
+
+###
+DELETE {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/visits/{{visit_id}}/items/{{item_id}}
+Authorization: Bearer {{token}}
+
+###
+DELETE {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}/visits/{{visit_id}}
+Authorization: Bearer {{token}}
+
+###
+DELETE {{host}}/api/restaurants/{{tracker_id}}/{{restaurant_id}}
+Authorization: Bearer {{token}}
+
+###
+POST {{host}}/api/restaurants/{{tracker_id}}/cleanup
+Authorization: Bearer {{token}}

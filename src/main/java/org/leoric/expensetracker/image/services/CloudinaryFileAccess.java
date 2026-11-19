@@ -80,7 +80,7 @@ public class CloudinaryFileAccess {
 		}
 		String path = uri.getRawPath();
 		var matcher = Pattern.compile("^/" + Pattern.quote(properties.getCloudName())
-				+ "/(image|raw|video)/upload/(?:v[0-9]+/)?(expense-tracker/(?:accounts|institutions|categories|todo|kanban|attachments|workout)/[A-Za-z0-9_.-]+)$")
+				+ "/(image|raw|video)/upload/(?:v[0-9]+/)?(expense-tracker/(?:accounts|institutions|categories|todo|kanban|attachments|workout|restaurants)/[A-Za-z0-9_.-]+)$")
 				.matcher(path);
 		if (!matcher.matches()) throw new IllegalArgumentException("Unsupported Cloudinary file path");
 		String resourceType = matcher.group(1);
