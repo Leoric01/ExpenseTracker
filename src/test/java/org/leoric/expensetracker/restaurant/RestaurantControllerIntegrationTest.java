@@ -67,6 +67,13 @@ class RestaurantControllerIntegrationTest {
 	@DynamicPropertySource
 	static void properties(DynamicPropertyRegistry registry) {
 		registry.add("app.image-storage.local-directory", () -> DIRECTORY.toString());
+		String mariadbUrl = System.getenv("RESTAURANT_TEST_MARIADB_URL");
+		if (mariadbUrl != null && !mariadbUrl.isBlank()) {
+			registry.add("spring.datasource.url", () -> mariadbUrl);
+			registry.add("spring.datasource.driver-class-name", () -> "org.mariadb.jdbc.Driver");
+			registry.add("spring.datasource.username", () -> "restaurant_test");
+			registry.add("spring.datasource.password", () -> "restaurant_test");
+		}
 	}
 	private static Path createDirectory() {
 		try { return Files.createTempDirectory("restaurant-test-"); }

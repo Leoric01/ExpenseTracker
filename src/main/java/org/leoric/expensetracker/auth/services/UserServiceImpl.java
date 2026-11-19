@@ -28,6 +28,7 @@ import org.leoric.expensetracker.holding.repositories.HoldingRepository;
 import org.leoric.expensetracker.account.repositories.AccountRepository;
 import org.leoric.expensetracker.institution.repositories.InstitutionRepository;
 import org.leoric.expensetracker.restaurant.services.interfaces.RestaurantOperations;
+import org.leoric.expensetracker.vacation.services.VacationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -58,6 +59,7 @@ public class UserServiceImpl implements UserService {
 	private final RecurringBudgetTemplateRepository recurringBudgetTemplateRepository;
 	private final RecurringTransactionTemplateRepository recurringTransactionTemplateRepository;
 	private final RestaurantOperations restaurantService;
+	private final VacationService vacationService;
 
 	@Override
 	@Transactional(readOnly = true)
@@ -173,6 +175,7 @@ public class UserServiceImpl implements UserService {
 	 */
 	private void deleteExpenseTrackerCascade(UUID trackerId) {
 		restaurantService.deleteAllForTracker(trackerId);
+		vacationService.deleteAllForTracker(trackerId);
 		transactionRepository.deleteByExpenseTrackerId(trackerId);
 		recurringTransactionTemplateRepository.deleteByExpenseTrackerId(trackerId);
 		recurringBudgetTemplateRepository.deleteByExpenseTrackerId(trackerId);

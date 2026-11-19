@@ -32,6 +32,7 @@ public class ImageStorageMigrationService {
 			new Reference("WorkoutExercise", "imageUrl", "workout", true),
 			new Reference("RestaurantPhoto", "imageUrl", "restaurants", true),
 			new Reference("RestaurantItemPhoto", "imageUrl", "restaurants", true),
+			new Reference("VacationPhoto", "imageUrl", "vacations", true),
 			new Reference("TransactionAttachment", "fileUrl", "attachments", false));
 
 	private final EntityManager entityManager;

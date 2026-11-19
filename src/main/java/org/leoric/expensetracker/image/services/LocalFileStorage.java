@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
 @Service
 @Slf4j
 public class LocalFileStorage {
-	private static final Pattern FOLDER = Pattern.compile("expense-tracker/(accounts|institutions|categories|todo|kanban|attachments|workout|restaurants)");
+	private static final Pattern FOLDER = Pattern.compile("expense-tracker/(accounts|institutions|categories|todo|kanban|attachments|workout|restaurants|vacations)");
 	private static final Pattern FILE = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png|webp|heic|heif|gif|avif|pdf)");
 	private static final Map<String, String> EXTENSIONS = Map.of(
 			"image/jpeg", "jpg", "image/png", "png", "image/webp", "webp", "image/heic", "heic", "image/heif", "heif",

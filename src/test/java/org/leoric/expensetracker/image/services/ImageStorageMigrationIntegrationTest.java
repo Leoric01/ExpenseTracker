@@ -124,6 +124,47 @@ class ImageStorageMigrationIntegrationTest {
 	}
 
 	@Test
+	void migratesVacationAndVisitPhotosBothWays() throws Exception {
+		String base = "/api/vacations/" + trackerId;
+		String placeId = field(mvc.perform(post(base + "/places").header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Ship\",\"kind\":\"Ship\",\"recommendation\":\"NORMAL\"}"))
+				.andExpect(status().isCreated()).andReturn(), "id");
+		String id = field(mvc.perform(post(base).header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Cruise\",\"status\":\"COMPLETED\",\"focuses\":[],\"recommendation\":\"NORMAL\",\"ratings\":{}}"))
+				.andExpect(status().isCreated()).andReturn(), "id");
+		String vacation = base + "/" + id;
+		String visitId = field(mvc.perform(post(vacation + "/visits").header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON).content("{\"placeId\":\"" + placeId + "\",\"ratings\":{}}"))
+				.andExpect(status().isCreated()).andReturn(), "id");
+		String first = field(mvc.perform(multipart(vacation + "/photos")
+				.file(new MockMultipartFile("file", "a.png", "image/png", PNG)).header("Authorization", "Bearer " + token))
+				.andExpect(status().isCreated()).andReturn(), "imageUrl");
+		String second = field(mvc.perform(multipart(vacation + "/photos?visitId=" + visitId)
+				.file(new MockMultipartFile("file", "b.png", "image/png", PNG)).header("Authorization", "Bearer " + token))
+				.andExpect(status().isCreated()).andReturn(), "imageUrl");
+		String cloudTrip = "https://res.cloudinary.com/test/image/upload/v123/expense-tracker/vacations/one.png";
+		String cloudVisit = "https://res.cloudinary.com/test/image/upload/v123/expense-tracker/vacations/two.png";
+		when(uploader.upload(any(byte[].class), any(Map.class))).thenReturn(Map.of("secure_url", cloudTrip), Map.of("secure_url", cloudVisit));
+		when(cloud.download(cloudTrip)).thenReturn(new StoredFileData("image/png", PNG));
+		when(cloud.download(cloudVisit)).thenReturn(new StoredFileData("image/png", PNG));
+		when(cloud.delete(cloudTrip)).thenReturn(true);
+		when(cloud.delete(cloudVisit)).thenReturn(true);
+		change("CLOUDINARY", true).andExpect(status().isOk()).andExpect(jsonPath("$.migrated", is(2)));
+		mvc.perform(get(first)).andExpect(status().isNotFound());
+		mvc.perform(get(second)).andExpect(status().isNotFound());
+		String migratedDetail = mvc.perform(get(vacation).header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		assertThat(migratedDetail).contains(cloudTrip, cloudVisit);
+		change("LOCAL", true).andExpect(status().isOk()).andExpect(jsonPath("$.migrated", is(2)));
+		MvcResult detail = mvc.perform(get(vacation).header("Authorization", "Bearer " + token)).andExpect(status().isOk()).andReturn();
+		String localUrl = field(detail, "imageUrl");
+		assertThat(localUrl).startsWith("/images/expense-tracker/vacations/");
+		mvc.perform(get(localUrl)).andExpect(status().isOk()).andExpect(content().bytes(PNG));
+		verify(cloud).delete(cloudTrip);
+		verify(cloud).delete(cloudVisit);
+	}
+
+	@Test
 	void migratesBothRestaurantAndVisitItemPhotosInBothDirections() throws Exception {
 		if (!assets.existsByCodeIgnoreCase("CZK")) {
 			assets.saveAndFlush(Asset.builder().code("CZK").name("Czech koruna").assetType(AssetType.FIAT)

@@ -1,0 +1,69 @@
+### Owner and tracker members can read and modify vacations and places.
+### Ratings are nullable integers 0–10. Zero is distinct from an absent rating.
+### Prices are nonnegative integers in the currency's smallest units.
+
+### Search and filter vacations.
+GET {{host}}/api/vacations/{{tracker_id}}?search=Costa&year=2025&order=rating&page=0&size=20
+Authorization: Bearer {{token}}
+
+### Paginated place catalog: filters use the average of rated visits; unrated places sort last by rating.
+GET {{host}}/api/vacations/{{tracker_id}}/places/search?search=Costa&kind=Loď&area=Itálie&recommendation=FAVORITE&minRating=5&maxRating=10&order=rating&page=0&size=20
+Authorization: Bearer {{token}}
+
+### Create a shared place (duplicate names are allowed).
+POST {{host}}/api/vacations/{{tracker_id}}/places
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name":"Costa Toscana","kind":"Loď","country":"Itálie","recommendation":"NORMAL"}
+
+### Create a vacation. Dates, year, price and ratings are optional.
+POST {{host}}/api/vacations/{{tracker_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name":"Plavba Středomořím","status":"COMPLETED","type":"Plavba","focuses":["Wellness","Relax"],"year":2025,"approximate":true,"provider":"Costa","people":2,"totalMinor":200000,"currencyCode":"EUR","rating":9,"recommendation":"FAVORITE","ratings":{"Jídlo":8,"Wellness":9}}
+
+### Detail includes visits, costs, and vacation photos.
+GET {{host}}/api/vacations/{{tracker_id}}/{{vacation_id}}
+Authorization: Bearer {{token}}
+
+### Add a visit to a shared place; its name and kind are stored as historical snapshots.
+POST {{host}}/api/vacations/{{tracker_id}}/{{vacation_id}}/visits
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"placeId":"{{place_id}}","rating":8,"note":"Pěkná loď","ratings":{"Kajuta":9}}
+
+### Add an informational expense. It is not added to the total.
+POST {{host}}/api/vacations/{{tracker_id}}/{{vacation_id}}/expenses
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name":"Výlet","kind":"Výlety","amountMinor":1200,"currencyCode":"EUR"}
+
+### An exact, non-approximate start date is needed for historical conversion.
+### A future start uses the current rate as an estimate; for approximate dates use mode=current.
+GET {{host}}/api/vacations/{{tracker_id}}/{{vacation_id}}/conversion?target=CZK&mode=current
+Authorization: Bearer {{token}}
+
+### Upload a vacation photo; append ?visitId={{visit_id}} for a visit.
+### JPEG, PNG, WebP, HEIC, GIF or AVIF; maximum 10 MB.
+POST {{host}}/api/vacations/{{tracker_id}}/{{vacation_id}}/photos
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=vacation-photo
+
+--vacation-photo
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+< ./photo.jpg
+--vacation-photo--
+
+### Deleting a place preserves visit snapshots and photos; deleting a vacation removes its visits and photos.
+DELETE {{host}}/api/vacations/{{tracker_id}}/places/{{place_id}}
+Authorization: Bearer {{token}}
+
+### Retry pending photo cleanup.
+POST {{host}}/api/vacations/{{tracker_id}}/cleanup
+Authorization: Bearer {{token}}
