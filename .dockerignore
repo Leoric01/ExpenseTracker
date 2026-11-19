@@ -1,0 +1,9 @@
+.git
+.idea
+.gradle
+build
+logs
+dbbackups
+.env
+.env.*
+src/main/resources/application-dev.properties
