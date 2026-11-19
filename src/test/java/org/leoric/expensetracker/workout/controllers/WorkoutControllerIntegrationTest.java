@@ -1,20 +1,29 @@
 package org.leoric.expensetracker.workout.controllers;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.leoric.expensetracker.auth.models.UserExpenseTrackerRole;
 import org.leoric.expensetracker.auth.repositories.RoleRepository;
 import org.leoric.expensetracker.auth.repositories.UserExpenseTrackerRoleRepository;
 import org.leoric.expensetracker.auth.repositories.UserRepository;
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
+import org.leoric.expensetracker.image.services.LocalFileStorage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.UUID;
+import java.util.Base64;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.regex.Pattern;
 
 import static org.hamcrest.Matchers.is;
@@ -22,12 +31,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 class WorkoutControllerIntegrationTest {
+	private static final Path IMAGE_DIRECTORY = createImageDirectory();
+	private static final byte[] PNG = Base64.getDecoder().decode(
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=");
 	private static final String PLAN = """
 			{"title":"Workout","weekLabel":"Current plan","days":[
 			  {"id":"monday","label":"Po","name":"Push","focus":"Chest","exercises":[
@@ -48,8 +61,30 @@ class WorkoutControllerIntegrationTest {
 	private UserExpenseTrackerRoleRepository trackerRoleRepository;
 	@Autowired
 	private ExpenseTrackerRepository trackerRepository;
+	@Autowired
+	private LocalFileStorage localFileStorage;
 	private String token;
 	private UUID trackerId;
+
+	@DynamicPropertySource
+	static void storageProperties(DynamicPropertyRegistry registry) {
+		registry.add("app.image-storage.local-directory", () -> IMAGE_DIRECTORY.toString());
+	}
+
+	private static Path createImageDirectory() {
+		try {
+			return Files.createTempDirectory("workout-integration-");
+		} catch (java.io.IOException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
+
+	@AfterAll
+	static void removeImageDirectory() throws Exception {
+		try (var paths = Files.walk(IMAGE_DIRECTORY)) {
+			for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);
+		}
+	}
 
 	@BeforeEach
 	void setUp() throws Exception {
@@ -155,6 +190,63 @@ class WorkoutControllerIntegrationTest {
 	}
 
 	@Test
+	void imageUploadReadDeleteAndPlanChanges() throws Exception {
+		putPlan(PLAN).andExpect(status().isOk());
+		MockMultipartFile image = new MockMultipartFile("file", "test.png", "image/png", PNG);
+		MvcResult upload = mockMvc.perform(multipart("/api/workout/{trackerId}/days/monday/exercises/pushups/image", trackerId)
+						.file(image).header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.days[0].exercises[0].imageUrl").isString())
+				.andReturn();
+		String url = field(upload, "imageUrl");
+		mockMvc.perform(get(url)).andExpect(status().isOk()).andExpect(result ->
+				org.assertj.core.api.Assertions.assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(PNG));
+		mockMvc.perform(get(url)).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+				.string("X-Content-Type-Options", "nosniff"))
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+						.contentType("image/png"));
+		mockMvc.perform(multipart("/api/workout/{trackerId}/days/monday/exercises/pushups/image", trackerId)
+						.file(image).header("Authorization", "Bearer " + token))
+				.andExpect(status().isBadRequest());
+		putPlan(PLAN.replace("\"name\":\"Pushups\"", "\"name\":\"Changed\""))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.days[0].exercises[0].imageUrl", is(url)));
+		putPlan("{\"title\":\"Empty\",\"weekLabel\":\"Current\",\"days\":[]}")
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.businessErrorCode", is("B-5401")));
+		mockMvc.perform(delete("/api/workout/{trackerId}/days/monday/exercises/pushups/image", trackerId)
+						.header("Authorization", "Bearer " + token))
+				.andExpect(status().isNoContent());
+		mockMvc.perform(get(url)).andExpect(status().isNotFound());
+		mockMvc.perform(delete("/api/workout/{trackerId}/days/monday/exercises/pushups/image", trackerId)
+						.header("Authorization", "Bearer " + token))
+				.andExpect(status().isNoContent());
+		putPlan("{\"title\":\"Empty\",\"weekLabel\":\"Current\",\"days\":[]}")
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void invalidImageAndMissingExerciseAreRejected() throws Exception {
+		putPlan(PLAN).andExpect(status().isOk());
+		mockMvc.perform(multipart("/api/workout/{trackerId}/days/monday/exercises/pushups/image", trackerId)
+						.file(new MockMultipartFile("file", "fake.png", "image/png", "fake".getBytes()))
+						.header("Authorization", "Bearer " + token))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(multipart("/api/workout/{trackerId}/days/monday/exercises/missing/image", trackerId)
+						.file(new MockMultipartFile("file", "test.png", "image/png", PNG))
+						.header("Authorization", "Bearer " + token))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void localPdfIsServedAsAttachmentWithSafeHeaders() throws Exception {
+		var pdf = new MockMultipartFile("file", "receipt.pdf", "application/pdf", "%PDF-1.4".getBytes());
+		String url = localFileStorage.save(pdf, "expense-tracker/attachments", false);
+		mockMvc.perform(get(url))
+				.andExpect(status().isOk())
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType("application/pdf"))
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Disposition", "attachment"))
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("X-Content-Type-Options", "nosniff"));
+	}
+
+	@Test
 	void endpointsRequireAuthenticationAndTrackerAccess() throws Exception {
 		putPlan(PLAN).andExpect(status().isOk());
 		mockMvc.perform(get("/api/workout/{trackerId}", trackerId)).andExpect(status().isUnauthorized());
@@ -184,6 +276,16 @@ class WorkoutControllerIntegrationTest {
 						.header("Authorization", "Bearer " + otherToken)
 						.contentType(MediaType.APPLICATION_JSON).content("{\"completed\":true}"))
 				.andExpect(status().isNoContent());
+		mockMvc.perform(multipart("/api/workout/{trackerId}/days/monday/exercises/pushups/image", trackerId)
+						.file(new MockMultipartFile("file", "test.png", "image/png", PNG))
+						.header("Authorization", "Bearer " + otherToken))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(delete("/api/workout/{trackerId}/days/monday/exercises/pushups/image", trackerId)
+						.header("Authorization", "Bearer " + otherToken))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(multipart("/api/workout/{trackerId}/days/monday/exercises/pushups/image", trackerId)
+						.file(new MockMultipartFile("file", "test.png", "image/png", PNG)))
+				.andExpect(status().isUnauthorized());
 		mockMvc.perform(delete("/api/workout/{trackerId}/completion", trackerId)
 						.header("Authorization", "Bearer " + otherToken))
 				.andExpect(status().isNoContent());

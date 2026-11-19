@@ -11,6 +11,7 @@ import org.leoric.expensetracker.handler.exceptions.KanbanCardNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.KanbanStageNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.KanbanTagNotFoundException;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
+import org.leoric.expensetracker.image.services.ImageUrlResolver;
 import org.leoric.expensetracker.kanban.dtos.KanbanBoardSnapshotResponseDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardReorderItemDto;
 import org.leoric.expensetracker.kanban.dtos.KanbanCardReorderRequestDto;
@@ -77,6 +78,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 	private final KanbanChecklistItemRepository kanbanChecklistItemRepository;
 	private final KanbanCardTagAssignmentRepository kanbanCardTagAssignmentRepository;
 	private final ImageService imageService;
+	private final ImageUrlResolver imageUrlResolver;
 	private final ExpenseTrackerAccessService expenseTrackerAccessService;
 	private final KanbanMapper kanbanMapper;
 
@@ -446,7 +448,7 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 
 		boolean deleted = imageService.deleteImageByUrl(card.getImageUrl());
 		if (!deleted) {
-			throw new InvalidKanbanException("Failed to delete image from Cloudinary. Kanban card image reference was not changed");
+			throw new InvalidKanbanException("Failed to delete image from storage (local or Cloudinary). Kanban card image reference was not changed");
 		}
 
 		card.setImageUrl(null);
@@ -639,10 +641,10 @@ public class KanbanCardServiceImpl implements KanbanCardService {
 		if (normalized == null) {
 			return null;
 		}
-		if (!normalized.startsWith("https://res.cloudinary.com/") && !normalized.startsWith("http://res.cloudinary.com/")) {
-			throw new InvalidKanbanException("imageUrl must be a valid Cloudinary URL");
+		if (!org.leoric.expensetracker.image.services.ImageUrlRules.isValid(normalized)) {
+			throw new InvalidKanbanException("imageUrl must be a valid stored image URL");
 		}
-		return normalized;
+		return imageUrlResolver.resolve(normalized);
 	}
 
 	private Integer validatePriority(Integer priority) {

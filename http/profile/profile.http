@@ -31,6 +31,19 @@ Content-Type: application/json
   "newConfirmationPassword": "newPassword123"
 }
 
+### Global image storage (administrators only)
+GET {{host}}/profile/image-storage
+Authorization: Bearer {{token}}
+
+### Switch new uploads to Cloudinary without moving old files.
+### Set migrate to true to copy referenced files, update their URLs and delete the originals.
+### The response reports failed transfers and pending cleanup; repeat with the same provider to retry.
+PUT {{host}}/profile/image-storage
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"provider": "CLOUDINARY", "migrate": false}
+
 ### Delete my account (CAREFUL – permanently deletes user + all owned data)
 DELETE {{host}}/profile/me
 Authorization: Bearer {{auth_token}}

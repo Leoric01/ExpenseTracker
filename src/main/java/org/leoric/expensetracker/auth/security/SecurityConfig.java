@@ -53,6 +53,8 @@ public class SecurityConfig {
 						.accessDeniedHandler(accessDeniedHandler)
 				)
 				.authorizeHttpRequests(req -> req
+						.requestMatchers(HttpMethod.GET, "/images/**").permitAll()
+						.requestMatchers(HttpMethod.HEAD, "/images/**").permitAll()
 						.requestMatchers(
 								"/",
 								"/error",

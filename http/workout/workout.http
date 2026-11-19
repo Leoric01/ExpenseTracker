@@ -40,3 +40,21 @@ Authorization: Bearer {{auth_token}}
 ### IDs use lowercase letters, digits, underscores or hyphens and begin with a letter or digit.
 ### A plan replacement preserves completion for unchanged day/exercise ID pairs.
 ### Removing or changing an ID deletes its completion. Order follows the input arrays.
+### Unchanged IDs also preserve images. Delete an exercise's image before removing its exercise or day.
+
+### Upload one image to a saved exercise (owner only). Delete an existing image before replacing it.
+### Supported: JPEG, PNG, WebP, HEIC, GIF, AVIF; max 10 MB.
+POST {{host}}/api/workout/{{tracker_id}}/days/monday/exercises/pushups/image
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=workout-image
+
+--workout-image
+Content-Disposition: form-data; name="file"; filename="example.png"
+Content-Type: image/png
+
+< ./example.png
+--workout-image--
+
+### Remove the stored image (owner only).
+DELETE {{host}}/api/workout/{{tracker_id}}/days/monday/exercises/pushups/image
+Authorization: Bearer {{token}}

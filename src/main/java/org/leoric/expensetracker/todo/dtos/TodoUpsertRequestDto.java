@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import org.leoric.expensetracker.todo.models.constants.TodoPriority;
+import org.leoric.expensetracker.image.services.ImageUrlRules;
 import org.leoric.expensetracker.todo.models.constants.TodoStatus;
 
 import java.time.LocalDate;
@@ -19,8 +20,8 @@ public record TodoUpsertRequestDto(
 		@Size(max = 1000, message = "Description length must be <= 1000")
 		String description,
 		@Pattern(
-				regexp = "^(https?://res\\.cloudinary\\.com/.+)?$",
-				message = "imageUrl must be a valid Cloudinary URL"
+				regexp = ImageUrlRules.PATTERN,
+				message = "imageUrl must be a valid stored image URL"
 		)
 		String imageUrl,
 		TodoStatus status,

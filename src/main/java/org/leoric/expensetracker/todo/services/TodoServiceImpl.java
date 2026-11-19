@@ -11,6 +11,7 @@ import org.leoric.expensetracker.handler.exceptions.InvalidTodoException;
 import org.leoric.expensetracker.handler.exceptions.TodoNotFoundException;
 import org.leoric.expensetracker.handler.exceptions.TodoTagNotFoundException;
 import org.leoric.expensetracker.image.services.interfaces.ImageService;
+import org.leoric.expensetracker.image.services.ImageUrlResolver;
 import org.leoric.expensetracker.todo.dtos.TodoArchiveUpdateRequestDto;
 import org.leoric.expensetracker.todo.dtos.TodoResponseDto;
 import org.leoric.expensetracker.todo.dtos.TodoStatusUpdateRequestDto;
@@ -66,6 +67,7 @@ public class TodoServiceImpl implements TodoService {
 	private final TodoTagAssignmentRepository todoTagAssignmentRepository;
 	private final ExpenseTrackerRepository expenseTrackerRepository;
 	private final ImageService imageService;
+	private final ImageUrlResolver imageUrlResolver;
 	private final TodoMapper todoMapper;
 
 	@Override
@@ -275,7 +277,7 @@ public class TodoServiceImpl implements TodoService {
 
 		boolean deleted = imageService.deleteImageByUrl(todo.getImageUrl());
 		if (!deleted) {
-			throw new InvalidTodoException("Failed to delete image from Cloudinary. Todo image reference was not changed");
+			throw new InvalidTodoException("Failed to delete image from storage (local or Cloudinary). Todo image reference was not changed");
 		}
 
 		todo.setImageUrl(null);
@@ -535,12 +537,11 @@ public class TodoServiceImpl implements TodoService {
 			return null;
 		}
 
-		if (!normalized.startsWith("https://res.cloudinary.com/")
-				&& !normalized.startsWith("http://res.cloudinary.com/")) {
-			throw new InvalidTodoException("imageUrl must be a valid Cloudinary URL");
+		if (!org.leoric.expensetracker.image.services.ImageUrlRules.isValid(normalized)) {
+			throw new InvalidTodoException("imageUrl must be a valid stored image URL");
 		}
 
-		return normalized;
+		return imageUrlResolver.resolve(normalized);
 	}
 
 	private Integer defaultIfNull(Integer value) {

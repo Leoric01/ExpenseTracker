@@ -10,7 +10,9 @@ import org.leoric.expensetracker.workout.dtos.WorkoutPlanUpsertRequestDto;
 import org.leoric.expensetracker.workout.services.interfaces.WorkoutService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -57,6 +59,24 @@ public class WorkoutController {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser,
 				EXPENSETRACKER_OWNER + ";" + EXPENSETRACKER_MEMBER);
 		workoutService.workoutReset(currentUser, trackerId);
+		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping(value = "/{trackerId}/days/{dayId}/exercises/{exerciseId}/image",
+			consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	public ResponseEntity<WorkoutPlanResponseDto> workoutUploadImage(
+			@AuthenticationPrincipal User currentUser, @PathVariable UUID trackerId,
+			@PathVariable String dayId, @PathVariable String exerciseId, @RequestParam("file") MultipartFile file) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
+		return ResponseEntity.ok(workoutService.workoutUploadImage(currentUser, trackerId, dayId, exerciseId, file));
+	}
+
+	@DeleteMapping("/{trackerId}/days/{dayId}/exercises/{exerciseId}/image")
+	public ResponseEntity<Void> workoutDeleteImage(
+			@AuthenticationPrincipal User currentUser, @PathVariable UUID trackerId,
+			@PathVariable String dayId, @PathVariable String exerciseId) {
+		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
+		workoutService.workoutDeleteImage(currentUser, trackerId, dayId, exerciseId);
 		return ResponseEntity.noContent().build();
 	}
 }

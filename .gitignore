@@ -41,3 +41,4 @@ logs/
 /.env
 /src/main/resources/application-dev.properties
 /dbbackups/
+/images/

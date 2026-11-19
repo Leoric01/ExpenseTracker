@@ -4,6 +4,7 @@
 build
 logs
 dbbackups
+images
 .env
 .env.*
 src/main/resources/application-dev.properties

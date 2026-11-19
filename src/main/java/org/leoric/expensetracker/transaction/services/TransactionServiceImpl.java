@@ -1662,6 +1662,10 @@ public class TransactionServiceImpl implements TransactionService {
 
 		String fileName = attachment.getFileName();
 
+		if (attachment.getFileUrl() != null && attachment.getFileUrl().startsWith("/images/")
+				&& !imageService.deleteImageByUrl(attachment.getFileUrl())) {
+			throw new OperationNotPermittedException("Failed to delete local attachment; its reference was not changed");
+		}
 		attachmentRepository.delete(attachment);
 
 		log.info("User {} deleted attachment '{}' from transaction '{}' in tracker '{}'",
