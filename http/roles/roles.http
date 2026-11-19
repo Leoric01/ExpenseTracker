@@ -1,0 +1,57 @@
+### Global roles available to authenticated users
+GET {{host}}/api/roles
+Authorization: Bearer {{token}}
+
+### Request a global role; administrators review it
+POST {{host}}/api/roles/requests
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"role":"ADMIN"}
+
+### My role requests
+GET {{host}}/api/roles/requests/mine?page=0&size=10
+Authorization: Bearer {{token}}
+
+### Cancel my pending request
+PATCH {{host}}/api/roles/requests/{{role_request_id}}/cancel
+Authorization: Bearer {{token}}
+
+### Administrator: list and decide global requests
+GET {{host}}/api/roles/requests?page=0&size=10&status=PENDING
+Authorization: Bearer {{admin_token}}
+
+###
+PATCH {{host}}/api/roles/requests/{{role_request_id}}/approve
+Authorization: Bearer {{admin_token}}
+
+###
+PATCH {{host}}/api/roles/requests/{{role_request_id}}/reject
+Authorization: Bearer {{admin_token}}
+
+### Administrator: replace global roles; at least one must remain.
+### expectedRoles must match the roles fetched before editing or the update is rejected.
+PUT {{host}}/api/roles/users/{{user_id}}
+Authorization: Bearer {{admin_token}}
+Content-Type: application/json
+
+{"roles":["USER","ADMIN"],"expectedRoles":["USER"]}
+
+### Existing member requests OWNER on one tracker
+POST {{host}}/api/expense-trackers/{{tracker_id}}/access-requests/owner
+Authorization: Bearer {{token}}
+
+### Administrator or tracker owner: paged members
+GET {{host}}/api/roles/trackers/{{tracker_id}}/members?page=0&size=10
+Authorization: Bearer {{owner_token}}
+
+### Administrator or tracker owner: replace a member's tracker roles
+PUT {{host}}/api/roles/trackers/{{tracker_id}}/users/{{user_id}}
+Authorization: Bearer {{owner_token}}
+Content-Type: application/json
+
+{"roles":["EXPENSETRACKER_MEMBER","EXPENSETRACKER_OWNER"],"expectedRoles":["EXPENSETRACKER_MEMBER"]}
+
+### Role notifications visible to the current account
+GET {{host}}/api/roles/notifications
+Authorization: Bearer {{token}}

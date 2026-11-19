@@ -29,11 +29,13 @@ import org.leoric.expensetracker.account.repositories.AccountRepository;
 import org.leoric.expensetracker.institution.repositories.InstitutionRepository;
 import org.leoric.expensetracker.restaurant.services.interfaces.RestaurantOperations;
 import org.leoric.expensetracker.vacation.services.VacationService;
+import org.leoric.expensetracker.expensetracker.services.TrackerRoleManagementService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import java.util.List;
 import java.util.UUID;
@@ -60,6 +62,8 @@ public class UserServiceImpl implements UserService {
 	private final RecurringTransactionTemplateRepository recurringTransactionTemplateRepository;
 	private final RestaurantOperations restaurantService;
 	private final VacationService vacationService;
+	private final GlobalRoleManagementService globalRoleManagementService;
+	private final TrackerRoleManagementService trackerRoleManagementService;
 
 	@Override
 	@Transactional(readOnly = true)
@@ -130,11 +134,13 @@ public class UserServiceImpl implements UserService {
 	}
 
 	@Override
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void profileDeleteMe(User currentUser) {
 		User user = userRepository.findById(currentUser.getId())
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
+		globalRoleManagementService.beforeDelete(user);
+		trackerRoleManagementService.assertCanDeleteUser(user);
 		UUID userId = user.getId();
 
 		// 1) Delete all expense trackers OWNED by this user (+ their sub-entities)
@@ -151,6 +157,8 @@ public class UserServiceImpl implements UserService {
 		accessRequestRepository.deleteByUserId(userId);
 
 		// 4) Remove user's role assignments on trackers they are member of (not owner)
+		user.getUserExpenseTrackerRoles().forEach(assignment ->
+				assignment.getExpenseTracker().getUserExpenseTrackerRoles().remove(assignment));
 		userExpenseTrackerRoleRepository.deleteByUserId(userId);
 
 		// 5) Delete OTP tokens
@@ -158,6 +166,7 @@ public class UserServiceImpl implements UserService {
 
 		// 6) Clear ManyToMany join tables (roles, expenseTrackers) and cascaded collections
 		user.getRoles().clear();
+		user.getExpenseTrackers().forEach(tracker -> tracker.getUsers().remove(user));
 		user.getExpenseTrackers().clear();
 		user.getUserExpenseTrackerRoles().clear();
 		user.getNavbarFavourites().clear();

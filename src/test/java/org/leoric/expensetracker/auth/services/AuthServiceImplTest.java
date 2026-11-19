@@ -46,11 +46,11 @@ class AuthServiceImplTest {
 	@InjectMocks
 	private AuthServiceImpl authService;
 
-	private Role adminRole;
+	private Role userRole;
 
 	@BeforeEach
 	void setUp() {
-		adminRole = Role.builder().id(1).name("ADMIN").build();
+		userRole = Role.builder().id(1).name("USER").build();
 	}
 
 	@Test
@@ -58,12 +58,12 @@ class AuthServiceImplTest {
 		var request = new RegistrationRequestDto("John", "Doe", "john@test.com", "password123");
 
 		when(userRepository.existsByEmail("john@test.com")).thenReturn(false);
-		when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
+		when(roleRepository.findByName("USER")).thenReturn(Optional.of(userRole));
 		when(passwordEncoder.encode("password123")).thenReturn("encoded-password");
 
 		authService.authRegister(request);
 
-		verify(userRepository).save(any(User.class));
+		verify(userRepository).save(argThat(user -> user.getRoles().equals(java.util.List.of(userRole))));
 		verify(passwordEncoder).encode("password123");
 		verify(jwtService, never()).generateToken(anyMap(), any());
 	}
@@ -82,15 +82,15 @@ class AuthServiceImplTest {
 	}
 
 	@Test
-	void register_shouldThrowWhenAdminRoleNotFound() {
+	void register_shouldThrowWhenUserRoleNotFound() {
 		var request = new RegistrationRequestDto("John", "Doe", "john@test.com", "password123");
 
 		when(userRepository.existsByEmail("john@test.com")).thenReturn(false);
-		when(roleRepository.findByName("ADMIN")).thenReturn(Optional.empty());
+		when(roleRepository.findByName("USER")).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> authService.authRegister(request))
 				.isInstanceOf(IllegalStateException.class)
-				.hasMessage("Default role ADMIN not found");
+				.hasMessage("Default role USER not found");
 	}
 
 	@Test
@@ -111,6 +111,7 @@ class AuthServiceImplTest {
 
 		assertThat(response).isNotNull();
 		assertThat(response.token()).isEqualTo("jwt-token");
+		verify(jwtService).generateToken(eq(java.util.Map.of("id", user.getId().toString(), "fullName", user.getFullname())), eq(user));
 	}
 
 	@Test

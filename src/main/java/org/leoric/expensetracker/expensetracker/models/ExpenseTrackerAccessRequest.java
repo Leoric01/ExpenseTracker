@@ -54,6 +54,8 @@ public class ExpenseTrackerAccessRequest {
     private Instant requestDate;
     private Instant approvalDate;
 
+    private String requestedRole;
+
     @ManyToOne
     private User approvedBy;
 

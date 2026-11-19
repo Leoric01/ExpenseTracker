@@ -7,6 +7,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.leoric.expensetracker.image.models.ImageStorageProvider;
+import org.leoric.expensetracker.auth.repositories.RoleRepository;
+import org.leoric.expensetracker.auth.repositories.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -44,6 +46,8 @@ class RealCloudinaryVacationIntegrationTest {
 	@Autowired MockMvc mvc;
 	@Autowired Cloudinary cloudinary;
 	@Autowired CloudinaryFileAccess cloud;
+	@Autowired UserRepository users;
+	@Autowired RoleRepository roles;
 	@MockitoSpyBean ImageServiceImpl images;
 
 	@DynamicPropertySource
@@ -82,6 +86,9 @@ class RealCloudinaryVacationIntegrationTest {
 			mvc.perform(post("/auth/register").contentType(MediaType.APPLICATION_JSON)
 					.content("{\"firstName\":\"Test\",\"lastName\":\"Cloud\",\"email\":\"" + email + "\",\"password\":\"password123\"}"))
 					.andExpect(status().isCreated());
+			var admin = users.findByEmail(email).orElseThrow();
+			admin.setRoles(new ArrayList<>(List.of(roles.findByName("ADMIN").orElseThrow())));
+			users.saveAndFlush(admin);
 			String token = field(mvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
 					.content("{\"email\":\"" + email + "\",\"password\":\"password123\"}"))
 					.andExpect(status().isOk()).andReturn(), "token");

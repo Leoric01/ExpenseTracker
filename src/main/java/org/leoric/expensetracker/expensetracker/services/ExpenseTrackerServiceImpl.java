@@ -116,12 +116,13 @@ public class ExpenseTrackerServiceImpl implements ExpenseTrackerService {
 					.findByUsersIdAndActiveTrue(currentUser.getId(), pageable);
 		}
 		return page.map(tracker -> {
-			String role = tracker.getUserExpenseTrackerRoles().stream()
+			var roles = tracker.getUserExpenseTrackerRoles().stream()
 					.filter(r -> r.getUser().getId().equals(currentUser.getId()))
 					.map(r -> r.getRole().getName())
-					.findFirst()
-					.orElse(null);
-			return expenseTrackerMapper.toMineResponse(tracker, role);
+					.distinct()
+					.sorted(java.util.Comparator.comparingInt(name -> EXPENSETRACKER_OWNER.equals(name) ? 0 : 1))
+					.toList();
+			return expenseTrackerMapper.toMineResponse(tracker, roles.isEmpty() ? null : roles.getFirst(), roles);
 		});
 	}
 

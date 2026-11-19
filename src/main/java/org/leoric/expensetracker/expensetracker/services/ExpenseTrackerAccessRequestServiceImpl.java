@@ -1,6 +1,7 @@
 package org.leoric.expensetracker.expensetracker.services;
 
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.leoric.expensetracker.auth.models.Role;
@@ -20,15 +21,20 @@ import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerAcces
 import org.leoric.expensetracker.expensetracker.repositories.ExpenseTrackerRepository;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessRequestService;
 import org.leoric.expensetracker.handler.exceptions.OperationNotPermittedException;
+import org.leoric.expensetracker.handler.exceptions.NotAuthorizedForThisExpenseTrackerException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.UUID;
 
 import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_MEMBER;
+import static org.leoric.expensetracker.ExpenseTrackerApplication.EXPENSETRACKER_OWNER;
+import static org.leoric.expensetracker.ExpenseTrackerApplication.ADMIN;
 import static org.leoric.expensetracker.expensetracker.models.constants.ExpenseTrackerAccessRequestStatus.PENDING;
 
 @Service
@@ -41,9 +47,41 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 	private final ExpenseTrackerAccessRequestMapper accessRequestMapper;
 	private final UserRepository userRepository;
 	private final RoleRepository roleRepository;
+	private final TrackerRoleManagementService trackerRoleManagementService;
+	private final EntityManager entityManager;
 
 	@Override
-	@Transactional
+	@Transactional(readOnly = true)
+	public Page<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestFindAll(ExpenseTrackerAccessRequestStatus status, Pageable pageable) {
+		return (status == null ? accessRequestRepository.findAll(pageable) : accessRequestRepository.findByExpenseTrackerAccessRequestStatus(status, pageable)).map(accessRequestMapper::toResponse);
+	}
+
+	@Override
+	@Transactional(isolation = Isolation.READ_COMMITTED)
+	public ExpenseTrackerAccessRequestResponseDto expenseTrackerOwnerRequestCreate(User currentUser, UUID expenseTrackerId) {
+		ExpenseTracker tracker = getTrackerOrThrow(expenseTrackerId);
+		User user = getUserOrThrow(currentUser.getId());
+		if (tracker.getUsers().stream().noneMatch(u -> u.getId().equals(user.getId())))
+			throw new OperationNotPermittedException("Only a tracker member can request owner access");
+		if (user.hasRoleOnExpenseTracker(EXPENSETRACKER_OWNER, expenseTrackerId))
+			throw new OperationNotPermittedException("Owner role is already assigned");
+		assertNoPendingRequest(user.getId(), expenseTrackerId);
+		return accessRequestMapper.toResponse(accessRequestRepository.save(ExpenseTrackerAccessRequest.builder()
+				.user(user).expenseTracker(tracker).requestedRole(EXPENSETRACKER_OWNER)
+				.expenseTrackerAccessRequestStatus(PENDING).expenseTrackerAccessRequestType(ExpenseTrackerAccessRequestType.REQUEST)
+				.build()));
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public ExpenseTrackerAccessRequestResponseDto expenseTrackerPendingOwnerRequest(User currentUser, UUID expenseTrackerId) {
+		return accessRequestRepository.findByUserIdAndExpenseTrackerIdAndExpenseTrackerAccessRequestStatus(currentUser.getId(), expenseTrackerId, PENDING)
+				.stream().filter(r -> EXPENSETRACKER_OWNER.equals(r.getRequestedRole()))
+				.findFirst().map(accessRequestMapper::toResponse).orElse(null);
+	}
+
+	@Override
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestCreate(User currentUser, UUID expenseTrackerId) {
 		currentUser = getUserOrThrow(currentUser.getId());
 		ExpenseTracker tracker = getTrackerOrThrow(expenseTrackerId);
@@ -64,9 +102,10 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 	}
 
 	@Override
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestInvite(User currentUser, UUID expenseTrackerId, InviteUserRequestDto inviteRequest) {
  		ExpenseTracker tracker = getTrackerOrThrow(expenseTrackerId);
+		assertCanManage(currentUser, tracker);
 		User invitedUser = userRepository.findByEmail(inviteRequest.email())
 				.orElseThrow(() -> new EntityNotFoundException("User with email " + inviteRequest.email() + " not found"));
 
@@ -91,19 +130,34 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 	}
 
 	@Override
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestApprove(User currentUser, UUID requestId) {
-		ExpenseTrackerAccessRequest request = getRequestOrThrow(requestId);
+		ExpenseTrackerAccessRequest request = getRequestForUpdate(requestId);
+		assertCanManage(currentUser, request.getExpenseTracker());
 		assertPending(request);
 
 		if (request.getExpenseTrackerAccessRequestType() != ExpenseTrackerAccessRequestType.REQUEST) {
 			throw new OperationNotPermittedException("Only access requests can be approved by the owner");
 		}
 
-		grantMembership(request);
 		request.setExpenseTrackerAccessRequestStatus(ExpenseTrackerAccessRequestStatus.APPROVED);
 		request.setApprovedBy(currentUser);
 		request.setApprovalDate(Instant.now());
+		if (EXPENSETRACKER_OWNER.equals(request.getRequestedRole())) {
+			User user = request.getUser();
+			UUID trackerId = request.getExpenseTracker().getId();
+			if (request.getExpenseTracker().getUsers().stream().noneMatch(u -> u.getId().equals(user.getId())))
+				throw new OperationNotPermittedException("The user is no longer a tracker member");
+			var selected = new HashSet<String>();
+			user.getUserExpenseTrackerRoles().stream().filter(a -> a.getExpenseTracker().getId().equals(trackerId))
+					.forEach(a -> selected.add(a.getRole().getName()));
+			var previous = new HashSet<>(selected);
+			selected.add(EXPENSETRACKER_OWNER);
+			accessRequestRepository.save(request);
+			trackerRoleManagementService.setRoles(currentUser, trackerId, user.getId(), selected, previous);
+		} else {
+			grantMembership(request);
+		}
 
 		request = accessRequestRepository.save(request);
 		log.info("Owner {} approved access request for user {} on tracker '{}'",
@@ -112,17 +166,21 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 	}
 
 	@Override
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestReject(User currentUser, UUID requestId) {
-		ExpenseTrackerAccessRequest request = getRequestOrThrow(requestId);
+		ExpenseTrackerAccessRequest request = getRequestForUpdate(requestId);
+		if (request.getExpenseTrackerAccessRequestType() != ExpenseTrackerAccessRequestType.INVITE)
+			assertCanManage(currentUser, request.getExpenseTracker());
 		assertPending(request);
 
-		if (request.getExpenseTrackerAccessRequestType() != ExpenseTrackerAccessRequestType.REQUEST
+		if (request.getExpenseTrackerAccessRequestType() == ExpenseTrackerAccessRequestType.INVITE
 				&& !request.getUser().getId().equals(currentUser.getId())) {
 			throw new OperationNotPermittedException("Only the invited user can reject an invite");
 		}
 
 		request.setExpenseTrackerAccessRequestStatus(ExpenseTrackerAccessRequestStatus.REJECTED);
+		request.setApprovedBy(currentUser);
+		request.setApprovalDate(Instant.now());
 		request = accessRequestRepository.save(request);
 
 		log.info("User {} rejected access request {} on tracker '{}'",
@@ -131,12 +189,12 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 	}
 
 	@Override
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void expenseTrackerAccessRequestCancel(User currentUser, UUID requestId) {
-		ExpenseTrackerAccessRequest request = getRequestOrThrow(requestId);
+		ExpenseTrackerAccessRequest request = getRequestForUpdate(requestId);
 		assertPending(request);
 
-		if (request.getExpenseTrackerAccessRequestType() == ExpenseTrackerAccessRequestType.REQUEST) {
+		if (request.getExpenseTrackerAccessRequestType() != ExpenseTrackerAccessRequestType.INVITE) {
 			if (!request.getUser().getId().equals(currentUser.getId())) {
 				throw new OperationNotPermittedException("Only the requestor can cancel their own request");
 			}
@@ -154,9 +212,9 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 	}
 
 	@Override
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestAccept(User currentUser, UUID requestId) {
-		ExpenseTrackerAccessRequest request = getRequestOrThrow(requestId);
+		ExpenseTrackerAccessRequest request = getRequestForUpdate(requestId);
 		assertPending(request);
 
 		if (request.getExpenseTrackerAccessRequestType() != ExpenseTrackerAccessRequestType.INVITE) {
@@ -190,7 +248,11 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 
 	@Override
 	@Transactional(readOnly = true)
-	public Page<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestFindAllByTracker(User currentUser, UUID expenseTrackerId, String search, Pageable pageable) {
+	public Page<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestFindAllByTracker(User currentUser, UUID expenseTrackerId, String search, ExpenseTrackerAccessRequestStatus status, Pageable pageable) {
+		if (status != null) {
+			return accessRequestRepository.findByTrackerAndStatusAndSearch(expenseTrackerId, status, search == null ? "" : search, pageable)
+					.map(accessRequestMapper::toResponse);
+		}
 		if (search != null && !search.isBlank()) {
 			return accessRequestRepository.findByExpenseTrackerIdAndSearch(expenseTrackerId, search, pageable)
 					.map(accessRequestMapper::toResponse);
@@ -256,12 +318,27 @@ public class ExpenseTrackerAccessRequestServiceImpl implements ExpenseTrackerAcc
 	}
 
 	private ExpenseTracker getTrackerOrThrow(UUID id) {
-		return expenseTrackerRepository.findById(id)
+		return expenseTrackerRepository.findByIdForUpdate(id)
 				.orElseThrow(() -> new EntityNotFoundException("Expense tracker not found"));
 	}
 
 	private ExpenseTrackerAccessRequest getRequestOrThrow(UUID id) {
 		return accessRequestRepository.findById(id)
 				.orElseThrow(() -> new EntityNotFoundException("Access request not found"));
+	}
+
+	private ExpenseTrackerAccessRequest getRequestForUpdate(UUID id) {
+		ExpenseTrackerAccessRequest request = getRequestOrThrow(id);
+		ExpenseTracker tracker = getTrackerOrThrow(request.getExpenseTracker().getId());
+		entityManager.refresh(tracker);
+		entityManager.refresh(request);
+		return request;
+	}
+
+	private void assertCanManage(User actor, ExpenseTracker tracker) {
+		User refreshed = getUserOrThrow(actor.getId());
+		boolean owner = tracker.getUserExpenseTrackerRoles().stream().anyMatch(a ->
+				a.getUser().getId().equals(actor.getId()) && EXPENSETRACKER_OWNER.equals(a.getRole().getName()));
+		if (!refreshed.hasGlobalRole(ADMIN) && !owner) throw new NotAuthorizedForThisExpenseTrackerException();
 	}
 }

@@ -6,6 +6,7 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponseDto;
 import org.leoric.expensetracker.expensetracker.dto.InviteUserRequestDto;
 import org.leoric.expensetracker.expensetracker.models.constants.ExpenseTrackerAccessRequestType;
+import org.leoric.expensetracker.expensetracker.models.constants.ExpenseTrackerAccessRequestStatus;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessService;
 import org.leoric.expensetracker.expensetracker.services.interfaces.ExpenseTrackerAccessRequestService;
 import org.springdoc.core.annotations.ParameterObject;
@@ -14,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.access.annotation.Secured;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,12 +37,32 @@ public class ExpenseTrackerAccessRequestController {
 	private final ExpenseTrackerAccessRequestService expenseTrackerAccessRequestService;
 	private final ExpenseTrackerAccessService expenseTrackerAccessService;
 
+	@GetMapping("/access-requests")
+	@Secured("ADMIN")
+	public ResponseEntity<Page<ExpenseTrackerAccessRequestResponseDto>> allRequests(@RequestParam(required = false) ExpenseTrackerAccessRequestStatus status, @ParameterObject Pageable pageable) {
+		return ResponseEntity.ok(expenseTrackerAccessRequestService.expenseTrackerAccessRequestFindAll(status, pageable));
+	}
+
 	@PostMapping("/{trackerId}/access-requests")
 	public ResponseEntity<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestCreate(
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId) {
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(expenseTrackerAccessRequestService.expenseTrackerAccessRequestCreate(currentUser, trackerId));
+	}
+
+	@PostMapping("/{trackerId}/access-requests/owner")
+	public ResponseEntity<ExpenseTrackerAccessRequestResponseDto> expenseTrackerOwnerRequestCreate(
+			@AuthenticationPrincipal User currentUser, @PathVariable UUID trackerId) {
+		return ResponseEntity.status(HttpStatus.CREATED)
+				.body(expenseTrackerAccessRequestService.expenseTrackerOwnerRequestCreate(currentUser, trackerId));
+	}
+
+	@GetMapping("/{trackerId}/access-requests/owner/pending")
+	public ResponseEntity<ExpenseTrackerAccessRequestResponseDto> expenseTrackerPendingOwnerRequest(
+			@AuthenticationPrincipal User currentUser, @PathVariable UUID trackerId) {
+		var request = expenseTrackerAccessRequestService.expenseTrackerPendingOwnerRequest(currentUser, trackerId);
+		return request == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(request);
 	}
 
 	@PostMapping("/{trackerId}/access-requests/invite")
@@ -58,9 +80,10 @@ public class ExpenseTrackerAccessRequestController {
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID trackerId,
 			@RequestParam(required = false) String search,
+			@RequestParam(required = false) ExpenseTrackerAccessRequestStatus status,
 			@ParameterObject Pageable pageable) {
 		expenseTrackerAccessService.assertHasRoleOnExpenseTracker(trackerId, currentUser, EXPENSETRACKER_OWNER);
-		return ResponseEntity.ok(expenseTrackerAccessRequestService.expenseTrackerAccessRequestFindAllByTracker(currentUser, trackerId, search, pageable));
+		return ResponseEntity.ok(expenseTrackerAccessRequestService.expenseTrackerAccessRequestFindAllByTracker(currentUser, trackerId, search, status, pageable));
 	}
 
 	@GetMapping("/access-requests/mine")
@@ -85,7 +108,7 @@ public class ExpenseTrackerAccessRequestController {
 			@AuthenticationPrincipal User currentUser,
 			@PathVariable UUID requestId) {
 		var authInfo = expenseTrackerAccessRequestService.getAuthorizationInfo(requestId);
-		if (authInfo.expenseTrackerAccessRequestType() == ExpenseTrackerAccessRequestType.REQUEST) {
+		if (authInfo.expenseTrackerAccessRequestType() != ExpenseTrackerAccessRequestType.INVITE) {
 			expenseTrackerAccessService.assertHasRoleOnExpenseTracker(authInfo.expenseTrackerId(), currentUser, EXPENSETRACKER_OWNER);
 		}
 		return ResponseEntity.ok(expenseTrackerAccessRequestService.expenseTrackerAccessRequestReject(currentUser, requestId));

@@ -5,10 +5,13 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -17,10 +20,15 @@ public interface ExpenseTrackerRepository extends JpaRepository<ExpenseTracker, 
 	Page<ExpenseTracker> findByUsersIdAndActiveTrue(UUID userId, Pageable pageable);
 
 	Page<ExpenseTracker> findByUsersIdAndActiveTrueAndNameContainingIgnoreCase(UUID userId, String name, Pageable pageable);
+	Page<ExpenseTracker> findByNameContainingIgnoreCase(String name, Pageable pageable);
 
 	boolean existsByCreatedByOwnerIdAndNameIgnoreCase(UUID ownerId, String name);
 
 	List<ExpenseTracker> findByCreatedByOwnerId(UUID ownerId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT t FROM ExpenseTracker t WHERE t.id = :id")
+	Optional<ExpenseTracker> findByIdForUpdate(@Param("id") UUID id);
 
 	@Query("""
 			SELECT et FROM ExpenseTracker et

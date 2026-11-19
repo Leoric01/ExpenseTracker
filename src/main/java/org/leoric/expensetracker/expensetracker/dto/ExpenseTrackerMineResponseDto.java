@@ -13,6 +13,7 @@ public record ExpenseTrackerMineResponseDto(
 		boolean active,
 		String ownerFullName,
 		String role,
+		List<String> roles,
 		List<ExpenseTrackerMemberDto> members,
 		OffsetDateTime createdDate,
 		OffsetDateTime lastModifiedDate

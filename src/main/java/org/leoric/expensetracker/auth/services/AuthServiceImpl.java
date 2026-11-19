@@ -18,10 +18,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-import static org.leoric.expensetracker.ExpenseTrackerApplication.ADMIN;
+import static org.leoric.expensetracker.ExpenseTrackerApplication.USER;
 
 @Service
 @Slf4j
@@ -39,15 +39,15 @@ public class AuthServiceImpl implements AuthService {
 			throw new EmailAlreadyInUseException("Email already in use");
 		}
 
-		Role adminRole = roleRepository.findByName(ADMIN)
-				.orElseThrow(() -> new IllegalStateException("Default role ADMIN not found"));
+		Role userRole = roleRepository.findByName(USER)
+				.orElseThrow(() -> new IllegalStateException("Default role USER not found"));
 
 		User user = User.builder()
 				.firstName(request.firstName())
 				.lastName(request.lastName())
 				.email(request.email())
 				.password(passwordEncoder.encode(request.password()))
-				.roles(List.of(adminRole))
+				.roles(List.of(userRole))
 				.enabled(true)
 				.accountLocked(false)
 				.build();
@@ -64,7 +64,7 @@ public class AuthServiceImpl implements AuthService {
 		if (user == null) {
 			throw new IllegalStateException("Authentication succeeded but principal is null");
 		}
-		String token = jwtService.generateToken(new HashMap<>(), user);
+		String token = jwtService.generateToken(Map.of("id", user.getId().toString(), "fullName", user.getFullname()), user);
 		return new AuthenticationResponseDto(token);
 	}
 }

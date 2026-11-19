@@ -4,6 +4,7 @@ import org.leoric.expensetracker.auth.models.User;
 import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestAuthorizationInfoDto;
 import org.leoric.expensetracker.expensetracker.dto.ExpenseTrackerAccessRequestResponseDto;
 import org.leoric.expensetracker.expensetracker.dto.InviteUserRequestDto;
+import org.leoric.expensetracker.expensetracker.models.constants.ExpenseTrackerAccessRequestStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,9 @@ import java.util.UUID;
 
 @Service
 public interface ExpenseTrackerAccessRequestService {
+	ExpenseTrackerAccessRequestResponseDto expenseTrackerOwnerRequestCreate(User currentUser, UUID expenseTrackerId);
+	ExpenseTrackerAccessRequestResponseDto expenseTrackerPendingOwnerRequest(User currentUser, UUID expenseTrackerId);
+	Page<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestFindAll(ExpenseTrackerAccessRequestStatus status, Pageable pageable);
 
 	ExpenseTrackerAccessRequestResponseDto expenseTrackerAccessRequestCreate(User currentUser, UUID expenseTrackerId);
 
@@ -29,5 +33,5 @@ public interface ExpenseTrackerAccessRequestService {
 
 	Page<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestFindAllMine(User currentUser, String search, Pageable pageable);
 
-	Page<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestFindAllByTracker(User currentUser, UUID expenseTrackerId, String search, Pageable pageable);
+	Page<ExpenseTrackerAccessRequestResponseDto> expenseTrackerAccessRequestFindAllByTracker(User currentUser, UUID expenseTrackerId, String search, ExpenseTrackerAccessRequestStatus status, Pageable pageable);
 }

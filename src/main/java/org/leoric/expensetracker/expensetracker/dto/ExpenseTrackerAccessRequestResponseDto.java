@@ -15,6 +15,7 @@ public record ExpenseTrackerAccessRequestResponseDto(
 		String userEmail,
 		ExpenseTrackerAccessRequestStatus status,
 		ExpenseTrackerAccessRequestType type,
+		String requestedRole,
 		OffsetDateTime requestDate,
 		OffsetDateTime approvalDate,
 		String approvedByFullName,

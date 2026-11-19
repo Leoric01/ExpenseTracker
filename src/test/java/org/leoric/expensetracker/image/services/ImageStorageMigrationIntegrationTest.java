@@ -113,6 +113,9 @@ class ImageStorageMigrationIntegrationTest {
 		mvc.perform(post("/auth/register").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"firstName\":\"Test\",\"lastName\":\"Storage\",\"email\":\"" + email + "\",\"password\":\"password123\"}"))
 				.andExpect(status().isCreated());
+		var admin = users.findByEmail(email).orElseThrow();
+		admin.setRoles(new java.util.ArrayList<>(java.util.List.of(roles.findByName("ADMIN").orElseThrow())));
+		users.saveAndFlush(admin);
 		MvcResult login = mvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"email\":\"" + email + "\",\"password\":\"password123\"}"))
 				.andExpect(status().isOk()).andReturn();
